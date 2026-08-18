@@ -33,9 +33,22 @@ Across all 700 held-out scenes, Drift-Sense produced **686 correct predictions**
 |---|---:|
 | Model parameters | **0.46 million** |
 | Model-weight size | **approximately 5.3 MiB** |
-| CPU inference, eight-view TTA | **approximately 3.8 s/pair** |
-| Single-view inference | **approximately 0.5 s/pair** |
 | Input size | **1000 × 1000 reference + 1000 × 1000 search** |
+| Single-view inference | **1.0 s/pair** CPU, **67 ms** GPU |
+| Eight-view TTA | **8.2 s/pair** CPU, **560 ms** GPU |
+| Pose search (nominal) | **6 ms** CPU, **3 ms** GPU |
+| **Shipped default (adaptive)** | **1.4–1.8 s/pair** CPU, **99–121 ms** GPU |
+
+Inference no longer runs eight-view voting unconditionally. One view is
+decoded first and voting is paid for only when that view's peak is contested,
+which is 5–9% of scenes at the shipped threshold — so the typical pair costs
+roughly one forward pass instead of nine, a **4.6–5.7× reduction** with no
+measured change to accuracy, mean error or p99. The gate was measured on 500
+held-out scenes across two splits (`scripts/tune_routing.py`), not chosen by
+hand.
+
+Timings above were re-measured on an Apple-silicon laptop (GPU column = MPS);
+absolute milliseconds differ by machine, but the ratios do not.
 
 ## Qualitative evidence
 

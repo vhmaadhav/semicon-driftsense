@@ -169,3 +169,63 @@ two jobs — the network chooses the region, ZNCC places it sub-pixel.
 | Randomised acquisition conditions per sample | Training on one fixed operating point overfits to a perfectly-calibrated column. Ranges span the `low`…`severe` levels used by the upstream baseline evaluation. |
 | Random search-window crop | Compute (a 512 px window costs ~4× less than the full frame for the same single positive) and translation augmentation. |
 | Multi-crop generation (many references per canvas) | The 10000² canvas dominates generation cost; extra reference crops are nearly free, giving 8× the training scenes for ~1× the cost. |
+
+---
+
+## 10. Edge brightening, rotation and magnification variation
+
+The problem statement requires the dataset generator to model "independent
+sensor noise per image, edge-brightening (mimicking SEM behavior), blur,
+rotation, and scaling variations". Noise and blur are covered in §2; the
+remaining three are implemented in `driftsense/generate.py` (`PoseParams`,
+`apply_edge_brightening`, `search_affine`) and exposed on
+`generate_dataset.py` as `--edge-brightening`, `--rotation-deg` and
+`--magnification`. All three default to the nominal no-op, so the shipped
+splits reproduce byte-for-byte.
+
+### Edge brightening (secondary-electron edge effect)
+
+Secondary electrons are emitted within a few nanometres of the surface, so
+their escape probability rises sharply where the surface is tilted or a
+feature edge is exposed: the interaction volume intersects more free surface.
+The consequence is the single most recognisable feature of an SE image —
+edges read brighter than either adjacent flat region, so structures appear
+outlined rather than flatly shaded. We model it to first order as an additive
+term proportional to local gradient magnitude, which is the standard
+approximation of the sec θ tilt dependence for small local slopes.
+
+- Goldstein, J. I. *et al.* **Scanning Electron Microscopy and X-Ray
+  Microanalysis**, Springer. The standard text; the edge/tilt contrast
+  mechanism and the sec θ yield dependence.
+- Reimer, L. **Scanning Electron Microscopy: Physics of Image Formation and
+  Microanalysis**, Springer Series in Optical Sciences. Secondary-electron
+  yield versus surface tilt and the resulting edge contrast.
+- Seiler, H. "Secondary electron emission in the scanning electron
+  microscope." *Journal of Applied Physics* 54, R1 (1983).
+  <https://doi.org/10.1063/1.332840> — review of SE yield, escape depth and
+  the angular dependence that produces edge brightening.
+
+### Rotation and magnification variation
+
+Stage rotation and residual calibration error between the high- and
+low-magnification acquisitions leave the two frames related by more than a
+pure translation. The ranges implemented (about ±2° and a 9–11× ratio) follow
+the problem statement rather than being derived here.
+
+- Sutton, M. A., Orteu, J.-J. and Schreier, H. **Image Correlation for Shape,
+  Motion and Deformation Measurements**, Springer. Affine (scale + rotation +
+  translation) image relation and its estimation, the standard framing for
+  correlation under pose.
+- Carter, W. C., Cannon, R. M. *et al.* and the wider SEM-metrology
+  literature on magnification calibration: reported magnification carries a
+  few percent uncertainty unless calibrated against a traceable pitch
+  standard, which is the basis for treating the ratio as a range.
+- See also §3, which cites the scan-distortion literature underlying the
+  shear/drift model applied in the same imaging step.
+
+**Note on sampling.** Rotation and off-nominal magnification are applied as a
+single affine sampling step against a pre-blurred canvas, not as a resize
+followed by a rotate. Each resampling pass costs interpolation blur, and
+composing them keeps the ground truth exactly invertible — the matrix that
+renders the frame is the matrix that maps the label (verified to <0.1 px in
+`tests/test_generator.py`).

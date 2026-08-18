@@ -22,7 +22,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from driftsense.generate import NOISE_PRESETS, PRESETS, write_split  # noqa: E402
+from driftsense.generate import NOISE_PRESETS, PRESETS, PoseParams, write_split  # noqa: E402
 
 
 def main():
@@ -50,6 +50,9 @@ def main():
                    help="append to an existing split starting at this canvas index, "
                         "keeping the same seed stream. Lets a pool grow in shards.")
     p.add_argument("--progress-every", type=int, default=25)
+    p.add_argument("--edge-brightening", type=float, default=0.0)
+    p.add_argument("--rotation-deg", type=float, default=0.0)
+    p.add_argument("--magnification", type=float, default=10.0)
     args = p.parse_args()
 
     split_dir = os.path.join(args.output_dir, args.split)
@@ -64,6 +67,9 @@ def main():
         store_templates=args.store_templates,
         start_index=args.start_index,
         progress_every=args.progress_every,
+        pose=PoseParams(edge_brightening=args.edge_brightening,
+                        rotation_deg=args.rotation_deg,
+                        magnification=args.magnification),
     )
     # Marker written last, so a shard is only ever picked up complete. train.py
     # --refresh-pool rescans for these between epochs, which is what lets the

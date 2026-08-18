@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from driftsense.model import SCALE, STRIDE
+from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
 
 # Two candidates whose scores differ by less than this are treated as tied,
 # and the problem statement's rule applies: prefer the one nearer the centre
@@ -44,15 +44,148 @@ VERIFY_ALPHA = 0.5
 VERIFY_TOP_K = 4
 
 
-def make_template(reference: np.ndarray) -> np.ndarray:
-    """Reference (1 nm/px) -> template at the search frame's 10 nm/px.
+def make_template(reference: np.ndarray, factor: float = SCALE,
+                  rotation_deg: float = 0.0) -> np.ndarray:
+    """Reference -> template at the search frame's pixel size and pose.
 
     INTER_AREA because that is the same area-average the physical search
-    image underwent; bilinear here measurably softens the match.
+    image underwent; bilinear here measurably softens the match. Any rotation
+    is applied after the reduction, where it costs a hundredth of the pixels.
     """
-    th = max(int(round(reference.shape[0] / SCALE)), 1)
-    tw = max(int(round(reference.shape[1] / SCALE)), 1)
-    return cv2.resize(reference, (tw, th), interpolation=cv2.INTER_AREA)
+    th = max(int(round(reference.shape[0] / factor)), 1)
+    tw = max(int(round(reference.shape[1] / factor)), 1)
+    tpl = cv2.resize(reference, (tw, th), interpolation=cv2.INTER_AREA)
+    if rotation_deg != 0.0:
+        M = cv2.getRotationMatrix2D(((tw - 1) / 2.0, (th - 1) / 2.0), rotation_deg, 1.0)
+        tpl = cv2.warpAffine(tpl, M, (tw, th), flags=cv2.INTER_LINEAR,
+                             borderMode=cv2.BORDER_REPLICATE)
+    return tpl
+
+
+def template_hypotheses(reference: np.ndarray) -> list[float]:
+    """Plausible reference-to-search downsample factors, best guess first.
+
+    The reference covers a fixed 1 um field of view and the search frame is
+    10 nm/px, so the pattern's footprint there is ~100 px *regardless of what
+    pixel dimensions the reference itself arrives at*. A reference delivered at
+    1 nm/px (1000 px) needs dividing by 10; one already delivered at the search
+    resolution (100 px) needs dividing by 1. Dividing unconditionally by 10
+    turns the latter into a 10x10 template and the match becomes noise.
+
+    We cannot read nm/px out of a PNG, so both readings are offered and the
+    caller picks by correlation score. For the usual 1000 px reference the two
+    hypotheses coincide and this costs nothing.
+    """
+    h, w = reference.shape[:2]
+    longest = max(h, w)
+    factors = [SCALE, longest / float(TEMPLATE_SIZE)]
+
+    out: list[float] = []
+    for f in factors:
+        if f < 1.0:                       # reference smaller than its footprint
+            f = 1.0
+        if not any(abs(f - g) < 1e-6 for g in out):
+            out.append(f)
+    return out
+
+
+def choose_factor(reference: np.ndarray, search: np.ndarray) -> float:
+    """Pick the reference->search downsample factor by correlation evidence.
+
+    Costs one full-frame ZNCC per hypothesis (milliseconds) and is only ever
+    ambiguous when the reference does not arrive at the expected 1000 px, so
+    the normal path pays nothing. ZNCC is a poor *localiser* on periodic
+    layouts -- that is what the network is for -- but telling a correctly
+    scaled template from one scaled 10x wrong is exactly the coarse judgement
+    it is reliable at.
+    """
+    hypotheses = template_hypotheses(reference)
+    if len(hypotheses) == 1:
+        return hypotheses[0]
+
+    best, best_score = hypotheses[0], -np.inf
+    for f in hypotheses:
+        tmpl = make_template(reference, f)
+        if tmpl.shape[0] >= search.shape[0] or tmpl.shape[1] >= search.shape[1]:
+            continue
+        res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
+        score = float(cv2.minMaxLoc(res)[1])
+        if score > best_score:
+            best, best_score = f, score
+    return best
+
+
+# Departing from the nominal pose must be *earned*. The network was trained at
+# exactly 10x and 0 degrees, so feeding it an off-nominal template is a real
+# cost, and a periodic layout will always hand some wrong pose a lucky
+# correlation peak. A searched pose is adopted only if it beats nominal by this
+# margin, which keeps the whole thing a no-op on nominal data.
+POSE_MARGIN = 0.05
+POSE_SCALES = (0.90, 0.95, 1.05, 1.10)        # the 9-11x range, relative
+POSE_ROTATIONS = (-2.0, -1.0, 1.0, 2.0)       # degrees
+
+
+def _peak_score(search: np.ndarray, tmpl: np.ndarray) -> float:
+    if tmpl.shape[0] >= search.shape[0] or tmpl.shape[1] >= search.shape[1]:
+        return -np.inf
+    return float(cv2.minMaxLoc(cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED))[1])
+
+
+# The pose search is a coarse decision -- which of nine candidates, not where
+# -- so it runs on reduced-resolution copies. Halving is the useful limit: a
+# quarter cannot separate a 5% scale difference, because 5% of a 25 px probe
+# template is sub-pixel. Combined with the skip below, nominal scenes cost a
+# few milliseconds and only genuinely off-nominal ones pay for the search.
+POSE_PROBE_DOWNSCALE = 2
+# Above this correlation at the nominal pose there is nothing to look for, and
+# the search is skipped outright. Nominal scenes are the overwhelming majority.
+POSE_SKIP_ABOVE = 0.70
+
+
+def _probe(img: np.ndarray, k: int = POSE_PROBE_DOWNSCALE) -> np.ndarray:
+    h, w = img.shape[:2]
+    return cv2.resize(img, (max(w // k, 1), max(h // k, 1)),
+                      interpolation=cv2.INTER_AREA)
+
+
+def choose_pose(reference: np.ndarray, search: np.ndarray,
+                margin: float = POSE_MARGIN) -> tuple[float, float]:
+    """Estimate (downsample factor, rotation degrees) by correlation evidence.
+
+    Coordinate descent rather than a full grid: scale first at zero rotation,
+    then rotation at the winning scale -- nine correlations instead of
+    twenty-five, and the two axes are near enough to independent here that the
+    joint optimum is not missed in practice. All of it on quarter-resolution
+    probes, since only the ranking matters.
+
+    Returns the nominal pose unless an off-nominal one wins by `margin`.
+    """
+    base = choose_factor(reference, search)
+    probe_search = _probe(search)
+
+    def score(factor, rot=0.0):
+        tpl = make_template(reference, factor, rot)
+        return _peak_score(probe_search, _probe(tpl))
+
+    nominal = score(base)
+    if nominal >= POSE_SKIP_ABOVE:
+        return base, 0.0
+
+    best_f, best_s = base, nominal
+    for m in POSE_SCALES:
+        sc = score(base * m)
+        if sc > best_s:
+            best_f, best_s = base * m, sc
+
+    best_r = 0.0
+    for r in POSE_ROTATIONS:
+        sc = score(best_f, r)
+        if sc > best_s:
+            best_r, best_s = r, sc
+
+    if best_s < nominal + margin:
+        return base, 0.0
+    return best_f, best_r
 
 
 def standardize(x: np.ndarray) -> np.ndarray:
@@ -158,7 +291,11 @@ def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
     """Classical multi-scale ZNCC. Used as the fallback path when no trained
     weights are available, so the inference script always returns a result."""
     best = None
-    for scale in (9.0, 9.5, 10.0, 10.5, 11.0):
+    # +/-10% around each plausible factor, matching the upstream baseline's
+    # 9-11x sweep but anchored on whatever scale the reference actually is.
+    scales = [f * m for f in template_hypotheses(reference)
+              for m in (0.9, 0.95, 1.0, 1.05, 1.1)]
+    for scale in scales:
         tw = max(int(round(reference.shape[1] / scale)), 1)
         th = max(int(round(reference.shape[0] / scale)), 1)
         if tw >= search.shape[1] or th >= search.shape[0]:
@@ -177,11 +314,12 @@ def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
 def locate(model, reference: np.ndarray, search: np.ndarray, device,
            refine: bool = True, return_heatmap: bool = False,
            tie_tol: float = TIE_REL_TOL, refine_radius: int = REFINE_RADIUS,
-           refine_accept_px: float = 10.0) -> dict:
+           refine_accept_px: float = 10.0, factor: float = SCALE,
+           rotation_deg: float = 0.0) -> dict:
     """Full inference: reference + search (uint8 grayscale) -> centre (x, y)."""
     model.eval()
 
-    template = make_template(reference)
+    template = make_template(reference, factor, rotation_deg)
     th, tw = template.shape
 
     tpl_n = standardize(template / 255.0)
@@ -197,7 +335,19 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
     i, j, score = select_peak(prob, search.shape, (th, tw), tie_tol)
     cx, cy = response_to_center(i, j, th, tw,
                                 float(offs[1, i, j]), float(offs[0, i, j]))
-    result = {"x": cx, "y": cy, "score": float(score), "coarse": (cx, cy)}
+
+    # How contested is this decision? On a periodic layout the runner-up is a
+    # decoy one lattice period away, so the ratio between the two strongest
+    # *well-separated* peaks says how much the network is actually committing.
+    # A ratio near 1 means it is guessing between repeats -- the exact case
+    # dihedral voting is there to arbitrate.
+    peaks = find_peaks(prob)
+    rival = next((p_ for p_ in peaks
+                  if np.hypot(p_[0] - i, p_[1] - j) > 2.0), None)
+    peak_ratio = (float(rival[2]) / max(float(peaks[0][2]), 1e-9)) if rival else 0.0
+
+    result = {"x": cx, "y": cy, "score": float(score), "coarse": (cx, cy),
+              "peak_ratio": peak_ratio}
 
     if refine:
         rx, ry, zn = refine_zncc(sea_n, tpl_n, cx, cy, radius=refine_radius)
@@ -235,18 +385,34 @@ def _dihedral_img(img: np.ndarray, t: int) -> np.ndarray:
     return np.ascontiguousarray(img)
 
 
-def _dihedral_point_inv(x: float, y: float, size: int, t: int) -> tuple[float, float]:
+def _dihedral_point_inv(x: float, y: float, shape: tuple[int, int],
+                       t: int) -> tuple[float, float]:
     """Map a point in the transformed frame back to original coordinates.
 
-    Forward is `k` counter-clockwise rot90s then an optional fliplr, so the
-    inverse undoes the flip first and then applies the inverse rotation
-    (x, y) -> (size-1-y, x), k times.
+    `shape` is the ORIGINAL (h, w) of the search image. Forward is `k`
+    counter-clockwise rot90s then an optional fliplr, so the inverse undoes the
+    flip first and then applies the inverse rotation k times.
+
+    Each rot90 swaps the axes, so the width used to mirror a coordinate changes
+    at every step -- tracking it is what makes this correct on non-square
+    frames as well as on the 1000x1000 ones the spec defines. Sharing a single
+    `size` here silently returns garbage the moment the search image is not
+    square.
     """
     k, flip = t % 4, t // 4
+    h, w = shape
+
+    # Dimensions of the frame the point currently lives in: k rot90s swap h/w
+    # for odd k, and fliplr leaves them alone.
+    ch, cw = (w, h) if k % 2 else (h, w)
+
     if flip:
-        x = size - 1 - x
+        x = cw - 1 - x
     for _ in range(k):
-        x, y = size - 1 - y, x
+        # Undo one rot90: (x, y) in the rotated frame came from (cw' - 1 - y, x)
+        # in the frame one step back, whose width is the rotated frame's height.
+        x, y = ch - 1 - y, x
+        ch, cw = cw, ch
     return x, y
 
 
@@ -254,7 +420,8 @@ def _dihedral_point_inv(x: float, y: float, size: int, t: int) -> tuple[float, f
 def locate_tta(model, reference: np.ndarray, search: np.ndarray, device,
                transforms=range(8), cluster_px: float = 6.0,
                refine: bool = True, verify_alpha: float = VERIFY_ALPHA,
-               verify_top_k: int = VERIFY_TOP_K) -> dict:
+               verify_top_k: int = VERIFY_TOP_K, factor: float = SCALE,
+               rotation_deg: float = 0.0) -> dict:
     """Dihedral test-time augmentation with cluster voting.
 
     Each view proposes a centre; proposals are mapped back to the original
@@ -264,13 +431,13 @@ def locate_tta(model, reference: np.ndarray, search: np.ndarray, device,
     proposal is an outlier one period away, and averaging it in would drag the
     answer off, while clustering discards it.
     """
-    size = search.shape[0]
     props = []
     for t in transforms:
         r_t = _dihedral_img(reference, t)
         s_t = _dihedral_img(search, t)
-        res = locate(model, r_t, s_t, device, refine=False)
-        x, y = _dihedral_point_inv(res["x"], res["y"], size, t)
+        res = locate(model, r_t, s_t, device, refine=False, factor=factor,
+                     rotation_deg=rotation_deg)
+        x, y = _dihedral_point_inv(res["x"], res["y"], search.shape, t)
         props.append((x, y, res["score"]))
 
     # Greedy clustering by proximity, strongest proposal first.
@@ -284,7 +451,7 @@ def locate_tta(model, reference: np.ndarray, search: np.ndarray, device,
         else:
             clusters.append([p])
 
-    tpl_n = standardize(make_template(reference) / 255.0)
+    tpl_n = standardize(make_template(reference, factor, rotation_deg) / 255.0)
     sea_n = standardize(search / 255.0)
 
     def _centroid(c):

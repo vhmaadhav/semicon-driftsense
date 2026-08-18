@@ -33,7 +33,11 @@ def load(d: str) -> tuple[str, np.ndarray]:
     """Accept either an evaluate.py output directory or a stream_eval.py json."""
     if os.path.isdir(d):
         with open(os.path.join(d, "results.json")) as f:
-            blocks = json.load(f)
+            blob = json.load(f)
+        # evaluate.py used to write a bare list of split blocks and now writes
+        # {"provenance": ..., "splits": [...]}. The committed cmp_* artifacts
+        # predate the change, so accept both.
+        blocks = blob["splits"] if isinstance(blob, dict) else blob
         errs = np.concatenate([np.asarray(b["errors_siamese"], dtype=np.float64)
                                for b in blocks])
         return os.path.basename(d.rstrip("/")), errs

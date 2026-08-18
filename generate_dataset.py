@@ -52,7 +52,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from driftsense.generate import NOISE_PRESETS, write_split  # noqa: E402
+from driftsense.generate import NOISE_PRESETS, PoseParams, write_split  # noqa: E402
 from driftsense.presets import architecture_presets  # noqa: E402
 
 
@@ -74,6 +74,23 @@ def parse_args():
     p.add_argument("--crops-per-canvas", type=int, default=1,
                    help="reference crops per canvas. >1 is much cheaper per pair but "
                         "the pairs share a search image -- use only for training data")
+
+    pose = p.add_argument_group(
+        "pose and edge response",
+        "Degradations named by the problem statement that the upstream "
+        "generator does not model. All default to the nominal no-op, which "
+        "reproduces the upstream imaging path exactly; the shipped weights "
+        "were trained without them.")
+    pose.add_argument("--edge-brightening", type=float, default=0.0, metavar="F",
+                      help="secondary-electron edge brightening, 0-1 "
+                           "(0 = off; 0.15-0.35 is a visible, realistic range)")
+    pose.add_argument("--rotation-deg", type=float, default=0.0, metavar="DEG",
+                      help="relative rotation between Reference and Search "
+                           "(0 = off; the problem statement implies about +/-2)")
+    pose.add_argument("--magnification", type=float, default=10.0, metavar="X",
+                      help="effective magnification ratio (default 10.0, the "
+                           "nominal 1 nm/px : 10 nm/px; 9-11 spans the range "
+                           "the problem statement implies)")
     return p.parse_args()
 
 
@@ -88,6 +105,10 @@ def main():
     print(f"architecture : {args.architecture} ({len(presets)} presets)")
     print(f"pairs        : {args.num_pairs} from {canvases} canvas(es)")
     print(f"conditions   : {args.noise}")
+    if args.edge_brightening or args.rotation_deg or args.magnification != 10.0:
+        print(f"pose/edge    : magnification {args.magnification}x, "
+              f"rotation {args.rotation_deg} deg, "
+              f"edge brightening {args.edge_brightening}")
     print(f"output       : {args.output_dir}")
 
     pairs = write_split(
@@ -98,6 +119,9 @@ def main():
         architectures=presets,
         workers=args.workers,
         crops_per_canvas=args.crops_per_canvas,
+        pose=PoseParams(edge_brightening=args.edge_brightening,
+                        rotation_deg=args.rotation_deg,
+                        magnification=args.magnification),
     )
 
     print(f"\nWrote {pairs} pairs to {args.output_dir}")

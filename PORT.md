@@ -3,8 +3,15 @@
 Written 2026-08-17 for a move from the M-series Mac (16GB unified, MPS) to an
 RTX 4060/4070 laptop (8GB VRAM, 16GB system RAM).
 
-The submission in `weights/driftsense.pt` (acc@5px 0.9757) is **never
-overwritten** by anything below. New runs write `driftsense_v5*`.
+The submission in `weights/driftsense.pt` is **never overwritten** by anything
+below. New runs write `driftsense_v5*`.
+
+> **Later note.** At the time of writing, `driftsense.pt` was the phase-3
+> checkpoint at acc@5px 0.9757. One of the runs this plan set up (v5f) beat it
+> and was promoted afterwards, so the shipped file is now the phase-4
+> checkpoint at **0.9800**; the old one is kept as
+> `weights/driftsense_prev_0.9757.pt`. See
+> [RTX_LOG.md § Promotion](RTX_LOG.md#promotion--done-after-the-session).
 
 ---
 

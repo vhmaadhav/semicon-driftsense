@@ -15,3 +15,4 @@ weights/*_last.pt
 # Evaluation output — keep the figures and metrics the README links to,
 # ignore the scratch subdirectories individual eval runs write into.
 results/*/
+.pytest_cache/

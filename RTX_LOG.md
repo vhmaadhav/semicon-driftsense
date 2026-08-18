@@ -3,8 +3,9 @@
 Continues NIGHT_LOG.md on new hardware. Same standard: negative results are
 written up as-is, and nothing is claimed that was not measured.
 
-**`weights/driftsense.pt` has not been touched.** Every run here writes
-`weights/driftsense_v5*`.
+**`weights/driftsense.pt` was not touched during this session** — every run
+here wrote `weights/driftsense_v5*`. It *was* promoted afterwards, once the
+candidate had been judged: see [Promotion](#promotion--done-after-the-session).
 
 ---
 
@@ -376,19 +377,33 @@ Two things not to overstate:
   mostly by the longer schedule and the fine-tune, *not* by the extra data — the
   "more data" hypothesis is still largely untested on this hardware.
 
-### Promotion — deliberately not done
+### Promotion — done after the session
 
-`weights/driftsense.pt` is **untouched** (SHA256 `615C9CA2F47A…`), per the
-standing rule in AGENT_HANDOFF.md. The candidate is
-`weights/driftsense_v5f_e23.pt`. Promoting it is a one-line copy and a human
-decision:
+At the time this section was first written the promotion had **not** happened:
+`weights/driftsense.pt` was still the phase-3 checkpoint (SHA256
+`615C9CA2F47A…`, 12 trained epochs, 0.9757 across the 700 scenes), per the
+standing rule in AGENT_HANDOFF.md that a human makes that call.
 
-```bash
-cp weights/driftsense_v5f_e23.pt weights/driftsense.pt   # then re-run infer.py end to end
-```
+**It was subsequently promoted.** The shipped file is now the v5f epoch-23
+candidate and the old one was kept alongside it:
 
-If promoted, README.md's results tables need updating to 0.9800 / 14 failures,
-and `results/results.json` regenerating.
+| file | SHA256 | trained epochs | all-700 acc@5px |
+| --- | --- | ---: | ---: |
+| **`weights/driftsense.pt`** (shipped) | `90DB89F9861C2C9E…` | 24 | **0.9800** |
+| `weights/driftsense_prev_0.9757.pt` | `615C9CA2F47A3FB7…` | 12 | 0.9757 |
+
+The identity is checkable without the data: `evaluate.py` now prints and
+records the checkpoint's SHA256, and `torch.load(...)["epoch"]` reads 24 on the
+shipped file versus 12 on the previous one.
+
+Two follow-ups that section called for:
+
+- **README.md updated to 0.9800 / 14 failures** — done.
+- **`results/results.json` regenerated** — the committed file was left on the
+  *pre-promotion* numbers (0.9757) for a while, which is the provenance defect
+  it warned about. It now carries the shipped checkpoint's measurement plus a
+  `provenance` block naming the weights, their hash, and the run this came
+  from. See [README § Reproducing the numbers](README.md#reproducing-the-numbers).
 
 ### What to do next
 

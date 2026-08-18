@@ -57,6 +57,20 @@ This prints a single line — the predicted centre in Search-image pixels:
 Compare against the ground truth in `sample/manifest.csv` (columns
 `gt_x_corr`, `gt_y_corr` — see [Ground truth](#ground-truth-use-gt_x_corr--gt_y_corr)).
 
+### Verify the whole submission in one command
+
+```bash
+./venv/bin/python scripts/selfcheck.py
+```
+
+Takes about a minute and needs nothing pre-generated. It checks the
+environment, verifies the checkpoint's SHA256 and epoch count against the
+values recorded below, asserts the `infer.py` stdout contract, then renders
+fresh scenes **with the upstream generator** and scores them against the
+**upstream label** `gt_x`/`gt_y` — so the accuracy it reports depends on
+neither our data pipeline nor our label convention. Exit status is non-zero if
+any check fails. `--n 24` for a tighter estimate.
+
 ---
 
 ## The inference script
@@ -106,7 +120,10 @@ toward the centre would cost accuracy.
 | [`generate_dataset.py`](generate_dataset.py) | **dataset generator** — architecture / pair count / output dir, records ground truth |
 | [`infer.py`](infer.py) | **localisation inference** — reference + search → `x,y` |
 | [`train.py`](train.py) | training script that reproduces the shipped weights |
-| [`evaluate.py`](evaluate.py) | batch evaluation vs. the classical ZNCC baseline |
+| [`evaluate.py`](evaluate.py) | batch evaluation vs. the classical ZNCC baseline, in both ground-truth frames |
+| [`tests/`](tests/) | `pytest` suite over the coordinate, label and CLI invariants |
+| [`scripts/selfcheck.py`](scripts/selfcheck.py) | one-command submission check on upstream-generated data |
+| [`scripts/tune_routing.py`](scripts/tune_routing.py) | measures the single-view / TTA confidence gate |
 | [`weights/driftsense.pt`](weights/) | trained model weights, loaded automatically |
 | [`requirements.txt`](requirements.txt) | full `pip freeze` of the dev environment |
 | [`CITATIONS.md`](CITATIONS.md) | references behind the physics, noise and design choices |
@@ -408,6 +425,19 @@ Decode settings were tuned on validation only.
 Across all **700 held-out scenes**: median **0.63 px**, acc@5px **0.980**
 (14 failures), versus 0.573 for the classical baseline.
 
+**Independently replicated.** Those splits were fixed early, so they were
+re-run on **700 entirely fresh scenes** (seeds 8080808/9/10, disjoint from the
+42/555/1234/7777/20001/20002 above and from the training pool): acc@5px
+**0.990**, median **0.61 px**, with the classical baseline at 0.498 on the same
+scenes.
+
+Read that as *the same result on new dice*, **not** as an improvement — it is
+the identical checkpoint. The gap is 7 scenes in 700, a two-proportion z of
+1.54 with a 95 % CI of [−0.27, +2.27] points that spans zero; a difference this
+size or larger arises from sampling alone about half the time. What it does
+establish is that the headline is not an artifact of the particular seeds the
+tables were tuned and reported on.
+
 These are the **phase 4** numbers (see [TRAINING.md](TRAINING.md)). The 700-scene
 set cannot establish the phase-3 → phase-4 step on its own — a paired bootstrap
 gives +0.43 points with a 95 % CI of [−0.29, +1.14], spanning zero. The
@@ -418,6 +448,141 @@ points, 95 % CI [+0.1, +2.9], P(worse) = 0.018**.
 baseline's `medium` noise level — is solved **perfectly: 1.000 at both the 2 px and
 5 px tolerances**, median 0.35 px. `test` draws acquisition conditions per sample
 and additionally varies geometric distortion, making it the hardest of the three.
+
+### Robustness and speed
+
+Three things the problem statement asks for that the earlier pipeline did not
+provide. All are measured, and none change the accuracy above.
+
+**Any reference resolution.** The graders run `infer.py` on their own pairs
+with no manual edits, and the spec describes the Reference as roughly 100×100
+px — not the 1000×1000 our generator emits. The template used to be built by
+dividing by a hard-coded 10, so a 100 px reference became a 10×10 template and
+locked onto the wrong repeat while still returning a confident-looking
+coordinate:
+
+| reference size | error before | error after |
+| --- | ---: | ---: |
+| 1000×1000 | 1.40 px | 1.40 px |
+| 500×500 | 30.74 px | **1.40 px** |
+| 200×200 | 59.33 px | **1.40 px** |
+| 100×100 | 87.93 px | **1.40 px** |
+
+`choose_factor` now derives the downsample from the images and settles it by
+correlation. For a 1000 px reference there is only one hypothesis, so the
+normal path costs nothing.
+
+**Pose search.** `choose_pose` additionally searches a 9–11× scale range and
+±2° of rotation by coordinate descent on half-resolution probes. Departing
+from nominal has to be *earned*: the network was trained at exactly 10× and 0°,
+and a periodic layout will always hand some wrong pose a lucky peak, so an
+off-nominal pose is adopted only when it beats nominal by a margin. On
+organizer data it stays nominal on every scene and costs **3 ms**; on data
+generated at 9.5× and +2° it recovers the true pose exactly.
+
+**Adaptive routing.** Dihedral voting costs 8 forward passes and earns them
+only where the network is genuinely torn between repeats. `infer.py` now runs
+one view, reads how contested its peak was, and pays for voting only when the
+decision is close. The gate was measured, not guessed
+([`scripts/tune_routing.py`](scripts/tune_routing.py), 500 held-out scenes over
+two splits): the highest threshold reproducing full TTA *exactly* — same
+acc@5px, same mean, same p99 — is 0.90 on the randomized split but 0.70 on
+`severe`, so **0.70** ships.
+
+| path | cost |
+| --- | ---: |
+| single view | 67 ms |
+| TTA ×8 | 560 ms |
+| pose search (nominal) | 3 ms |
+| **shipped, at the measured 91–95% fast-path rate** | **~99–121 ms** |
+
+That is **4.6–5.7× faster than voting unconditionally**, with no measured cost
+to accuracy or to the tail. Inference time is benchmarked on an H100, so this
+matters as much as the accuracy does.
+
+### Which ground truth these are measured against
+
+Every number in this section is measured against the **corrected** label
+(`gt_x_corr`/`gt_y_corr`) — where the pattern actually lands in the acquired
+search image. [Ground truth](#ground-truth-use-gt_x_corr--gt_y_corr) above
+explains why that is the physically correct target and shows the empirical
+check.
+
+The evaluation risk is that the organizer's own tooling
+(`generator/generate_dataset.py`, `generator/app.py`) only ever emits the
+**upstream** label `gt_x`/`gt_y`, so an official evaluator may score against a
+convention we deliberately do not aim at. That was measured rather than
+argued — 700 freshly generated scenes on seeds disjoint from every split above,
+scored both ways in one pass:
+
+| split | n | acc@5px corrected | acc@5px upstream | Δ |
+| --- | ---: | ---: | ---: | ---: |
+| randomized | 300 | 0.9867 | 0.8067 | −0.180 |
+| fixed `medium` | 200 | 1.0000 | 1.0000 | **0.000** |
+| fixed `severe` | 200 | 0.9850 | 0.9850 | **0.000** |
+| **all** | **700** | **0.9900** | 0.9129 | −0.077 |
+
+**The entire gap is barrel distortion, and the organizer's generator does not
+apply any.** `severe` runs shear 4.0 px with 1.8 px jitter — the most violent
+raster drift in the suite — and the frame convention costs it *nothing* at 5 px.
+Splitting the randomized split by its barrel coefficient isolates the cause:
+
+| scenes | n | acc@5px corrected | acc@5px upstream |
+| --- | ---: | ---: | ---: |
+| near-zero barrel, \|k\| < 0.005 | 81 | 0.975 | 0.963 |
+| strong barrel, \|k\| > 0.015 | 75 | 0.987 | **0.613** |
+
+`GenerationParams.barrel_distortion_k` defaults to **0.0**, and none of the
+noise levels in `generator/baseline_solution/evaluate.py` set it — barrel is a
+difficulty knob *we* added. So on organizer-generated data the label convention
+costs nothing at the 5 px tolerance, which
+[`scripts/selfcheck.py`](scripts/selfcheck.py) confirms directly: it renders
+scenes with the upstream generator and scores them against `gt_x`/`gt_y`,
+returning a median around 0.4–0.6 px with no failures.
+
+Where the convention *does* bite is precision. At 1 px the upstream label costs
+0.687 → 0.207 on randomized and 0.935 → 0.720 on `medium`, because the row
+shear displaces the pattern by around a pixel even when barrel is off. **Never
+quote acc@1px without naming the frame.**
+
+`evaluate.py` therefore scores both frames by default:
+
+```bash
+python evaluate.py --splits data/test --weights weights/driftsense.pt --gt-frame both
+```
+
+`--gt-frame corrected|upstream` picks one. The per-sample gap is in every
+manifest as `label_shift_px`.
+
+### Reproducing the numbers
+
+Every result file records the checkpoint that produced it, so no table here
+floats free of the weights it came from.
+
+| | |
+| --- | --- |
+| shipped weights | `weights/driftsense.pt` |
+| SHA256 | `90db89f9861c2c9ea386eaa03e45ff03fc4962dc7e349aa00423621a5fce1488` |
+| trained epochs | 24 (v5f, epoch 23) |
+| decode | dihedral TTA ×8 + ZNCC refine ±4 px |
+| all-700 acc@5px | **0.980** (14 failures) |
+
+`weights/driftsense_prev_0.9757.pt` (12 epochs, `615c9ca2…`) is the previous
+checkpoint, kept for the paired comparison in [RTX_LOG.md](RTX_LOG.md); it
+scores 0.9757. Anything quoting 0.9757 is that file, not the shipped one.
+
+```bash
+# regenerate results/results.json (needs the data splits — see below)
+python evaluate.py --splits data/test data/test_medium data/test_severe \
+    --weights weights/driftsense.pt --out results
+
+# confirm which checkpoint you are holding
+python -c "import torch; c=torch.load('weights/driftsense.pt', map_location='cpu', weights_only=False); print(c['epoch'])"
+```
+
+`evaluate.py` prints the checkpoint hash and epoch on every run and writes them
+into `results/results.json` under `provenance`. The data splits are ~15 GB and
+regenerated rather than committed — see [Generating data](#generating-data).
 
 ### Where the gain comes from
 
@@ -483,15 +648,18 @@ letting it drag the answer off.
 Ensembling a second checkpoint *hurt* and was dropped. Disable TTA with
 `infer.py --no-tta` (~7× faster — see the measured trade-off below).
 
-(These decode figures were measured on validation with the phase-1 checkpoint,
-which is what they were used to tune. They were not re-tuned afterwards: the
-shipped phase-3 weights use the identical decode settings and score higher in
-absolute terms — see the tables above. Treat this table as the record of how
-the decode was chosen, not as a description of the current model.)
+(These decode figures were measured on validation with the **phase-1**
+checkpoint, which is what they were used to tune. They were not re-tuned
+afterwards: every later checkpoint, including the shipped **phase-4** one, uses
+the identical decode settings and scores higher in absolute terms — see the
+tables above. Treat this table as the record of how the decode was chosen, not
+as a description of the current model.)
 
-**TTA is worth much less than it used to be.** Re-measured on the shipped
-phase-3 weights, the gain is small: the model is now robust enough on its own
-that voting has little left to fix.
+**TTA is worth much less than it used to be.** Re-measured on the **phase-3**
+checkpoint, the gain is small: the model is now robust enough on its own that
+voting has little left to fix. (Phase 3, not the shipped phase-4 weights — this
+ablation was not re-run after promotion, so read the two columns against each
+other, not against the headline 0.980.)
 
 | split | single view | + TTA ×8 | Δ acc@5px | mean error |
 | --- | ---: | ---: | ---: | --- |
@@ -618,3 +786,31 @@ The synthetic-data generator in [`generator/`](generator/) is
 vendored unmodified. This project adds the geometry-corrected ground truth,
 the reproducible generation wrapper, the learned localiser, and the evaluation
 harness. Full references in [`CITATIONS.md`](CITATIONS.md).
+
+---
+
+## Problem-statement degradation coverage
+
+The statement requires the generator to model *"independent sensor noise per
+image, edge-brightening (mimicking SEM behavior), blur, rotation, and scaling
+variations"*. Coverage:
+
+| required | where |
+| --- | --- |
+| independent sensor noise per image | shot, detector, speckle and impulse noise, drawn per frame — [CITATIONS §2](CITATIONS.md) |
+| blur | `gaussian_psf_blur`, with astigmatism — [CITATIONS §2](CITATIONS.md) |
+| edge-brightening | `apply_edge_brightening`, `--edge-brightening` — [CITATIONS §10](CITATIONS.md) |
+| rotation | `--rotation-deg`, applied in the affine sampling step — [CITATIONS §10](CITATIONS.md) |
+| scaling variations | `--magnification` (9–11×) — [CITATIONS §10](CITATIONS.md) |
+
+```bash
+python generate_dataset.py --architecture mixed --num-pairs 20 \
+    --edge-brightening 0.25 --rotation-deg 2.0 --magnification 9.5
+```
+
+All three pose/edge knobs default to the nominal no-op, so every split reported
+above regenerates byte-for-byte. **The shipped weights were trained without
+them** — the model handles pose through the inference-side search described
+under [Robustness and speed](#robustness-and-speed), not through training, and
+accuracy on rotated or rescaled data has not been characterised. That is the
+honest limit of what is claimed here.
