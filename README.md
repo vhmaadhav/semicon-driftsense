@@ -53,12 +53,12 @@ scored against the published credit tiers:
 
 | Component | Score | Detail |
 | --------- | ----- | ------ |
-| Localisation | **0.839** | 94% ≤5px, 92% ≤3px, 82% ≤2px, 57% ≤1px; median 0.86 px |
+| Localisation | **0.872** | 94% ≤5px, 93% ≤3px, 88% ≤2px, 68% ≤1px; median 0.55 px |
 | Pose — scale | **0.785** | median relative error 0.86% |
 | Pose — rotation | **0.875** | median error 0.11° |
 | Rejection | **F1 0.978** | at the shipped threshold; stable over 0.20–0.35 |
 | Calibration | **AUC 0.993** | score against per-pair correctness |
-| Runtime | **2.77 s** median | p90 3.55 s, max 3.95 s on 4 threads; no pair over 5 s |
+| Runtime | **3.31 s** median | p90 4.38 s, max 5.20 s on 4 threads |
 
 ### How it works
 
@@ -77,6 +77,16 @@ matched-scale input — and the pose is handled around it:
    full resolution, and the best one wins. A wrong scale basin correlates near
    zero there while the right one is around 0.9, so the decision is easy where
    the coarse probe could not make it.
+
+A convention bug is fixed alongside this. The nominal path labels a crop with
+the upstream formula `x0 / 10 + 50`, while the posed path mapped the crop centre
+through the rendering affine, which uses pixel-centre convention. The two differ
+by exactly `(m-1)/2m` — 0.45 px at 10×. That is invisible against a 5 px
+tolerance but is most of the budget at the 1 px tier, and it biased every posed
+training target. Confirmed by brute-force ZNCC at the true pose, which showed a
+constant +0.442 px residual in y with a standard deviation of only 0.107.
+Correcting it moved ≤1px from 57% to 68% and the median error from 0.86 px to
+0.55 px on identical scenes.
 
 Refinement deliberately happens in the **native** frame, never the canonical
 one, so the reported centre never inherits the resampling blur — the credit
