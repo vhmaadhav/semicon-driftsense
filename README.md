@@ -99,6 +99,17 @@ those pairs sat 15.8% off in scale, against 0.89% for the successes. They were
 not near-misses but confident lock-ons to the wrong repeat, and searching more
 than one hypothesis recovers nearly all of them.
 
+### Where the remaining points are
+
+[`IMPROVING.md`](IMPROVING.md) records the measured standing against each
+scoring component, the two ceilings that bound it — the ≤1px tier is capped by
+a σ≈1 px per-row jitter floor in the label, and extra pose hypotheses beyond
+three are exhausted — and the ranked work that is still worth doing.
+
+Note on weights: `weights/driftsense.pt` is unchanged from Phase 1. Every gain
+here is inference-side; the Phase 2 fine-tune produced no validation
+improvement and is not shipped.
+
 ### Generating Phase 2 data
 
 ```bash
