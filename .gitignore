@@ -7,6 +7,14 @@ output/
 venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.pytest-tmp/
+.uv-cache/
+
+# Local editor and Graphify workspace
+.obsidian/
+.codex/
+graphify-out/
 
 # Training artifacts (the shipped weights file itself IS committed)
 logs/
