@@ -148,6 +148,197 @@ def _probe(img: np.ndarray, k: int = POSE_PROBE_DOWNSCALE) -> np.ndarray:
                       interpolation=cv2.INTER_AREA)
 
 
+def canonicalize_search(search: np.ndarray, magnification: float, rotation_deg: float,
+                       target: float = float(SCALE)) -> tuple[np.ndarray, np.ndarray]:
+    """Resample a search frame to the nominal pose. Returns (frame, affine).
+
+    The network was trained on matched-scale, unrotated pairs and that is where
+    its sub-pixel behaviour lives, so rather than teach it to tolerate pose we
+    undo the pose first and hand it the input it already understands. The
+    returned 2x3 affine maps native search coordinates to canonical ones;
+    invert it to bring a canonical answer back.
+
+    Only the *coarse* decision runs here. Sub-pixel refinement deliberately
+    goes back to the native frame, so the answer never inherits this
+    resampling's interpolation blur.
+    """
+    k = magnification / target
+    h, w = search.shape[:2]
+    n_h, n_w = int(round(h * k)), int(round(w * k))
+    M = cv2.getRotationMatrix2D(((w - 1) / 2.0, (h - 1) / 2.0), -rotation_deg, k)
+    M[0, 2] += (n_w - 1) / 2.0 - (w - 1) / 2.0
+    M[1, 2] += (n_h - 1) / 2.0 - (h - 1) / 2.0
+    out = cv2.warpAffine(search, M, (n_w, n_h), flags=cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_REPLICATE)
+    return out, M
+
+
+def uncanonicalize_point(M: np.ndarray, x: float, y: float) -> tuple[float, float]:
+    """Map a canonical-frame point back to native search coordinates."""
+    inv = cv2.invertAffineTransform(M)
+    return (float(inv[0, 0] * x + inv[0, 1] * y + inv[0, 2]),
+            float(inv[1, 0] * x + inv[1, 1] * y + inv[1, 2]))
+
+
+# Phase 2 discloses the pose bounds outright and the rules explicitly permit
+# hard-coding them, so the wide search below is bounded by fact rather than by
+# guesswork. Phase 1's narrow POSE_SCALES/POSE_ROTATIONS stay as they are: the
+# shipped weights and every Phase 1 number were produced with them.
+PHASE2_SCALE_BOUNDS = (8.0, 12.0)
+PHASE2_ROTATION_BOUNDS = (-5.0, 5.0)
+
+
+def _golden_max(f, lo: float, hi: float, iters: int = 8) -> tuple[float, float]:
+    """Maximise a unimodal f on [lo, hi]. Returns (argmax, max).
+
+    Correlation-vs-pose is single-peaked near the true pose, which is what
+    makes golden section legitimate here -- and it reaches the 1% scale /
+    0.25 deg rotation tolerances in ~8 evaluations, where an equally fine grid
+    would need ~40.
+    """
+    invphi = (5.0 ** 0.5 - 1.0) / 2.0
+    a, b = lo, hi
+    c, d = b - invphi * (b - a), a + invphi * (b - a)
+    fc, fd = f(c), f(d)
+    for _ in range(iters):
+        if fc > fd:
+            b, d, fd = d, c, fc
+            c = b - invphi * (b - a)
+            fc = f(c)
+        else:
+            a, c, fc = c, d, fd
+            d = a + invphi * (b - a)
+            fd = f(d)
+    return ((c, fc) if fc > fd else (d, fd))
+
+
+def _refine_pose_local(reference, search, f0: float, r0: float,
+                       span_s: float, span_r: float,
+                       scale_bounds, rotation_bounds, rounds: int = 2):
+    """Golden-section polish of one (scale, rotation) hypothesis, on a crop
+    around its own peak so each hypothesis is judged on its own best window."""
+    lo_s, hi_s = scale_bounds
+    lo_r, hi_r = rotation_bounds
+    tpl = make_template(reference, f0, r0)
+    res = cv2.matchTemplate(search, tpl, cv2.TM_CCOEFF_NORMED)
+    _, _, _, loc = cv2.minMaxLoc(res)
+    th, tw = tpl.shape[:2]
+    pad = int(max(th, tw) * 1.5)
+    y0, x0 = max(int(loc[1]) - pad, 0), max(int(loc[0]) - pad, 0)
+    crop = search[y0:int(loc[1]) + th + pad, x0:int(loc[0]) + tw + pad]
+
+    def fine(f, r):
+        t = make_template(reference, f, r)
+        if t.shape[0] >= crop.shape[0] or t.shape[1] >= crop.shape[1]:
+            return -np.inf
+        return float(cv2.minMaxLoc(cv2.matchTemplate(crop, t, cv2.TM_CCOEFF_NORMED))[1])
+
+    f, r, peak = f0, r0, fine(f0, r0)
+    for _ in range(rounds):
+        f, peak = _golden_max(lambda v: fine(v, r), max(f - span_s, lo_s), min(f + span_s, hi_s))
+        r, peak = _golden_max(lambda v: fine(f, v), max(r - span_r, lo_r), min(r + span_r, hi_r))
+        span_s, span_r = span_s / 3.0, span_r / 3.0
+    return float(f), float(r), float(peak)
+
+
+def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
+                    scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
+                    rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
+                    coarse_scales: int = 17, coarse_rotations: int = 11) -> list:
+    """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
+
+    Correlation against a periodic layout is multi-peaked in *scale*: a wrong
+    magnification can align the template with the wrong repeat and score well.
+    Measured on validation, every localisation failure was one of these -- the
+    failures sat 15.8% off in scale while the successes sat at 0.89%, so they
+    were not near-misses but confident lock-ons to the wrong basin.
+
+    Committing to the single best coarse peak therefore throws the answer away
+    whenever the true basin ranks second. Returning the top few local maxima
+    instead lets the caller settle it with a full-resolution ZNCC check, which
+    separates the basins cleanly where the low-resolution probe cannot.
+    """
+    lo_s, hi_s = scale_bounds
+    lo_r, hi_r = rotation_bounds
+    probe_search = _probe(search)
+
+    def coarse(f, r=0.0):
+        return _peak_score(probe_search, _probe(make_template(reference, f, r)))
+
+    grid = np.linspace(lo_s, hi_s, coarse_scales)
+    vals = [coarse(f) for f in grid]
+    # Interior local maxima, so two samples on one hill do not both survive.
+    peaks = [i for i in range(len(grid))
+             if (i == 0 or vals[i] >= vals[i - 1])
+             and (i == len(grid) - 1 or vals[i] >= vals[i + 1])]
+    peaks.sort(key=lambda i: -vals[i])
+
+    span_s = (hi_s - lo_s) / (coarse_scales - 1)
+    span_r = (hi_r - lo_r) / (coarse_rotations - 1)
+    out = []
+    for i in peaks[:k]:
+        f0 = float(grid[i])
+        r0 = float(max(np.linspace(lo_r, hi_r, coarse_rotations),
+                       key=lambda r: coarse(f0, r)))
+        out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
+                                      scale_bounds, rotation_bounds))
+    return out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
+
+
+def choose_pose_wide(reference: np.ndarray, search: np.ndarray,
+                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
+                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
+                     coarse_scales: int = 11, coarse_rotations: int = 11,
+                     rounds: int = 2) -> tuple[float, float, float]:
+    """Recover (factor, rotation_deg, peak_correlation) over the Phase 2 bounds.
+
+    Three stages, cheapest first, because the CPU budget is 5 s median:
+
+    1. A coarse grid over the full disclosed box, on half-resolution probes.
+       Only the ranking matters here, so resolution is wasted effort.
+    2. Localise the coarse winner's peak and crop the search frame around it.
+       Refinement only ever needs the neighbourhood of the match, and a crop
+       turns every later correlation from a 1000x1000 problem into a small one.
+    3. Alternating golden-section refinement of scale and rotation on that
+       crop, at full resolution -- which is where the 1% / 0.25 deg pose
+       tolerances are actually won.
+    """
+    lo_s, hi_s = scale_bounds
+    lo_r, hi_r = rotation_bounds
+    probe_search = _probe(search)
+
+    def coarse(factor, rot=0.0):
+        return _peak_score(probe_search, _probe(make_template(reference, factor, rot)))
+
+    best_f = max((f for f in np.linspace(lo_s, hi_s, coarse_scales)), key=lambda f: coarse(f))
+    best_r = max((r for r in np.linspace(lo_r, hi_r, coarse_rotations)),
+                 key=lambda r: coarse(best_f, r))
+
+    # Crop around the coarse peak so refinement is cheap.
+    tpl = make_template(reference, best_f, best_r)
+    res = cv2.matchTemplate(search, tpl, cv2.TM_CCOEFF_NORMED)
+    _, _, _, loc = cv2.minMaxLoc(res)
+    th, tw = tpl.shape[:2]
+    pad = int(max(th, tw) * 1.5)
+    y0 = max(int(loc[1]) - pad, 0)
+    x0 = max(int(loc[0]) - pad, 0)
+    crop = search[y0:int(loc[1]) + th + pad, x0:int(loc[0]) + tw + pad]
+
+    def fine(factor, rot):
+        return _peak_score(crop, make_template(reference, factor, rot))
+
+    span_s = (hi_s - lo_s) / (coarse_scales - 1)
+    span_r = (hi_r - lo_r) / (coarse_rotations - 1)
+    peak = fine(best_f, best_r)
+    for _ in range(rounds):
+        f_lo, f_hi = max(best_f - span_s, lo_s), min(best_f + span_s, hi_s)
+        best_f, peak = _golden_max(lambda f: fine(f, best_r), f_lo, f_hi)
+        r_lo, r_hi = max(best_r - span_r, lo_r), min(best_r + span_r, hi_r)
+        best_r, peak = _golden_max(lambda r: fine(best_f, r), r_lo, r_hi)
+        span_s, span_r = span_s / 3.0, span_r / 3.0
+    return float(best_f), float(best_r), float(peak)
+
+
 def choose_pose(reference: np.ndarray, search: np.ndarray,
                 margin: float = POSE_MARGIN) -> tuple[float, float]:
     """Estimate (downsample factor, rotation degrees) by correlation evidence.
@@ -307,6 +498,111 @@ def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
             best = {"x": loc[0] + tw / 2.0, "y": loc[1] + th / 2.0, "score": float(score)}
     if best is None:
         return {"x": search.shape[1] / 2.0, "y": search.shape[0] / 2.0, "score": 0.0}
+    return best
+
+
+def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
+                magnification: float, rotation_deg: float,
+                scale_band: float = 0.03, rot_band: float = 0.8,
+                rounds: int = 2, iters: int = 7) -> tuple[float, float, float]:
+    """Re-fit (scale, rotation) against a known match location.
+
+    The first pose estimate is made before the match is located, from a coarse
+    peak on half-resolution probes -- good enough to canonicalise, but the
+    scale credit tier is 1% wide and that estimate sits right on it. Once the
+    ZNCC stage has placed the match to sub-pixel accuracy, the pose can be
+    re-fit against that location instead: the correlation is evaluated in a
+    small window around the known centre, so it is both sharper (no competing
+    repeats in frame) and cheap (a ~250 px window, not 1000 px).
+
+    Returns (scale, rotation, peak). Bands are deliberately narrow -- this
+    polishes an estimate, it does not search.
+    """
+    tpl0 = make_template(reference, magnification, rotation_deg)
+    th, tw = tpl0.shape[:2]
+    pad = int(max(th, tw) * 0.6)
+    y0 = max(int(round(y - th / 2.0)) - pad, 0)
+    x0 = max(int(round(x - tw / 2.0)) - pad, 0)
+    win = search[y0:int(round(y + th / 2.0)) + pad, x0:int(round(x + tw / 2.0)) + pad]
+
+    def fit(m, r):
+        t = make_template(reference, m, r)
+        if t.shape[0] >= win.shape[0] or t.shape[1] >= win.shape[1]:
+            return -np.inf
+        return float(cv2.minMaxLoc(cv2.matchTemplate(win, t, cv2.TM_CCOEFF_NORMED))[1])
+
+    m, r = float(magnification), float(rotation_deg)
+    peak = fit(m, r)
+    ds, dr = magnification * scale_band, rot_band
+    for _ in range(rounds):
+        m, peak = _golden_max(lambda v: fit(v, r), m - ds, m + ds, iters)
+        r, peak = _golden_max(lambda v: fit(m, v), r - dr, r + dr, iters)
+        ds, dr = ds / 3.0, dr / 3.0
+    return m, r, peak
+
+
+@torch.no_grad()
+def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
+                  refine: bool = True, pose: tuple[float, float] | None = None,
+                  refine_radius: int = REFINE_RADIUS, polish: bool = True,
+                  hypotheses: int = 3, **kw) -> dict:
+    """Phase 2 inference: unknown scale and rotation, with a rejection score.
+
+    For each pose hypothesis: canonicalise the search frame, let the network
+    make the coarse decision on the matched-scale input it was trained for,
+    map the answer back, and verify by ZNCC at native resolution. The
+    hypothesis with the best native ZNCC wins.
+
+    Two deliberate choices:
+
+    * **Refinement happens in the native frame, never the canonical one.**
+      Otherwise the answer inherits the resampling blur, and the credit tiers
+      (1.00 at 1 px against 0.40 at 5 px) make that expensive.
+    * **The winner is chosen by native ZNCC, not by the network score or the
+      low-resolution pose peak.** A wrong scale basin can out-score the right
+      one on a half-resolution probe -- that was every measured localisation
+      failure -- but at full resolution the wrong basin correlates near zero
+      while the right one is around 0.9, so the decision becomes easy.
+    """
+    def attempt(m: float, rot: float) -> dict:
+        canon, M = canonicalize_search(search, m, rot)
+        coarse = locate(model, reference, canon, device, refine=False,
+                        factor=float(SCALE), rotation_deg=0.0, **kw)
+        cx, cy = uncanonicalize_point(M, coarse["x"], coarse["y"])
+        out = dict(coarse)
+        out.update({"x": cx, "y": cy, "scale": float(m), "theta": float(rot),
+                    "canonical": (coarse["x"], coarse["y"])})
+        if refine:
+            template = make_template(reference, m, rot)
+            rx, ry, zn = refine_zncc(standardize(search / 255.0),
+                                     standardize(template / 255.0),
+                                     cx, cy, radius=refine_radius)
+            if np.hypot(rx - cx, ry - cy) <= 10.0:
+                out.update({"x": rx, "y": ry})
+            out["zncc"] = float(zn)
+        return out
+
+    if pose is not None:
+        best = attempt(float(pose[0]), float(pose[1]))
+    else:
+        cands = pose_candidates(reference, search, k=max(int(hypotheses), 1))
+        best = None
+        for m, rot, coarse_peak in cands:
+            r = attempt(m, rot)
+            r["pose_peak"] = float(coarse_peak)
+            key = r.get("zncc", r.get("score", -np.inf))
+            if best is None or key > best.get("zncc", best.get("score", -np.inf)):
+                best = r
+        best["n_hypotheses"] = len(cands)
+
+    if refine and polish:
+        # Rotation only. Measured: polishing rotation raised its credit
+        # 0.808 -> 0.824, while polishing scale *lowered* scale credit
+        # 0.860 -> 0.808 -- the polish window is barely wider than the
+        # template, so correlation-vs-scale is nearly flat inside it.
+        _, pr, _ = polish_pose(reference, search, best["x"], best["y"],
+                               best["scale"], best["theta"])
+        best["theta"] = float(pr)
     return best
 
 

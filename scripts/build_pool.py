@@ -69,6 +69,11 @@ def main():
     p.add_argument("--workers", type=int, default=6,
                    help="6 saturates generation on this machine; more does not help")
     p.add_argument("--max-gb", type=float, default=120.0, help="stop if the pool exceeds this")
+    p.add_argument("--phase2", action="store_true",
+                   help="build the pool at the disclosed Phase 2 operating point: "
+                        "magnification 8-12x, rotation +/-5 deg, 20%% absent pairs")
+    p.add_argument("--absent-frac", type=float, default=0.2,
+                   help="absent-pair fraction under --phase2")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
@@ -96,6 +101,8 @@ def main():
                "--store-templates",
                "--output-dir", out_dir,
                "--progress-every", "500"]
+        if args.phase2:
+            cmd += ["--phase2", "--absent-frac", str(args.absent_frac)]
         if args.dry_run:
             print(" ".join(cmd))
             continue

@@ -12,6 +12,7 @@ through them -- see correct_gt().
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -33,6 +34,11 @@ from src.presets import PRESETS  # noqa: E402
 
 SEARCH_SIZE_PX = REFERENCE_SIZE_PX  # 1000; search frame is also 1000x1000
 BOX_PX = REFERENCE_SIZE_PX // SCALE_FACTOR  # 100
+
+# Sentinel written into every geometry column of an absent (found=0) pair.
+# Deliberately outside the valid [0, 1000) image range so that scoring code
+# which forgets to filter on `found` fails loudly instead of quietly.
+ABSENT_GT = -1.0
 
 # Fixed-condition presets. `low`/`medium`/`high`/`severe` mirror the noise
 # levels in generator/baseline_solution/evaluate.py so our numbers stay
@@ -116,6 +122,72 @@ class PoseParams:
     magnification: float = float(SCALE_FACTOR)
 
 
+# Salt that decorrelates the pose/presence stream from the scene stream, so a
+# nominal PoseSpec leaves every pre-Phase-2 sample byte-identical.
+_POSE_STREAM_SALT = 0x9E3779B97F4A7C15
+
+
+@dataclass(frozen=True)
+class PoseSpec:
+    """Per-pair *distribution* over PoseParams, plus an absent-pair rate.
+
+    Phase 1 fixed the pose for a whole split; Phase 2 draws zoom uniformly in
+    [8,12] and rotation in +/-5 deg independently for every pair, and leaves
+    ~20% of pairs with no true instance at all. Each field is an inclusive
+    (lo, hi) range; hi <= lo pins the value, which is what keeps the nominal
+    spec a no-op.
+    """
+
+    rotation_deg: tuple[float, float] = (0.0, 0.0)
+    magnification: tuple[float, float] = (float(SCALE_FACTOR), float(SCALE_FACTOR))
+    edge_brightening: tuple[float, float] = (0.0, 0.0)
+    # Fraction of pairs generated with no true instance in the search frame.
+    absent_frac: float = 0.0
+
+    def required_canvas_px(self) -> int:
+        """Fine-canvas extent needed so the search frame is fully covered.
+
+        A 1000 px frame at magnification m spans 1000*m fine pixels, and a
+        rotation by theta widens the footprint by |cos|+|sin|. Sizing to the
+        worst case in the spec is what keeps `BORDER_REPLICATE` from smearing
+        a fake border into any frame. Never shrinks below the nominal size, so
+        a Phase 1 spec keeps the exact 10000 px canvas it always had.
+        """
+        theta = math.radians(max(abs(self.rotation_deg[0]), abs(self.rotation_deg[1])))
+        span = SEARCH_SIZE_PX * max(self.magnification) * (abs(math.cos(theta)) + abs(math.sin(theta)))
+        need = int(math.ceil(span / SCALE_FACTOR) * SCALE_FACTOR)
+        return max(need, FINE_CANVAS_SIZE_PX)
+
+    @staticmethod
+    def fixed(pose: PoseParams) -> "PoseSpec":
+        """Wrap a single PoseParams as a degenerate (pinned) spec."""
+        return PoseSpec(rotation_deg=(pose.rotation_deg, pose.rotation_deg),
+                        magnification=(pose.magnification, pose.magnification),
+                        edge_brightening=(pose.edge_brightening, pose.edge_brightening))
+
+    def sample(self, rng) -> tuple[PoseParams, bool]:
+        """Draw one (pose, present) for a single pair."""
+        present = not (self.absent_frac > 0.0
+                       and float(rng.random()) < self.absent_frac)
+
+        def _u(lohi: tuple[float, float]) -> float:
+            lo, hi = float(lohi[0]), float(lohi[1])
+            return lo if hi <= lo else float(rng.uniform(lo, hi))
+
+        return PoseParams(edge_brightening=_u(self.edge_brightening),
+                          rotation_deg=_u(self.rotation_deg),
+                          magnification=_u(self.magnification)), present
+
+
+def as_pose_spec(pose) -> PoseSpec:
+    """Accept None, a legacy PoseParams, or a PoseSpec; always return a spec."""
+    if pose is None:
+        return PoseSpec()
+    if isinstance(pose, PoseSpec):
+        return pose
+    return PoseSpec.fixed(pose)
+
+
 def apply_edge_brightening(img: np.ndarray, strength: float) -> np.ndarray:
     """Brighten feature edges, the signature contrast mechanism of SEM.
 
@@ -161,6 +233,40 @@ def apply_affine_point(M: np.ndarray, x: float, y: float) -> tuple[float, float]
             float(M[1, 0] * x + M[1, 1] * y + M[1, 2]))
 
 
+def _pick_visible_crop_origin(zone_result: dict, params, rng, canvas_px: int,
+                             affine, magnification: float, rotation_deg: float,
+                             tries: int = 48) -> tuple[int, int]:
+    """Pick a reference crop whose footprint really lands inside the search frame.
+
+    Below 10x the canvas is wider than the frame shows, so a crop drawn
+    uniformly over the canvas can sit entirely outside the visible field --
+    and would then be written out as `found=1` with a ground-truth point off
+    the edge of the image. That is a silently mislabelled positive, the worst
+    kind for both training and rejection calibration, so reject and redraw.
+    """
+    if affine is None:
+        return _pick_crop_origin(zone_result, params, rng, canvas_px)
+    th = math.radians(rotation_deg)
+    half = (REFERENCE_SIZE_PX / magnification) * 0.5 * (abs(math.cos(th)) + abs(math.sin(th)))
+    lo, hi = half, SEARCH_SIZE_PX - half
+    if lo >= hi:
+        # Reference footprint exceeds the frame; containment is impossible, so
+        # fall back to merely requiring the centre to be on-image.
+        lo, hi = 0.0, float(SEARCH_SIZE_PX)
+    for _ in range(tries):
+        x0, y0 = _pick_crop_origin(zone_result, params, rng, canvas_px)
+        cx, cy = apply_affine_point(affine, x0 + REFERENCE_SIZE_PX / 2.0,
+                                    y0 + REFERENCE_SIZE_PX / 2.0)
+        if lo <= cx <= hi and lo <= cy <= hi:
+            return x0, y0
+    # Exhausted: place the crop at whatever canvas point maps to frame centre.
+    inv = cv2.invertAffineTransform(affine)
+    cx, cy = apply_affine_point(inv, SEARCH_SIZE_PX / 2.0, SEARCH_SIZE_PX / 2.0)
+    max_off = canvas_px - REFERENCE_SIZE_PX
+    return (int(np.clip(cx - REFERENCE_SIZE_PX / 2.0, 0, max_off)),
+            int(np.clip(cy - REFERENCE_SIZE_PX / 2.0, 0, max_off)))
+
+
 def image_search_traced(full_canvas: np.ndarray, p: GenerationParams,
                         rng: np.random.Generator,
                         pose: "PoseParams | None" = None) -> tuple[np.ndarray, np.ndarray, float]:
@@ -169,8 +275,11 @@ def image_search_traced(full_canvas: np.ndarray, p: GenerationParams,
     img = sem_imaging.gaussian_psf_blur(
         full_canvas, p.beam_spot_size_nm, PIXEL_SIZE_REF_NM, p.astigmatism_ratio)
 
-    if pose.rotation_deg == 0.0 and pose.magnification == float(factor):
-        # Default path, byte-identical to upstream: a pure box average.
+    if (pose.rotation_deg == 0.0 and pose.magnification == float(factor)
+            and full_canvas.shape[0] == FINE_CANVAS_SIZE_PX):
+        # Default path, byte-identical to upstream: a pure box average. An
+        # enlarged canvas must take the affine branch even at a nominal pose,
+        # or the box average would emit a frame larger than 1000 px.
         img = sem_imaging.downsample_area_average(img, factor)
     else:
         # Rotation and/or off-nominal magnification: one affine sampling step.
@@ -291,7 +400,13 @@ def build_one(job: tuple) -> list[dict]:
     """
     (idx, entropy, architectures, noise, out_dirs, crops, store_templates,
      pose) = job
-    pose = pose or PoseParams()
+    spec = as_pose_spec(pose)
+    # Pose and presence come from a stream derived from -- but distinct from --
+    # the scene stream, so turning Phase 2 sampling on does not reshuffle the
+    # scenes themselves and a nominal spec reproduces the old splits exactly.
+    pose_rng = np.random.Generator(np.random.PCG64(
+        np.random.SeedSequence(entropy ^ _POSE_STREAM_SALT)))
+    pose, present = spec.sample(pose_rng)
     ref_dir, search_dir = out_dirs
 
     rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(entropy)))
@@ -300,21 +415,42 @@ def build_one(job: tuple) -> list[dict]:
     overrides = sample_random_params(rng) if noise == "randomized" else dict(NOISE_PRESETS[noise])
     params = GenerationParams(**overrides)
 
-    zone_result = generate_fine_canvas_zoned(architecture, rng, params)
+    canvas_px = spec.required_canvas_px()
+    zone_result = generate_fine_canvas_zoned(architecture, rng, params, canvas_px)
     fine_canvas = zone_result["canvas"]
+
+    # Absent pairs (Phase 2 Set C): crop the reference from an independently
+    # generated die region of the *same* architecture under the *same* imaging
+    # parameters. It stays periodically similar and entirely plausible -- which
+    # is the point, since a decoy that looked different would train the
+    # rejector on the wrong cue -- but no true instance of it is in the frame.
+    if present:
+        ref_zone_result, ref_canvas = zone_result, fine_canvas
+    else:
+        decoy_seed = int(pose_rng.integers(0, 2**62))
+        decoy_rng = np.random.Generator(np.random.PCG64(
+            np.random.SeedSequence(decoy_seed)))
+        ref_zone_result = generate_fine_canvas_zoned(architecture, decoy_rng, params, canvas_px)
+        ref_canvas = ref_zone_result["canvas"]
 
     search_img, row_shift, k = image_search_traced(fine_canvas, params, rng, pose)
     posed = (pose.rotation_deg != 0.0
-             or pose.magnification != float(SCALE_FACTOR))
+             or pose.magnification != float(SCALE_FACTOR)
+             or canvas_px != FINE_CANVAS_SIZE_PX)
     affine = search_affine(fine_canvas.shape[0], SEARCH_SIZE_PX,
                            pose.magnification, pose.rotation_deg) if posed else None
+    # The reference crop is taken from the decoy canvas on absent pairs, so the
+    # visibility constraint only applies when the instance is really there.
+    crop_affine = affine if present else None
     search_rel = os.path.join("search", f"{idx:05d}.png")
     cv2.imwrite(os.path.join(search_dir, f"{idx:05d}.png"), search_img)
 
     rows = []
     for c in range(crops):
-        x0, y0 = _pick_crop_origin(zone_result, params, rng)
-        crop = fine_canvas[y0:y0 + REFERENCE_SIZE_PX, x0:x0 + REFERENCE_SIZE_PX]
+        x0, y0 = _pick_visible_crop_origin(
+            ref_zone_result, params, rng, canvas_px, crop_affine,
+            pose.magnification, pose.rotation_deg)
+        crop = ref_canvas[y0:y0 + REFERENCE_SIZE_PX, x0:x0 + REFERENCE_SIZE_PX]
 
         reference_img = sem_imaging.image_reference(
             crop,
@@ -335,7 +471,13 @@ def build_one(job: tuple) -> list[dict]:
         )
         reference_img = apply_edge_brightening(reference_img, pose.edge_brightening)
 
-        if affine is None:
+        if not present:
+            # No true instance: there is no centre to report. ABSENT_GT marks
+            # every geometry column so a consumer that forgets to filter on
+            # `found` produces an obviously wrong number rather than a
+            # plausible one.
+            gt_x = gt_y = float(ABSENT_GT)
+        elif affine is None:
             gt_x = x0 / SCALE_FACTOR + BOX_PX / 2.0
             gt_y = y0 / SCALE_FACTOR + BOX_PX / 2.0
         else:
@@ -343,7 +485,8 @@ def build_one(job: tuple) -> list[dict]:
             # centre mapped through the very matrix that rendered the frame.
             gt_x, gt_y = apply_affine_point(
                 affine, x0 + REFERENCE_SIZE_PX / 2.0, y0 + REFERENCE_SIZE_PX / 2.0)
-        gt_x_corr, gt_y_corr = correct_gt(gt_x, gt_y, row_shift, k)
+        gt_x_corr, gt_y_corr = ((float(ABSENT_GT), float(ABSENT_GT)) if not present
+                                else correct_gt(gt_x, gt_y, row_shift, k))
 
         if store_templates:
             # Training only ever consumes the reference through an exact 10x
@@ -368,11 +511,13 @@ def build_one(job: tuple) -> list[dict]:
             "reference_path": ref_rel,
             "search_path": search_rel,
             "gt_x": gt_x, "gt_y": gt_y,
+            "found": int(present),
             "rotation_deg": pose.rotation_deg,
             "magnification": pose.magnification,
             "edge_brightening": pose.edge_brightening,
             "gt_x_corr": gt_x_corr, "gt_y_corr": gt_y_corr,
-            "gt_box_x": x0 / SCALE_FACTOR, "gt_box_y": y0 / SCALE_FACTOR,
+            "gt_box_x": x0 / SCALE_FACTOR if present else float(ABSENT_GT),
+            "gt_box_y": y0 / SCALE_FACTOR if present else float(ABSENT_GT),
             "gt_box_w": BOX_PX, "gt_box_h": BOX_PX,
             "crop_x0_fine": x0, "crop_y0_fine": y0,
             "architecture": architecture,
@@ -390,7 +535,7 @@ def build_one(job: tuple) -> list[dict]:
 # GenerationParams field so a row fully reproduces its own sample.
 BASE_FIELDS = [
     "id", "canvas_id", "reference_path", "search_path",
-    "gt_x", "gt_y", "gt_x_corr", "gt_y_corr",
+    "gt_x", "gt_y", "gt_x_corr", "gt_y_corr", "found",
     "gt_box_x", "gt_box_y", "gt_box_w", "gt_box_h",
     "crop_x0_fine", "crop_y0_fine",
     "architecture", "noise_profile", "reference_px", "sample_entropy", "label_shift_px",
@@ -459,7 +604,7 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
 
 
 def make_pairs(entropy: int, architectures: list[str], noise: str,
-               crops: int = 8) -> list[dict]:
+               crops: int = 8, pose: "PoseSpec | PoseParams | None" = None) -> list[dict]:
     """In-memory version of build_one: one canvas -> one search frame and
     `crops` (reference, ground-truth) pairs, returned as arrays.
 
@@ -468,20 +613,45 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
     dataset, where storing the images would cost ~0.7 MB per reference and
     the point is to never reuse a scene.
     """
+    spec = as_pose_spec(pose)
+    pose_rng = np.random.Generator(np.random.PCG64(
+        np.random.SeedSequence(entropy ^ _POSE_STREAM_SALT)))
+    pose_params, present = spec.sample(pose_rng)
+
     rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence(entropy)))
     architecture = architectures[int(rng.integers(0, len(architectures)))]
 
     overrides = sample_random_params(rng) if noise == "randomized" else dict(NOISE_PRESETS[noise])
     params = GenerationParams(**overrides)
 
-    zone_result = generate_fine_canvas_zoned(architecture, rng, params)
+    canvas_px = spec.required_canvas_px()
+    zone_result = generate_fine_canvas_zoned(architecture, rng, params, canvas_px)
     fine_canvas = zone_result["canvas"]
-    search_img, row_shift, k = image_search_traced(fine_canvas, params, rng)
+
+    # Same absent-pair construction as build_one: a different die region of the
+    # same architecture under the same imaging parameters.
+    if present:
+        ref_zone_result, ref_canvas = zone_result, fine_canvas
+    else:
+        decoy_rng = np.random.Generator(np.random.PCG64(
+            np.random.SeedSequence(int(pose_rng.integers(0, 2**62)))))
+        ref_zone_result = generate_fine_canvas_zoned(architecture, decoy_rng, params, canvas_px)
+        ref_canvas = ref_zone_result["canvas"]
+
+    search_img, row_shift, k = image_search_traced(fine_canvas, params, rng, pose_params)
+    posed = (pose_params.rotation_deg != 0.0
+             or pose_params.magnification != float(SCALE_FACTOR)
+             or canvas_px != FINE_CANVAS_SIZE_PX)
+    affine = search_affine(fine_canvas.shape[0], SEARCH_SIZE_PX,
+                           pose_params.magnification, pose_params.rotation_deg) if posed else None
+    crop_affine = affine if present else None
 
     out = []
     for _ in range(crops):
-        x0, y0 = _pick_crop_origin(zone_result, params, rng)
-        crop = fine_canvas[y0:y0 + REFERENCE_SIZE_PX, x0:x0 + REFERENCE_SIZE_PX]
+        x0, y0 = _pick_visible_crop_origin(
+            ref_zone_result, params, rng, canvas_px, crop_affine,
+            pose_params.magnification, pose_params.rotation_deg)
+        crop = ref_canvas[y0:y0 + REFERENCE_SIZE_PX, x0:x0 + REFERENCE_SIZE_PX]
         reference_img = sem_imaging.image_reference(
             crop,
             pixel_size_nm=PIXEL_SIZE_REF_NM,
@@ -499,9 +669,19 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
             speckle_sigma=params.speckle_sigma,
             salt_pepper_prob=params.salt_pepper_prob,
         )
-        gt_x = x0 / SCALE_FACTOR + BOX_PX / 2.0
-        gt_y = y0 / SCALE_FACTOR + BOX_PX / 2.0
-        gx, gy = correct_gt(gt_x, gt_y, row_shift, k)
+        if not present:
+            gx = gy = float(ABSENT_GT)
+        else:
+            if affine is None:
+                gt_x = x0 / SCALE_FACTOR + BOX_PX / 2.0
+                gt_y = y0 / SCALE_FACTOR + BOX_PX / 2.0
+            else:
+                gt_x, gt_y = apply_affine_point(
+                    affine, x0 + REFERENCE_SIZE_PX / 2.0, y0 + REFERENCE_SIZE_PX / 2.0)
+            gx, gy = correct_gt(gt_x, gt_y, row_shift, k)
         out.append({"reference": reference_img, "search": search_img,
-                    "gt_x": gx, "gt_y": gy, "architecture": architecture})
+                    "gt_x": gx, "gt_y": gy, "architecture": architecture,
+                    "found": int(present),
+                    "magnification": pose_params.magnification,
+                    "rotation_deg": pose_params.rotation_deg})
     return out

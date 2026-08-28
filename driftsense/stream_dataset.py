@@ -27,7 +27,7 @@ import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from driftsense.dataset import build_sample
-from driftsense.generate import PRESETS, make_pairs
+from driftsense.generate import PRESETS, PoseSpec, make_pairs
 from driftsense.model import STRIDE, TEMPLATE_FEAT
 
 
@@ -41,7 +41,8 @@ class StreamingDriftSense(IterableDataset):
     def __init__(self, length: int = 14000, crop: int = 512,
                  crops_per_canvas: int = 8, noise: str = "randomized",
                  architectures: list[str] | None = None, seed: int = 0,
-                 epoch: int = 0):
+                 epoch: int = 0, pose: "PoseSpec | None" = None,
+                 pose_jitter: tuple[float, float] = (0.0, 0.0)):
         self.length = length
         self.crop = crop
         self.crops_per_canvas = crops_per_canvas
@@ -50,6 +51,10 @@ class StreamingDriftSense(IterableDataset):
         self.seed = seed
         self.epoch = epoch
         self.resp = crop // STRIDE - TEMPLATE_FEAT + 1
+        # Phase 2 pose distribution and the residual-error jitter applied when
+        # canonicalising. Defaults reproduce the Phase 1 stream exactly.
+        self.pose = pose or PoseSpec()
+        self.pose_jitter = pose_jitter
 
     def __len__(self):
         return self.length
@@ -92,11 +97,15 @@ class StreamingDriftSense(IterableDataset):
         while produced < quota:
             entropy = int(rng.integers(0, 2 ** 63 - 1))
             pairs = make_pairs(entropy, self.architectures, self.noise,
-                               crops=self.crops_per_canvas)
+                               crops=self.crops_per_canvas, pose=self.pose)
             for p in pairs:
                 if produced >= quota:
                     break
                 sample_rng = np.random.default_rng(int(rng.integers(0, 2 ** 63 - 1)))
                 yield build_sample(p["reference"], p["search"], p["gt_x"], p["gt_y"],
-                                   self.crop, True, sample_rng, self.resp)
+                                   self.crop, True, sample_rng, self.resp,
+                                   magnification=p.get("magnification", 10.0),
+                                   rotation_deg=p.get("rotation_deg", 0.0),
+                                   found=p.get("found", 1),
+                                   pose_jitter=self.pose_jitter)
                 produced += 1

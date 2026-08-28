@@ -114,10 +114,16 @@ def generate_fine_canvas_zoned(
     architecture: str,
     rng: np.random.Generator,
     params: GenerationParams,
+    canvas_px: int | None = None,
 ) -> dict:
+    """`canvas_px` overrides the nominal 10x canvas extent. Phase 2 needs it:
+    a 1000 px search frame at magnification m covers 1000*m fine pixels, so
+    anything above 10x underfills a 10000 px canvas and the warp fills the
+    shortfall with replicated border. Defaults to the nominal size, so the
+    Phase 1 path is unchanged."""
     preset = get_preset(architecture)
     return generate_zone_canvas(
-        FINE_CANVAS_SIZE_PX,
+        canvas_px or FINE_CANVAS_SIZE_PX,
         preset["kind"],
         params.collapse_threshold_nm,
         rng,
@@ -128,8 +134,9 @@ def generate_fine_canvas_zoned(
     )
 
 
-def _pick_crop_origin(zone_result: dict, params: GenerationParams, rng: np.random.Generator) -> tuple:
-    max_offset = FINE_CANVAS_SIZE_PX - REFERENCE_SIZE_PX
+def _pick_crop_origin(zone_result: dict, params: GenerationParams, rng: np.random.Generator,
+                      canvas_px: int | None = None) -> tuple:
+    max_offset = (canvas_px or FINE_CANVAS_SIZE_PX) - REFERENCE_SIZE_PX
     strip_rects = zone_result.get("strip_rects") or []
 
     if strip_rects and rng.random() < params.boundary_bias:

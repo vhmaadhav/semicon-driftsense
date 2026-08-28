@@ -16,3 +16,10 @@ weights/*_last.pt
 # ignore the scratch subdirectories individual eval runs write into.
 results/*/
 .pytest_cache/
+
+# Working notes and agent context — local only, never pushed.
+.agents/
+
+# Per-epoch training checkpoints (--keep-epochs); only the promoted weights ship.
+weights/*_e[0-9]*.pt
+weights/*_p2_history.json

@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Phase 2 batch entry point.
+
+    python register.py --input pairs.csv --output predictions.csv
+
+Writes one row per input pair, in input order, with the columns the Phase 2
+contract names: pair_id, x, y, theta, scale, found, score.
+
+Two properties are treated as non-negotiable, because the scoring rules make
+them expensive to get wrong:
+
+* **Every pair_id appears exactly once.** A missing row scores zero, so a pair
+  that raises, times out, or has unreadable images still emits a row -- a
+  declined answer (`found=0`) rather than no answer.
+* **No network, no downloads.** Weights load from the local `weights/`
+  directory that ships inside the ZIP.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+import sys
+import time
+
+import numpy as np
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+import infer as I  # noqa: E402
+from driftsense.matching import locate_phase2  # noqa: E402
+
+# Chosen on our own validation split by sweeping the operating point, not on
+# anything organizer-supplied. Kept as a named constant so the value that was
+# calibrated is the value that ships.
+DEFAULT_FOUND_THRESHOLD = 0.25
+
+OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
+
+# Candidate spellings for the two image columns. The addendum fixes `pair_id`
+# but publishes the rest of the pairs.csv layout separately, so accept the
+# plausible spellings rather than guess one and fail the whole run.
+REF_KEYS = ("reference", "reference_path", "ref", "ref_path", "reference_image",
+            "template", "template_path", "high_res", "highres")
+SEA_KEYS = ("search", "search_path", "sea", "search_image", "wide", "wide_path",
+            "low_res", "lowres")
+
+
+def pick_column(fieldnames, candidates, role):
+    lowered = {f.lower().strip(): f for f in fieldnames}
+    for c in candidates:
+        if c in lowered:
+            return lowered[c]
+    for f in fieldnames:                      # substring fallback
+        if any(c.split("_")[0] in f.lower() for c in candidates):
+            return f
+    raise SystemExit(f"pairs.csv: could not find the {role} column among {fieldnames}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--input", required=True, help="pairs.csv")
+    ap.add_argument("--output", required=True, help="predictions.csv")
+    ap.add_argument("--weights", default=I.DEFAULT_WEIGHTS)
+    ap.add_argument("--threshold", type=float, default=DEFAULT_FOUND_THRESHOLD,
+                    help="score at or above which a pair is reported found")
+    ap.add_argument("--threads", type=int, default=0,
+                    help="torch threads; 0 leaves the default")
+    ap.add_argument("--quiet", action="store_true")
+    a = ap.parse_args()
+
+    if a.threads:
+        import torch
+        torch.set_num_threads(a.threads)
+
+    with open(a.input, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise SystemExit(f"{a.input}: no rows")
+
+    fields = list(rows[0].keys())
+    id_col = pick_column(fields, ("pair_id", "id", "pair"), "pair_id")
+    ref_col = pick_column(fields, REF_KEYS, "reference")
+    sea_col = pick_column(fields, SEA_KEYS, "search")
+    base = os.path.dirname(os.path.abspath(a.input))
+
+    def resolve(p):
+        p = (p or "").strip()
+        return p if os.path.isabs(p) else os.path.join(base, p)
+
+    model, device = I.load_model(a.weights) or (None, None)
+
+    os.makedirs(os.path.dirname(os.path.abspath(a.output)) or ".", exist_ok=True)
+    times = []
+    with open(a.output, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=OUT_FIELDS)
+        w.writeheader()
+        for n, r in enumerate(rows):
+            pid = r[id_col]
+            # Declined answer, overwritten below on success. Constructed first
+            # so that any failure path still has a complete row to write.
+            out = {"pair_id": pid, "x": 0, "y": 0, "theta": 0, "scale": 0,
+                   "found": 0, "score": 0.0}
+            t0 = time.perf_counter()
+            try:
+                ref = I.read_gray(resolve(r[ref_col]))
+                sea = I.read_gray(resolve(r[sea_col]))
+                if model is None:
+                    res = I.zncc_fallback(ref, sea)
+                    res.setdefault("scale", 10.0)
+                    res.setdefault("theta", 0.0)
+                else:
+                    res = locate_phase2(model, ref, sea, device, refine=True)
+                score = float(res.get("score", 0.0))
+                found = int(score >= a.threshold)
+                out.update({
+                    "x": f'{float(res["x"]):.4f}' if found else 0,
+                    "y": f'{float(res["y"]):.4f}' if found else 0,
+                    "theta": f'{float(res.get("theta", 0.0)):.4f}' if found else 0,
+                    "scale": f'{float(res.get("scale", 10.0)):.4f}' if found else 0,
+                    "found": found,
+                    "score": f"{score:.6f}",
+                })
+            except Exception as e:                      # noqa: BLE001
+                # Never let one bad pair cost the rest of the run, and never
+                # drop the row.
+                print(f"[warn] pair {pid}: {type(e).__name__}: {e}", file=sys.stderr)
+            w.writerow(out)
+            times.append(time.perf_counter() - t0)
+            if not a.quiet and (n + 1) % 25 == 0:
+                print(f"  {n+1}/{len(rows)}  median {np.median(times):.2f}s", flush=True)
+                f.flush()
+
+    if not a.quiet:
+        t = np.array(times)
+        print(f"wrote {len(rows)} rows to {a.output}")
+        print(f"runtime: median {np.median(t):.2f}s  p90 {np.percentile(t,90):.2f}s  "
+              f"max {t.max():.2f}s  total {t.sum()/60:.1f} min")
+        if t.max() > 20:
+            print(f"WARNING: {int((t>20).sum())} pair(s) exceeded the 20 s hard timeout",
+                  file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

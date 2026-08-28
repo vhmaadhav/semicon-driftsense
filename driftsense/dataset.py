@@ -22,6 +22,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from driftsense.matching import canonicalize_search
 from driftsense.model import SCALE, STRIDE, TEMPLATE_FEAT, TEMPLATE_SIZE
 
 SEARCH_FULL = 1000
@@ -105,7 +106,9 @@ def gaussian_heatmap(h: int, w: int, ci: float, cj: float, sigma: float = 1.0) -
 
 
 def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float,
-                 crop: int, train: bool, rng: np.random.Generator, resp: int) -> dict:
+                 crop: int, train: bool, rng: np.random.Generator, resp: int,
+                 magnification: float = float(SCALE), rotation_deg: float = 0.0,
+                 found: int = 1, pose_jitter: tuple[float, float] = (0.0, 0.0)) -> dict:
     """Turn one (reference, search, ground-truth) triple into a training tensor
     sample: dihedral + photometric augmentation, window crop, standardisation,
     and the response-grid heatmap/offset targets.
@@ -114,11 +117,30 @@ def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float
     provably identical -- the streaming dataset differs only in where the
     images come from.
     """
+    # --- Phase 2: undo the pose before the network ever sees the frame -------
+    # The estimate the pose search will hand us at inference is not exact, so
+    # training canonicalises with a *jittered* pose. The jitter is sized to the
+    # search's measured residual error, which is what makes the network
+    # tolerant of precisely the mistake it will actually be given -- and no
+    # more, since a wider band would cost the sub-pixel sharpness that the
+    # 1 px credit tier pays for.
+    if magnification != float(SCALE) or rotation_deg != 0.0:
+        js, jr = pose_jitter
+        m_hat = magnification * (1.0 + (rng.normal(0.0, js) if train and js else 0.0))
+        r_hat = rotation_deg + (rng.normal(0.0, jr) if train and jr else 0.0)
+        search, M = canonicalize_search(search, m_hat, r_hat)
+        if found:
+            gx, gy = (float(M[0, 0] * gx + M[0, 1] * gy + M[0, 2]),
+                      float(M[1, 0] * gx + M[1, 1] * gy + M[1, 2]))
+
+    full = search.shape[0]
+
     if train:
         t = int(rng.integers(0, 8))
         reference = dihedral(reference, t)
         search = dihedral(search, t)
-        gx, gy = dihedral_point(gx, gy, SEARCH_FULL, t)
+        if found:
+            gx, gy = dihedral_point(gx, gy, full, t)
 
     # Reference -> template at the search frame's pixel size. INTER_AREA
     # matches the area-average downsampling the physical search image
@@ -147,17 +169,24 @@ def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float
 
     bx, by = gx - TEMPLATE_SIZE / 2.0, gy - TEMPLATE_SIZE / 2.0  # box top-left
 
-    if train and crop < SEARCH_FULL:
+    if train and not found and crop < full:
+        # No instance to centre on: take a uniform window. The whole frame is
+        # negative, so any window is a valid negative.
+        ox = int(rng.integers(0, full - crop + 1))
+        oy = int(rng.integers(0, full - crop + 1))
+        search = search[oy:oy + crop, ox:ox + crop]
+        bx, by = 0.0, 0.0
+    elif train and crop < full:
         # Window must contain the whole target box, else there is no positive
         # cell to supervise.
         lo_x = max(0.0, bx + TEMPLATE_SIZE - crop)
-        hi_x = min(bx, SEARCH_FULL - crop)
+        hi_x = min(bx, full - crop)
         lo_y = max(0.0, by + TEMPLATE_SIZE - crop)
-        hi_y = min(by, SEARCH_FULL - crop)
+        hi_y = min(by, full - crop)
         ox = int(round(rng.uniform(min(lo_x, hi_x), max(lo_x, hi_x))))
         oy = int(round(rng.uniform(min(lo_y, hi_y), max(lo_y, hi_y))))
-        ox = int(np.clip(ox, 0, SEARCH_FULL - crop))
-        oy = int(np.clip(oy, 0, SEARCH_FULL - crop))
+        ox = int(np.clip(ox, 0, full - crop))
+        oy = int(np.clip(oy, 0, full - crop))
         search = search[oy:oy + crop, ox:ox + crop]
         bx, by = bx - ox, by - oy
 
@@ -169,8 +198,17 @@ def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float
     ti = int(np.clip(round(ci), 0, h - 1))
     tj = int(np.clip(round(cj), 0, w - 1))
 
-    heat = gaussian_heatmap(h, w, ci, cj)
-    offset = np.array([cj - tj, ci - ti], dtype=np.float32)  # (dx, dy) in stride units
+    if found:
+        heat = gaussian_heatmap(h, w, ci, cj)
+        offset = np.array([cj - tj, ci - ti], dtype=np.float32)  # (dx, dy) in stride units
+    else:
+        # Absent pair: every cell is negative. Focal loss on an all-zero target
+        # is exactly the supervision that teaches the peak logit to collapse --
+        # which is what turns the existing score into a rejection signal, with
+        # no extra head. Offset is unsupervised here and masked in the loss.
+        heat = np.zeros((h, w), dtype=np.float32)
+        offset = np.zeros(2, dtype=np.float32)
+        ti = tj = 0
 
     return {
         "template": torch.from_numpy(template[None].astype(np.float32)),
@@ -178,6 +216,7 @@ def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float
         "heat": torch.from_numpy(heat[None]),
         "offset": torch.from_numpy(offset),
         "peak": torch.tensor([ti, tj], dtype=torch.long),
+        "found": torch.tensor(float(found), dtype=torch.float32),
         "gt": torch.tensor([bx + TEMPLATE_SIZE / 2.0, by + TEMPLATE_SIZE / 2.0],
                            dtype=torch.float32),
     }
@@ -185,7 +224,8 @@ def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float
 
 class DriftSenseDataset(Dataset):
     def __init__(self, split_dirs, crop: int = 512, train: bool = True, seed: int = 0,
-                 limit: int | None = None, epoch: int = 0):
+                 limit: int | None = None, epoch: int = 0,
+                 pose_jitter: tuple[float, float] = (0.0, 0.0)):
         self.rows = []
         for d in split_dirs:
             self.rows.extend(load_manifest(d))
@@ -195,6 +235,7 @@ class DriftSenseDataset(Dataset):
         self.train = train
         self.seed = seed
         self.epoch = epoch
+        self.pose_jitter = pose_jitter
         self.resp = crop // STRIDE - TEMPLATE_FEAT + 1
 
     def __len__(self):
@@ -251,4 +292,8 @@ class DriftSenseDataset(Dataset):
         return build_sample(self._read(row, "reference_path"),
                             self._read(row, "search_path"),
                             float(row["gt_x_corr"]), float(row["gt_y_corr"]),
-                            self.crop, self.train, rng, self.resp)
+                            self.crop, self.train, rng, self.resp,
+                            magnification=float(row.get("magnification", SCALE) or SCALE),
+                            rotation_deg=float(row.get("rotation_deg", 0.0) or 0.0),
+                            found=int(float(row.get("found", 1))),
+                            pose_jitter=self.pose_jitter)

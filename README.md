@@ -28,9 +28,102 @@ classical ZNCC baseline.
 
 ---
 
+## Phase 2 — registration under unknown pose
+
+Phase 2 keeps the Phase 1 problem and removes three assumptions: the zoom ratio
+is unknown in `[8×, 12×]`, the rotation is unknown in `±5°` and must be
+reported, and about 20% of pairs contain **no true instance** at all. The
+required output grows from `x, y` to `x, y, θ, s, found, score`.
+
+### Entry point
+
+```bash
+python register.py --input pairs.csv --output predictions.csv
+```
+
+One row per input pair, in input order: `pair_id, x, y, theta, scale, found,
+score`. A pair that fails for any reason still emits a row with `found=0` —
+a missing row scores zero, so declining is always better than disappearing.
+Runs CPU-only with no network access; weights load from `weights/`.
+
+### Results
+
+200 held-out scenes at the disclosed operating point (160 present, 40 absent),
+scored against the published credit tiers:
+
+| Component | Score | Detail |
+| --------- | ----- | ------ |
+| Localisation | **0.839** | 94% ≤5px, 92% ≤3px, 82% ≤2px, 57% ≤1px; median 0.86 px |
+| Pose — scale | **0.785** | median relative error 0.86% |
+| Pose — rotation | **0.875** | median error 0.11° |
+| Rejection | **F1 0.978** | at the shipped threshold; stable over 0.20–0.35 |
+| Calibration | **AUC 0.993** | score against per-pair correctness |
+| Runtime | **2.77 s** median | p90 3.55 s, max 3.95 s on 4 threads; no pair over 5 s |
+
+### How it works
+
+The Phase 1 method is extended, not replaced. The network still does the one
+hard thing it was trained for — deciding *which* repeat is correct on
+matched-scale input — and the pose is handled around it:
+
+1. **Pose hypotheses.** Correlation against a periodic layout is multi-peaked
+   in scale: a wrong magnification can align the template with the wrong repeat
+   and outscore the true one on a low-resolution probe. The top few local
+   maxima of the coarse scale sweep are kept rather than just the best.
+2. **Canonicalisation.** Each hypothesis un-rotates and un-scales the Search
+   frame to the nominal 10×, so the network sees the input distribution it was
+   trained on.
+3. **Native-resolution verification.** Each candidate is verified by ZNCC at
+   full resolution, and the best one wins. A wrong scale basin correlates near
+   zero there while the right one is around 0.9, so the decision is easy where
+   the coarse probe could not make it.
+
+Refinement deliberately happens in the **native** frame, never the canonical
+one, so the reported centre never inherits the resampling blur — the credit
+tiers pay 1.00 at 1 px against 0.40 at 5 px.
+
+This matters more than it sounds. Measured against a true-pose oracle, the
+unchanged Phase 1 weights reach **99%** at the 5 px tolerance; with a single
+estimated pose they reach 83%. Every localisation failure was a pose failure —
+those pairs sat 15.8% off in scale, against 0.89% for the successes. They were
+not near-misses but confident lock-ons to the wrong repeat, and searching more
+than one hypothesis recovers nearly all of them.
+
+### Generating Phase 2 data
+
+```bash
+python generate_dataset.py --phase2 --num-pairs 200 --output-dir data/val_p2
+```
+
+`--phase2` samples magnification and rotation **per pair** over the disclosed
+bounds and emits absent pairs, whose reference is cropped from an independently
+generated die region of the same architecture under the same imaging
+parameters — periodically similar and entirely plausible, but with no true
+instance in the frame. The manifest gains a `found` column; absent pairs carry
+an out-of-range `-1` sentinel in every geometry column so that scoring code
+which forgets to filter on `found` fails loudly rather than quietly.
+
+The fine canvas is sized to the pose. A 1000 px frame at magnification *m*
+spans 1000·*m* fine pixels, so anything above 10× underfills the nominal
+10000 px canvas and the warp pads the shortfall with replicated border;
+below 10× the canvas is wider than the frame shows, and a crop drawn uniformly
+could land outside the visible field and still be labelled present. Both are
+handled: the canvas grows to cover the worst case in the spec, and crops are
+rejection-sampled against the affine that renders the frame. A nominal spec
+still resolves to the original 10000 px canvas, so Phase 1 splits reproduce
+byte for byte.
+
+Score a generated split against the full rubric with:
+
+```bash
+python scripts/eval_phase2.py data/val_p2
+```
+
+---
+
 ## Quick start
 
-Requires **Python 3.10–3.13** (PyTorch does not yet support 3.14).
+Requires **Python 3.11**, matching the Phase 2 reference machine. `requirements.txt` is frozen from a 3.11 environment with the CPU build of PyTorch — the reference machine has no GPU and no network.
 
 ```bash
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt

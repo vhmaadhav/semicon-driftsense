@@ -52,7 +52,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from driftsense.generate import NOISE_PRESETS, PoseParams, write_split  # noqa: E402
+from driftsense.generate import (  # noqa: E402
+    NOISE_PRESETS, PoseSpec, write_split)
 from driftsense.presets import architecture_presets  # noqa: E402
 
 
@@ -91,7 +92,52 @@ def parse_args():
                       help="effective magnification ratio (default 10.0, the "
                            "nominal 1 nm/px : 10 nm/px; 9-11 spans the range "
                            "the problem statement implies)")
+
+    ph2 = p.add_argument_group(
+        "phase 2: unknown pose and absent pairs",
+        "Phase 2 draws the pose independently for every pair and leaves a "
+        "fraction of pairs with no true instance. These ranges override the "
+        "fixed --rotation-deg / --magnification values above.")
+    ph2.add_argument("--phase2", action="store_true",
+                     help="shorthand for the disclosed Phase 2 operating point: "
+                          "--magnification-range 8 12 --rotation-range -5 5 "
+                          "--absent-frac 0.2")
+    ph2.add_argument("--rotation-range", type=float, nargs=2, metavar=("LO", "HI"),
+                     help="sample rotation uniformly in [LO, HI] degrees, "
+                          "CCW positive (Phase 2 bound: -5 5)")
+    ph2.add_argument("--magnification-range", type=float, nargs=2, metavar=("LO", "HI"),
+                     help="sample the magnification ratio uniformly in [LO, HI] "
+                          "(Phase 2 bound: 8 12)")
+    ph2.add_argument("--absent-frac", type=float, default=0.0, metavar="F",
+                     help="fraction of pairs whose reference has no true "
+                          "instance in the search frame, cropped instead from "
+                          "another die region of the same architecture "
+                          "(Phase 2 blind set is about 0.2)")
     return p.parse_args()
+
+
+def build_pose_spec(args) -> PoseSpec:
+    """Fold the fixed --rotation-deg/--magnification flags and the Phase 2
+    range flags into one spec. A range wins over the corresponding fixed
+    value; absent both, the fixed value is pinned and the result is the
+    nominal no-op that reproduces the upstream imaging path."""
+    rot = tuple(args.rotation_range) if args.rotation_range else (args.rotation_deg,) * 2
+    mag = tuple(args.magnification_range) if args.magnification_range else (args.magnification,) * 2
+    absent = args.absent_frac
+    if args.phase2:
+        rot = tuple(args.rotation_range) if args.rotation_range else (-5.0, 5.0)
+        mag = tuple(args.magnification_range) if args.magnification_range else (8.0, 12.0)
+        absent = args.absent_frac if args.absent_frac else 0.2
+    if not 0.0 <= absent <= 1.0:
+        raise SystemExit("--absent-frac must be in [0, 1]")
+    for name, (lo, hi) in (("--rotation-range", rot), ("--magnification-range", mag)):
+        if hi < lo:
+            raise SystemExit(f"{name}: LO must not exceed HI (got {lo} {hi})")
+    if mag[0] <= 0:
+        raise SystemExit("--magnification-range: magnification must be positive")
+    return PoseSpec(rotation_deg=rot, magnification=mag,
+                    edge_brightening=(args.edge_brightening,) * 2,
+                    absent_frac=absent)
 
 
 def main():
@@ -105,10 +151,17 @@ def main():
     print(f"architecture : {args.architecture} ({len(presets)} presets)")
     print(f"pairs        : {args.num_pairs} from {canvases} canvas(es)")
     print(f"conditions   : {args.noise}")
-    if args.edge_brightening or args.rotation_deg or args.magnification != 10.0:
-        print(f"pose/edge    : magnification {args.magnification}x, "
-              f"rotation {args.rotation_deg} deg, "
-              f"edge brightening {args.edge_brightening}")
+    spec = build_pose_spec(args)
+    if spec != PoseSpec():
+        def _fmt(lohi, unit):
+            lo, hi = lohi
+            return f"{lo:g}{unit}" if hi <= lo else f"[{lo:g}, {hi:g}]{unit}"
+        print(f"pose/edge    : magnification {_fmt(spec.magnification, 'x')}, "
+              f"rotation {_fmt(spec.rotation_deg, ' deg')}, "
+              f"edge brightening {_fmt(spec.edge_brightening, '')}")
+    if spec.absent_frac:
+        print(f"absent pairs : {spec.absent_frac:.0%} (found=0, reference from "
+              f"another die region)")
     print(f"output       : {args.output_dir}")
 
     pairs = write_split(
@@ -119,9 +172,7 @@ def main():
         architectures=presets,
         workers=args.workers,
         crops_per_canvas=args.crops_per_canvas,
-        pose=PoseParams(edge_brightening=args.edge_brightening,
-                        rotation_deg=args.rotation_deg,
-                        magnification=args.magnification),
+        pose=spec,
     )
 
     print(f"\nWrote {pairs} pairs to {args.output_dir}")

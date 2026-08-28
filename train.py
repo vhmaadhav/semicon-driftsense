@@ -107,6 +107,25 @@ def parse_args():
     p.add_argument("--stream", action="store_true",
                    help="generate fresh scenes on the fly instead of reading a fixed "
                         "dataset -- unlimited data, no disk, no scene ever repeated")
+    ph2 = p.add_argument_group(
+        "phase 2",
+        "Unknown pose and absent pairs. Defaults are off, so an unflagged run "
+        "reproduces the Phase 1 training stream exactly.")
+    ph2.add_argument("--phase2", action="store_true",
+                     help="stream the disclosed Phase 2 operating point: "
+                          "magnification 8-12x, rotation +/-5 deg, 20%% absent pairs")
+    ph2.add_argument("--absent-frac", type=float, default=None,
+                     help="override the absent-pair fraction (default 0.2 under --phase2)")
+    ph2.add_argument("--pose-jitter", type=float, nargs=2, default=(0.015, 0.30),
+                     metavar=("SCALE_REL", "ROT_DEG"),
+                     help="std-dev of the pose error simulated when canonicalising, "
+                          "sized to the pose search's measured residual "
+                          "(default: 1.5%% scale, 0.30 deg)")
+    p.add_argument("--crops-per-canvas", type=int, default=8,
+                   help="reference crops per generated canvas when streaming. The "
+                        "canvas dominates generation cost, so raising this cuts "
+                        "CPU work almost proportionally; the crops share one "
+                        "search frame, so it trades scene diversity for throughput.")
     p.add_argument("--stream-length", type=int, default=14000,
                    help="samples per nominal epoch when streaming")
     p.add_argument("--keep-epochs", action="store_true",
@@ -160,10 +179,23 @@ def main():
                          "schedule's total_steps is wrong from the first refresh.")
 
     if args.stream:
+        pose_spec = None
+        jitter = (0.0, 0.0)
+        if args.phase2:
+            from driftsense.generate import PoseSpec
+            pose_spec = PoseSpec(rotation_deg=(-5.0, 5.0), magnification=(8.0, 12.0),
+                                 absent_frac=(0.2 if args.absent_frac is None
+                                              else args.absent_frac))
+            jitter = tuple(args.pose_jitter)
         train_ds = StreamingDriftSense(length=args.stream_length, crop=args.crop,
-                                       seed=args.seed)
+                                       seed=args.seed, pose=pose_spec, pose_jitter=jitter,
+                                       crops_per_canvas=args.crops_per_canvas)
         print(f"STREAMING: {args.stream_length} freshly generated samples/epoch "
               f"(no scene reused)   crop: {args.crop}")
+        if pose_spec is not None:
+            print(f"PHASE 2  : magnification 8-12x, rotation +/-5 deg, "
+                  f"absent {pose_spec.absent_frac:.0%}, "
+                  f"pose jitter {jitter[0]:.1%} scale / {jitter[1]:.2f} deg")
     else:
         pool_dirs = scan_pool(args.train_dirs)
         if not pool_dirs:
@@ -299,7 +331,8 @@ def main():
                       f"| batch median err {np.median(err):.1f}px | {rate:.1f} img/s "
                       f"| lr {sched.get_last_lr()[0]:.2e}", flush=True)
 
-        val = evaluate(model, val_rows, device, limit=args.val_limit, refine=True)
+        val = evaluate(model, val_rows, device, limit=args.val_limit, refine=True,
+                       phase2=args.phase2)
         dt = time.time() - t0
         print(f"epoch {epoch}: loss {agg['loss']/max(seen,1):.4f} | "
               f"val median {val['median_px']:.2f}px  acc@1 {val['acc@1px']:.3f}  "
