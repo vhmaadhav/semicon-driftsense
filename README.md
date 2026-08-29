@@ -337,6 +337,19 @@ toward the centre would cost accuracy.
 
 ---
 
+## Local code graph
+
+Run `/graphify .` from the repository root to build a local map of the code,
+documentation, paper, and images. It writes `graphify-out/` with an interactive
+HTML graph, `graph.json`, and `GRAPH_REPORT.md`. The directory stays out of Git
+because it contains generated views, caches, and local query memory.
+
+Use the graph for architecture questions before searching source manually. For
+example, `graphify explain "DriftSenseNet"` lists its callers and methods, while
+`graphify path "DriftSenseNet" "infer.py" --undirected` traces a dependency path.
+
+---
+
 ## Method
 
 ### Why plain template matching fails
