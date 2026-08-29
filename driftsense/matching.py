@@ -22,6 +22,12 @@ import torch
 import torch.nn.functional as F
 
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
+from driftsense.verification import (
+    common_band,
+    dog_feature,
+    local_match_score,
+    rank_transform,
+)
 
 # Two candidates whose scores differ by less than this are treated as tied,
 # and the problem statement's rule applies: prefer the one nearer the centre
@@ -545,7 +551,8 @@ def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
 def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine: bool = True, pose: tuple[float, float] | None = None,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
-                  hypotheses: int = 3, **kw) -> dict:
+                  hypotheses: int = 3, return_hypotheses: bool = False,
+                  verification: str = "zncc", **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     For each pose hypothesis: canonicalise the search frame, let the network
@@ -564,7 +571,29 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
       failure -- but at full resolution the wrong basin correlates near zero
       while the right one is around 0.9, so the decision becomes easy.
     """
+    verification = str(verification).lower()
+    valid_verification = {"zncc", "majority", "consensus"}
+    if verification not in valid_verification:
+        raise ValueError(f"verification must be one of {sorted(valid_verification)}")
+
+    # The baseline path never enters this block. Research instrumentation and
+    # optional selectors share one set of full-search feature maps per pair.
+    need_verification_scores = return_hypotheses or verification != "zncc"
+    search_features = None
+    verification_secs = 0.0
+    if need_verification_scores:
+        import time
+        t_verify = time.perf_counter()
+        search_features = {
+            "rank": rank_transform(search),
+            "band": common_band(search),
+        }
+        if return_hypotheses:
+            search_features["dog"] = dog_feature(search)
+        verification_secs += time.perf_counter() - t_verify
+
     def attempt(m: float, rot: float) -> dict:
+        nonlocal verification_secs
         canon, M = canonicalize_search(search, m, rot)
         coarse = locate(model, reference, canon, device, refine=False,
                         factor=float(SCALE), rotation_deg=0.0, **kw)
@@ -572,6 +601,9 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         out = dict(coarse)
         out.update({"x": cx, "y": cy, "scale": float(m), "theta": float(rot),
                     "canonical": (coarse["x"], coarse["y"])})
+        if return_hypotheses:
+            out.update({"coarse_x_native": float(cx), "coarse_y_native": float(cy)})
+        template = None
         if refine:
             template = make_template(reference, m, rot)
             rx, ry, zn = refine_zncc(standardize(search / 255.0),
@@ -580,19 +612,48 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             if np.hypot(rx - cx, ry - cy) <= 10.0:
                 out.update({"x": rx, "y": ry})
             out["zncc"] = float(zn)
+        if search_features is not None:
+            import time
+            t_verify = time.perf_counter()
+            if template is None:
+                template = make_template(reference, m, rot)
+            out.update({
+                "rank": local_match_score(search_features["rank"],
+                                          rank_transform(template), out["x"], out["y"]),
+                "band": local_match_score(search_features["band"],
+                                          common_band(template), out["x"], out["y"]),
+            })
+            if "dog" in search_features:
+                out["dog"] = local_match_score(search_features["dog"],
+                                                dog_feature(template), out["x"], out["y"])
+            verification_secs += time.perf_counter() - t_verify
         return out
 
+    def choose(candidates: list[dict]) -> dict:
+        zncc_i = max(range(len(candidates)),
+                     key=lambda i: candidates[i].get("zncc", candidates[i].get("score", -np.inf)))
+        if verification == "zncc" or len(candidates) == 1:
+            return candidates[zncc_i]
+        rank_i = max(range(len(candidates)), key=lambda i: candidates[i]["rank"])
+        band_i = max(range(len(candidates)), key=lambda i: candidates[i]["band"])
+        if verification == "consensus":
+            return candidates[rank_i] if rank_i == band_i else candidates[zncc_i]
+        votes = [zncc_i, rank_i, band_i]
+        winner = max(range(len(candidates)), key=votes.count)
+        return candidates[winner] if votes.count(winner) >= 2 else candidates[zncc_i]
+
     if pose is not None:
-        best = attempt(float(pose[0]), float(pose[1]))
+        candidates = [attempt(float(pose[0]), float(pose[1]))]
+        candidates[0]["pose_peak"] = float("nan")
+        best = choose(candidates)
     else:
         cands = pose_candidates(reference, search, k=max(int(hypotheses), 1))
-        best = None
+        candidates = []
         for m, rot, coarse_peak in cands:
             r = attempt(m, rot)
             r["pose_peak"] = float(coarse_peak)
-            key = r.get("zncc", r.get("score", -np.inf))
-            if best is None or key > best.get("zncc", best.get("score", -np.inf)):
-                best = r
+            candidates.append(r)
+        best = choose(candidates)
         best["n_hypotheses"] = len(cands)
 
     if refine and polish:
@@ -603,6 +664,28 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         _, pr, _ = polish_pose(reference, search, best["x"], best["y"],
                                best["scale"], best["theta"])
         best["theta"] = float(pr)
+    if return_hypotheses:
+        best["hypotheses"] = [{
+            "scale": float(r["scale"]),
+            "theta": float(r["theta"]),
+            "pose_peak": float(r.get("pose_peak", np.nan)),
+            "network_score": float(r.get("score", np.nan)),
+            "peak_ratio": float(r.get("peak_ratio", np.nan)),
+            "coarse_x_native": float(r["coarse_x_native"]),
+            "coarse_y_native": float(r["coarse_y_native"]),
+            "x": float(r["x"]),
+            "y": float(r["y"]),
+            "zncc": float(r.get("zncc", np.nan)),
+            "rank": float(r.get("rank", np.nan)),
+            "band": float(r.get("band", np.nan)),
+            "dog": float(r.get("dog", np.nan)),
+        } for r in candidates]
+        best["secs_verification"] = float(verification_secs)
+    else:
+        # Optional selectors change only the chosen hypothesis, not the result
+        # dictionary contract consumed by register.py and downstream callers.
+        for key in ("rank", "band", "dog"):
+            best.pop(key, None)
     return best
 
 
