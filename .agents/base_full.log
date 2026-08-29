@@ -1,0 +1,52 @@
+2500 pairs over 6 shard(s), 6 workers
+  100/2500  2.67s/pair wall  eta 106.9 min
+  200/2500  2.45s/pair wall  eta 93.9 min
+  300/2500  2.42s/pair wall  eta 88.9 min
+  400/2500  2.38s/pair wall  eta 83.2 min
+  500/2500  2.34s/pair wall  eta 77.9 min
+  600/2500  2.33s/pair wall  eta 73.8 min
+  700/2500  2.32s/pair wall  eta 69.5 min
+  800/2500  2.32s/pair wall  eta 65.7 min
+  900/2500  2.32s/pair wall  eta 61.8 min
+  1000/2500  2.32s/pair wall  eta 58.1 min
+  1100/2500  2.31s/pair wall  eta 53.9 min
+  1200/2500  2.33s/pair wall  eta 50.4 min
+  1300/2500  2.32s/pair wall  eta 46.4 min
+  1400/2500  2.32s/pair wall  eta 42.6 min
+  1500/2500  2.33s/pair wall  eta 38.8 min
+  1600/2500  2.33s/pair wall  eta 35.0 min
+  1700/2500  2.33s/pair wall  eta 31.1 min
+  1800/2500  2.33s/pair wall  eta 27.2 min
+  1900/2500  2.33s/pair wall  eta 23.3 min
+  2000/2500  2.34s/pair wall  eta 19.5 min
+  2100/2500  2.33s/pair wall  eta 15.6 min
+  2200/2500  2.33s/pair wall  eta 11.7 min
+  2300/2500  2.34s/pair wall  eta 7.8 min
+  2400/2500  2.34s/pair wall  eta 3.9 min
+  2500/2500  2.32s/pair wall  eta 0.0 min
+wrote /home/pranesh/Documents/semicon/semicon-driftsense/.agents/ext_base_full.csv
+
+==========================================================================
+EXTERNAL TEST SET — 2500 pairs (A 875, B 875, C 500, D 250)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8223     32.89
+   set A (875 pairs)        0.9520  <=5px 96.5%  <=1px 90.5%
+                                         median 0.34px
+   set B (875 pairs)        0.7161  <=5px 79.8%  <=1px 51.1%
+                                         median 0.98px
+Pose — scale (10)             credit 0.8234  med 0.78%      8.23
+Pose — rotation (10)        credit 0.9148  med 0.096deg      9.15
+Rejection (15)                  F1 0.9345 @fixed 0.250     14.02
+                                  tp 1583 fp 55 fn 167
+                            [best-possible F1 0.9442 @ 0.1314]
+Calibration (10)                            AUC 0.9715      9.71
+--------------------------------------------------------------------------
+SUBTOTAL (95 measurable)                                   74.00
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9608  <=5px 97.2%
+                            +6 needs D>=0.40 and A-C>=0.50
+BASEFULLDONE

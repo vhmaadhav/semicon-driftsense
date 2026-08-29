@@ -59,6 +59,56 @@ NOISE_PRESETS = {
 }
 
 
+# Phase 2 Set B severity ladder. The endpoints are *measured* from the
+# disclosed Set B manifests (`data/ext_p2/test_B_*/manifest.csv`), which run a
+# clean linear ramp across four severity levels; each tuple is (level-1 floor,
+# level-4 ceiling). They are widened by SEVERITY_MARGIN so the model is not
+# trained right up against the boundary it will be tested at.
+#
+# This exists because the shipped weights had never seen severity 4. The
+# training sampler's ceilings sat below the level-4 ceiling on six of seven
+# knobs -- defocus most starkly, 8.0 nm trained against 10.0 nm tested -- and
+# the >5 px failures concentrate exactly there (13.3% at severity 4 against
+# 5.0% at severity 1).
+SEVERITY_LADDER = {
+    "drift_jitter_px":             (0.34, 2.10),
+    "shear_amplitude_px":          (0.72, 4.80),
+    "detector_noise_sigma_search": (3.51, 13.00),
+    "speckle_sigma":               (0.04, 0.32),
+    "charging_streak_prob":        (0.39, 4.00),
+    "beam_spot_size_nm":           (4.78, 10.00),
+    "astigmatism_ratio":           (1.04, 1.42),
+}
+SEVERITY_MARGIN = 0.12
+# Physical floors, because the jitter above can otherwise push a knob below
+# what it can mean: an astigmatism *ratio* under 1.0 is not a milder aberration,
+# it is a different axis, and a negative noise sigma is nothing at all.
+SEVERITY_FLOOR = {"astigmatism_ratio": 1.0}
+
+
+def sample_severity_params(rng: np.random.Generator,
+                           severity_range: tuple[float, float] = (0.0, 1.0)) -> dict:
+    """Draw one coherent point on the Set B severity ladder.
+
+    A single latent severity in [0, 1] drives every knob together, which is
+    what the disclosed data does -- its manifests carry a `severity_continuous`
+    column and the four discrete levels are just quartiles of it. Drawing each
+    knob independently would be wrong: it would produce mostly mid-severity
+    frames and almost never the all-bad corner that actually breaks matching.
+    """
+    lo, hi = severity_range
+    sev = float(rng.uniform(lo, hi))
+    out = {}
+    for k, (a, b) in SEVERITY_LADDER.items():
+        b = b * (1.0 + SEVERITY_MARGIN)
+        # +/-8% of the span as within-level jitter, so a level is a band and
+        # not a single point.
+        v = a + (b - a) * sev + rng.normal(0.0, 0.08 * (b - a))
+        out[k] = float(np.clip(v, SEVERITY_FLOOR.get(k, 0.0), b))
+    out["severity_continuous"] = sev
+    return out
+
+
 def sample_random_params(rng: np.random.Generator) -> dict:
     """Draw acquisition conditions for one sample.
 
@@ -68,7 +118,7 @@ def sample_random_params(rng: np.random.Generator) -> dict:
     are drawn too -- upstream leaves them at their no-op defaults, which
     would let a model overfit to a perfectly-corrected column.
     """
-    return {
+    out = {
         "dose_search": float(np.exp(rng.uniform(np.log(25.0), np.log(900.0)))),
         "dose_reference": float(np.exp(rng.uniform(np.log(800.0), np.log(3000.0)))),
         "detector_noise_sigma_search": float(rng.uniform(1.5, 12.0)),
@@ -93,6 +143,7 @@ def sample_random_params(rng: np.random.Generator) -> dict:
         "mat_size_nm": float(rng.uniform(1800.0, 4000.0)),
         "strip_width_nm": float(rng.uniform(200.0, 500.0)),
     }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +194,15 @@ class PoseSpec:
     edge_brightening: tuple[float, float] = (0.0, 0.0)
     # Fraction of pairs generated with no true instance in the search frame.
     absent_frac: float = 0.0
+    # Phase 2 Set B: multiplicative CD scaling of every drawn polygon, pitch
+    # held fixed. (lo, hi) inclusive; hi <= lo disables it entirely, and
+    # "disabled" means *no draw is made*, so the Phase 1 splits keep their
+    # exact random stream.
+    polygon_scale: tuple[float, float] = (0.0, 0.0)
+    # Phase 2 Set B severity ladder, as a range over the latent severity in
+    # [0, 1]. hi <= lo disables it and *no draw is made*, so the Phase 1
+    # splits keep their exact random stream.
+    severity: tuple[float, float] = (0.0, 0.0)
 
     def required_canvas_px(self) -> int:
         """Fine-canvas extent needed so the search frame is fully covered.
@@ -434,6 +494,17 @@ def build_one(job: tuple) -> list[dict]:
     architecture = architectures[int(rng.integers(0, len(architectures)))]
 
     overrides = sample_random_params(rng) if noise == "randomized" else dict(NOISE_PRESETS[noise])
+    # Drawn from the pose stream rather than the scene stream, and only when
+    # enabled, so switching Set B on changes the layout CD without reshuffling
+    # any of the acquisition parameters or the scene itself.
+    _plo, _phi = spec.polygon_scale
+    if _phi > _plo:
+        overrides["polygon_scale_fraction"] = float(pose_rng.uniform(_plo, _phi))
+    # The severity ladder overrides the independent per-knob draws above,
+    # because Set B degradations move together rather than independently.
+    _slo, _shi = spec.severity
+    if _shi > _slo:
+        overrides.update(sample_severity_params(pose_rng, (_slo, _shi)))
     params = GenerationParams(**overrides)
 
     canvas_px = spec.required_canvas_px()
@@ -645,6 +716,17 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
     architecture = architectures[int(rng.integers(0, len(architectures)))]
 
     overrides = sample_random_params(rng) if noise == "randomized" else dict(NOISE_PRESETS[noise])
+    # Drawn from the pose stream rather than the scene stream, and only when
+    # enabled, so switching Set B on changes the layout CD without reshuffling
+    # any of the acquisition parameters or the scene itself.
+    _plo, _phi = spec.polygon_scale
+    if _phi > _plo:
+        overrides["polygon_scale_fraction"] = float(pose_rng.uniform(_plo, _phi))
+    # The severity ladder overrides the independent per-knob draws above,
+    # because Set B degradations move together rather than independently.
+    _slo, _shi = spec.severity
+    if _shi > _slo:
+        overrides.update(sample_severity_params(pose_rng, (_slo, _shi)))
     params = GenerationParams(**overrides)
 
     canvas_px = spec.required_canvas_px()

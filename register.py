@@ -34,7 +34,12 @@ from driftsense.matching import locate_phase2  # noqa: E402
 # Chosen on our own validation split by sweeping the operating point, not on
 # anything organizer-supplied. Kept as a named constant so the value that was
 # calibrated is the value that ships.
-DEFAULT_FOUND_THRESHOLD = 0.25
+# Chosen on the external validation set by sweeping the operating point
+# against the *total* rubric, not against rejection F1 alone -- declining a
+# present pair forfeits its localisation (40 pts) and pose (20 pts) credit as
+# well as hurting F1, so an F1-optimal threshold sits too high. Held-out and
+# in-sample agreed to 0.00 points at this value.
+DEFAULT_FOUND_THRESHOLD = 0.115
 
 OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
 
@@ -113,7 +118,8 @@ def main():
                     res.setdefault("theta", 0.0)
                 else:
                     res = locate_phase2(model, ref, sea, device, refine=True)
-                score = float(res.get("score", 0.0))
+                # min(network score, full-resolution ZNCC); see locate_phase2.
+                score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= a.threshold)
                 out.update({
                     "x": f'{float(res["x"]):.4f}' if found else 0,

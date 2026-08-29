@@ -77,6 +77,7 @@ def generate_zone_canvas(
     strip_width_nm: float = 320.0,
     linewidth_bias_nm: float = 0.0,
     corner_rounding_px: float = 0.0,
+    polygon_scale_fraction: float = 0.0,
 ) -> dict:
     """Tile independently-generated mats of `kind` across the canvas,
     separated by strip material. Returns dict with the canvas plus mat/strip
@@ -103,6 +104,7 @@ def generate_zone_canvas(
                 mat_canvas = generator(
                     mat_size, preset, collapse_threshold_nm, child_rng,
                     linewidth_bias_nm=linewidth_bias_nm, corner_rounding_px=corner_rounding_px,
+                    polygon_scale_fraction=polygon_scale_fraction,
                 )
                 canvas[y0:y1, x0:x1] = mat_canvas[:mat_h, :mat_w]
                 mat_rects.append((x0, y0, mat_w, mat_h))

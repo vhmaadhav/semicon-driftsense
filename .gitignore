@@ -17,8 +17,13 @@ weights/*_last.pt
 results/*/
 .pytest_cache/
 
-# Working notes and agent context — local only, never pushed.
-.agents/
+# Working notes, measured results and agent context. Shared with the team:
+# .agents/PHASE2_STATE.md is the single source of truth for where Phase 2
+# stands, and the ext_*.csv files are the per-pair results every number in
+# README.md and IMPROVING.md is computed from.
+# NOTE: PHASE2_ADDENDUM.md is transcribed from a briefing deck marked
+# "Applied Materials Confidential". This repository is private; keep it that
+# way, or drop that one file.
 
 # Per-epoch training checkpoints (--keep-epochs); only the promoted weights ship.
 weights/*_e[0-9]*.pt

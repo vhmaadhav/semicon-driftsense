@@ -1,0 +1,28 @@
+pool: /home/pranesh/Documents/semicon/semicon-driftsense/data/pool_p2
+already complete: 0 shards, 0.0 GB
+adding 9 shards x 1000 canvases x 8 crops = 72,000 pairs
+
+=== shard s000  canvases [0, 1000)
+  [500/1000 canvases, 4000 pairs]
+  [1000/1000 canvases, 8000 pairs]
+Wrote 8000 pairs from 1000 canvases (randomized) to /home/pranesh/Documents/semicon/semicon-driftsense/data/pool_p2/s000
+    s000 done in 18.4 min  (7.2 pairs/s)  pool now 0.9 GB, 8,000 pairs
+
+=== shard s001  canvases [1000, 2000)
+  [500/1000 canvases, 4000 pairs]
+  [1000/1000 canvases, 8000 pairs]
+Wrote 8000 pairs from 1000 canvases (randomized) to /home/pranesh/Documents/semicon/semicon-driftsense/data/pool_p2/s001
+    s001 done in 24.1 min  (5.5 pairs/s)  pool now 1.8 GB, 16,000 pairs
+
+=== shard s002  canvases [2000, 3000)
+pool: /home/pranesh/Documents/semicon/semicon-driftsense/data/pool_p2
+already complete: 2 shards, 1.8 GB
+adding 7 shards x 1000 canvases x 8 crops = 56,000 pairs
+
+=== shard s002  canvases [2000, 3000)
+  [500/1000 canvases, 4000 pairs]
+  [1000/1000 canvases, 8000 pairs]
+Wrote 8000 pairs from 1000 canvases (randomized) to /home/pranesh/Documents/semicon/semicon-driftsense/data/pool_p2/s002
+    s002 done in 28.3 min  (4.7 pairs/s)  pool now 2.7 GB, 24,000 pairs
+
+=== shard s003  canvases [3000, 4000)
