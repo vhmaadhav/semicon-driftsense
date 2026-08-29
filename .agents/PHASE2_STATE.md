@@ -1,7 +1,7 @@
 # Phase 2 — current state, and how to not waste a session
 
 **Read this file first.** It is the single source of truth for where Phase 2
-stands. Last updated 2026-08-28. Deadline: **3 September 2026**, code frozen,
+stands. Last updated 2026-08-29. Deadline: **3 September 2026**, code frozen,
 no resubmission.
 
 If you only read one section, read *Do not re-derive these* and *Dead ends
@@ -136,9 +136,82 @@ Use stride 5 to rank variants against each other; quote only full-set numbers.
   `SEVERITY_LADDER` with these measured endpoints, widened 12%, driven by one
   latent severity so the knobs move together (independent draws almost never
   produce the all-bad corner that actually breaks matching).
-* **Pose hypotheses are exhausted at K=3.** K=5 returns identical results; the
-  coarse sweep only produces ~3 local maxima.
+* **K=5 returns identical results to K=3 — but not because hypotheses are
+  "exhausted".** The coarse sweep samples [8,12] at 17 points, a 2.5% step,
+  while the correlation peak it hunts is 1–2% wide, so it can step over the
+  true peak entirely and that basin never becomes a local maximum. Extra
+  candidate slots cannot hold a peak the grid never sampled. Raising the
+  sample count does *not* fix it either (41 points measured −0.006 pts), so
+  the binding constraint is that the coarse *score* is noise-dominated, not
+  the resolution. See §3b.
 * **Set D needs no work.** 0.976 credit as-is.
+
+## 3b. Hypothesis verification: what the scores can and cannot reach
+
+Two independent investigations landed on this in parallel — `scripts/verify_scores.py`
+here, and PR #3 (`dev/phase2-robust-verification`, now merged). They used
+different harnesses and different data and agree on the important parts.
+
+### The ceiling: verification reaches 24% of Set B failures
+
+Measured on 270 Set B pairs from `data/ext_p2/`: of 90 pairs that currently
+fail at >5 px, only **22 (24%)** had a correct hypothesis *generated* and then
+not selected. The other **76% never had a right answer among the candidates**,
+so no similarity measure can rescue them — the coarse *search* is what failed,
+not the ranking. PR #3's oracle says the same thing in its own units: a
+recoverable gap of 2.68 pp (dev) and 2.41 pp (confirmation).
+
+**Consequence:** verification work is worth a few tenths of a point, not units.
+Budget it accordingly.
+
+### Which score, measured as an independent selector
+
+Each score replaces native ZNCC as the hypothesis picker. "Breaks" counts
+pairs that currently succeed and would stop succeeding — a score that rescues
+14 and breaks 13 is a loss, and only reporting rescues would hide that.
+
+| score | recovers | breaks | net |
+| --- | ---: | ---: | ---: |
+| `zncc` (incumbent) | 12/22 | 5/180 | +7 |
+| `zncc_rank` | 14/22 | **13/180** | +1 |
+| `zncc_dog` | **14/22** | **4/180** | **+10** |
+| `zncc_grad` | 13/22 | 7/180 | +6 |
+| `zncc_clip` | 12/22 | 5/180 | +7 |
+
+**Rank/census is the trap.** It rescues the most and is still the worst
+practical choice, because it discards too much on clean pairs. PR #3 reached
+the same verdict from a different harness (net −6 dev, −4 confirmation) and
+also rejected it. Do not revisit it on the strength of the ECCV citation
+alone; two measurements say no.
+
+### The safer construction: consensus, from PR #3
+
+Rather than swapping the selector, PR #3 keeps native ZNCC and overrides it
+only when **rank and band both agree** on the same different hypothesis
+(`verification="consensus"`, default `"zncc"`). Measured there: +2 rescued / 0
+broken (dev) and +1 / 0 (confirmation), about **+0.31 to +0.37 points**. Zero
+broken successes in both splits is the property that makes it worth having.
+
+**Two caveats on that report's numbers, which are not the code's fault:**
+
+1. Its branch was cut from `bd51fee`, **before PR #2**, so its baseline lacks
+   the continuous-scale template, canvas-pinned polish, pose clamping and
+   `min(score, zncc)` confidence — the +1.94 points already banked.
+2. Its Set B is a **local generator proxy** scoring credit 0.888 on 149 dev /
+   83 confirmation present pairs. The real external Set B scores **0.723 on
+   875 present pairs**. The report says outright that an external shard was
+   unavailable. We have one. **`verification="consensus"` has not yet been
+   measured on `data/ext_p2/` — do that before enabling it by default.**
+
+### Band-pass moved one stage earlier
+
+Because verification only reaches 24% of failures, `_band()` (difference of
+Gaussians) is also applied inside `pose_candidates`, where it can affect the
+other 76% by changing which candidates get generated at all. Set B's
+degradations sit at both spectral ends — charging low-frequency, shot and
+impulse noise high-frequency — with the layout structure between them, so a
+band keeps what the search needs and discards both noise families. Switchable
+via `band=` / `--no-band`; the A/B against the incumbent is the open item.
 
 ## 4. Dead ends already paid for
 
@@ -199,49 +272,50 @@ All in the working tree on branch `phase2-unknown-pose` (**not yet committed**).
 
 ## 6. Ranked next work
 
-1. **Set B localisation — ~6 of the 40 points.** The entire localisation gap.
-   The failures are acquisition-severity failures, so the fixes below attack
-   the *verification* signal, not the pose search (which is solved) and not the
-   network (retraining scored 0.000 last time).
+Ordered by measured expected value, not by how interesting the idea is.
 
-   **(a) ~~Gated dihedral TTA~~ — measured at +0.11 pts and rejected on
-   runtime. See §4.**
+### 1. Rejection → F1 ≥ 0.90. ~2.9 points, plus a 4-point bonus.
 
-   **(b) Rank-transform verification — researched, not yet implemented.** The
-   two strongest failure discriminators are impulse noise (salt-pepper,
-   d=1.21) and speckle (d=1.18), and ZNCC is a least-squares statistic, so a
-   handful of outlier pixels move it a lot. The standard fix is to correlate
-   *non-parametric local transforms* instead of intensities: the rank transform
-   replaces each pixel by the count of neighbours darker than it, so the
-   statistic depends only on local intensity *ordering* and tolerates a
-   substantial fraction of outliers, as well as being invariant to monotonic
-   intensity change (charging, dose drift, gamma).
+Still the largest and most certain item. Rejection is 12.13/15 and calibration
+9.78/10, both decided by one scalar. The shipped scalar is `min(score, zncc)` —
+a hand-picked rule over two of the four signals the pipeline computes.
+`peak_ratio` (how contested the decision was) and `pose_peak` (whether any pose
+explains the frame) are computed and discarded. `scripts/fit_rejector.py` fits
+a 5-parameter logistic over all four, on *training* shards, thresholded on a
+training fold, reported out-of-sample.
 
-   - Zabih, R. and Woodfill, J. "Non-parametric Local Transforms for Computing
-     Visual Correspondence", *ECCV* 1994 — the rank and census transforms.
-   - Elboher, E. and Werman, M. "Asymmetric Correlation: A Noise Robust
-     Similarity Measure for Template Matching", *IEEE TIP* 2013 — a template
-     matching similarity invariant to affine illumination change and robust
-     under extreme noise.
+### 2. Measure `verification="consensus"` on `data/ext_p2/`.
 
-   Suggested shape: keep ZNCC for sub-pixel *placement* (rank transform
-   quantises and would blunt the parabolic fit) and add rank correlation as a
-   second *verification* statistic for choosing between pose hypotheses and for
-   the confidence column. Cost is one 5×5 rank pass over the search frame
-   (~24 shifted compares, well under 0.1 s), so it fits the budget. Measure it
-   as its own variant — do not combine it with anything else in the same run.
+PR #3 shipped it as opt-in and could not measure it on external data. This is
+the cheapest open question in the repo: one eval run answers whether its
++0.31–0.37 holds on the real Set B, or whether it was an artefact of a
+149-pair local proxy. Until then, leave the default at `"zncc"`.
 
-   **(c) Charging is low-frequency.** Charging streaks are slowly-varying
-   horizontal bands, so a high-pass / difference-of-Gaussians prefilter before
-   verification should suppress them where a rank transform will not. Cheapest
-   of the three to try; test after (b).
-2. **Rejection to F1 ≥ 0.90 — ~2 points plus the +4 bonus.** `min(score, zncc)`
-   is already the better statistic (the full-res ZNCC was being computed and
-   discarded); worth ~+0.65 held-out. Needs to be wired into `register.py`.
-3. **Document the confidence scale in the README.** The mentor asked for this
-   explicitly on the call so graders can read how our `score` is formed.
-4. **Ship `failure_analysis.pdf`** (max 2 pages) — generator exists
-   (`scripts/failure_analysis.py`), regenerate from the final results CSV.
+### 3. Band-passed coarse sweep — A/B in flight.
+
+Targets the 76% of Set B failures that verification cannot reach, by changing
+which candidates are generated. Compare `--no-band` against the default.
+
+### 4. Training, scoped to the half it can reach.
+
+The true-pose oracle bounds this: Set B's ceiling with a *perfect* pose is
+**87.1%**, not 99%. So ~52% of failures are pose-side and only **48% are the
+network's own error** — that is all training can address. A 4-epoch probe moved
+Set B by 0.000, but it was mis-configured (see §6e) and its one-cycle schedule
+never left warmup. One properly configured run is justified; an open-ended
+search is not. **Promote only if Set B credit improves on the external 2500-pair
+test** — training loss is not a proxy: the last run's loss fell 0.404 → 0.32
+while Set B credit moved exactly zero.
+
+### 5. Not worth doing yet
+
+* **Lattice fallback.** The failures track acquisition severity (drift jitter
+  d=1.23, salt-pepper 1.21, charging 1.20), not periodicity. Attack the noise
+  first; the same pairs are reachable more directly.
+* **Rank/census as a selector.** Rejected twice, by two harnesses. §3b.
+* **DINO / LoFTR / RoMa.** Beyond the rules question, the current 0.46M network
+  is already 86% of a 3.35 s pair against a 5 s median budget, paid three times
+  over for three hypotheses. There is no room.
 
 ## 6b. Training on the Drive shards — verified recipe
 
@@ -342,6 +416,48 @@ disqualifier.
   than 100%.
 * **Config:** `--resume weights/driftsense.pt --finetune --lr 1e-4`, one-cycle,
   30 epochs x 15k, `--refresh-pool` so shards still downloading are picked up.
+
+## 6e. Operational traps that cost real time here
+
+Each of these wasted at least one run. They are environment facts, not
+insights, which is exactly why they are easy to rediscover the hard way.
+
+**`train.py` needs `--phase2`, or validation is meaningless.** `evaluate()`
+takes `phase2=args.phase2`. Without the flag it scores posed scenes (mag 8–12,
+rot ±5°) with a *nominal* 10×/0° validator and reads ~chance — 429 px median,
+acc@5 0.28 — from epoch 0, before training could have changed anything. A run
+was stopped on the strength of that number, which was a false alarm.
+
+**`--val-dir` must hold full 1000 px references.** Pointing it at a *train*
+shard gives 100 px template references, and the validator builds its template
+from a full reference: val acc@5 reads exactly **0.000**. Use `data/val_p2`
+(reference_px 1000, and it carries absent pairs). `data/ext_train/*` and
+`data/ext_holdout/*` are training-format shards and are **not** valid
+validation sets.
+
+**Background jobs need `setsid`, not `nohup`.** `nohup cmd &` from a tool call
+still dies when the session ends. Two multi-hour jobs were lost that way. Use:
+
+```bash
+setsid nohup ./script.sh > log 2>&1 < /dev/null &
+```
+
+**Long extractions must checkpoint *and* shuffle.** `fit_rejector.py` wrote its
+cache only at the end, so a 90-minute run interrupted at 400/2340 lost
+everything. Worse, tasks were built shard-by-shard, so the partial cache held
+400 present pairs and **zero absent** — useless for fitting a present/absent
+decision. Both fixed: it writes every 200 pairs and shuffles first, so any
+prefix is a representative sample.
+
+**This laptop runs at 100 °C under any sustained load.** 97 °C on CPU-only
+evaluation, 100 °C with GPU training added. It thermally throttles rather than
+failing, but it means the machine is the constraint on parallelism: four
+concurrent jobs roughly doubled the rejector's ETA. Prefer sequencing the
+measurements you actually need over running everything at once.
+
+**Timings inside a parallel run are fiction.** The box is memory-bandwidth
+bound at ~0.42 pairs/s total regardless of the worker/thread split. Runtime
+claims come from `scripts/profile_pair.py`, single process, 4 threads, idle.
 
 ## 7. Data, and the leakage rule
 

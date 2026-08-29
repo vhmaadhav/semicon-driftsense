@@ -117,6 +117,29 @@ point is therefore chosen against the total rubric, not against F1 alone
 declining, for the asymmetry above. Both counts are reported separately by
 `scripts/eval_ext.py`.
 
+### Verification: which hypothesis wins
+
+The pose search returns up to three candidates and one must be chosen. The
+default is native-resolution ZNCC (`verification="zncc"`), and an opt-in
+consensus mode overrides it only when a rank transform and a band-pass filter
+*both* prefer the same different candidate.
+
+Two things are worth knowing before changing this.
+
+**Verification reaches about a quarter of the remaining failures.** Of 90 Set B
+pairs that miss the 5 px tier, only 22 had a correct candidate generated and
+then not selected. The other 76% never had a right answer among the candidates
+at all, so they are a search problem, not a ranking one. That is why the
+band-pass is also applied inside the coarse sweep, where it changes which
+candidates exist.
+
+**The textbook fix is the wrong one here.** A rank transform (Zabih & Woodfill,
+ECCV 1994) is the standard defence against impulse noise, and impulse noise is
+the second strongest discriminator of these failures. Measured as a selector it
+rescues the most failures and breaks the most successes — a net loss against
+plain ZNCC. It is available for study and is not used to select. See
+[CITATIONS §6](CITATIONS.md).
+
 ### How it works
 
 The Phase 1 method is extended, not replaced. The network still does the one

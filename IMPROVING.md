@@ -8,10 +8,15 @@ bottom rather than deleted, because how they were wrong is the useful part.
 ## How these numbers are measured
 
 `scripts/eval_ext.py` scores the published Phase 2 rubric against
-`data/ext_p2/`, a 2500-pair set (A 875, B 875, C 500, D 250) produced by a
-different generator, with full ground truth for position, rotation,
-magnification and presence. It is not the blind set, but it is the only thing
-available that does not share our modelling assumptions.
+`data/ext_p2/`, a 2500-pair set (A 875, B 875, C 500, D 250) with full ground
+truth for position, rotation, magnification and presence.
+
+It is **not** an independent generator — its manifest is a strict superset of
+ours and the twelve architecture presets match exactly, so it is our generator
+in a Phase-2 harness that adds the A/B/C/D split, a four-level severity ladder
+and polygon scaling. What it *does* give us is a far harder and better-specified
+draw than `data/val_p2`, and enough Set B pairs (875 present) to measure changes
+that a 100-pair split cannot resolve.
 
 Two rules are enforced, and both cost points that the old self-measurement was
 quietly keeping:
@@ -89,17 +94,38 @@ does not discriminate) and modelling polygon scaling harder (d = −0.12).
 Failure rate is 17.1% on set B against 3.4% on set A, and 13% at severity 3–4
 against 5% at severity 1–2.
 
-### 2. Rejection — ~2 points plus a `+4` bonus
+### 1b. …but only a quarter of those failures are reachable by verification
 
-F1 is 0.843 at the shipped threshold and 0.867 at the best available one, so
-the `+4` bonus at F1 ≥ 0.90 is **not currently earned**. At the shipped
-threshold, 25 present pairs are declined and 9 absent pairs accepted. The 25
-declined pairs cost their localisation and pose credit as well.
+Measured on 270 Set B pairs (`scripts/verify_scores.py`): of 90 current >5 px
+failures, only **22 (24%)** had a correct hypothesis generated and then not
+selected. The other **76% never had a right answer among the candidates**, so
+no similarity measure can rescue them.
 
-`scripts/optimize_threshold.py` tunes the threshold against the *total* rubric
-rather than F1 alone, and finds `min(score, zncc)` the best statistic — the
-full-resolution ZNCC is already computed and was being discarded. Worth about
-+0.65 points, held-out.
+Scored as independent selectors, with breakage counted (a score that rescues
+14 and breaks 13 is a loss):
+
+| score | recovers | breaks | net |
+| --- | ---: | ---: | ---: |
+| `zncc` (incumbent) | 12/22 | 5/180 | +7 |
+| `zncc_rank` | 14/22 | 13/180 | +1 |
+| `zncc_dog` | 14/22 | 4/180 | **+10** |
+| `zncc_grad` | 13/22 | 7/180 | +6 |
+
+Rank/census rescues the most and is still the worst choice. PR #3 reached the
+same verdict independently (net −6 / −4) and also rejected it. Its safer
+construction — override native ZNCC only when rank *and* band agree — is merged
+as `verification="consensus"`, opt-in, worth about +0.31–0.37 points on that
+report's local proxy and **not yet measured on `data/ext_p2/`**.
+
+### 2. Rejection — ~2.9 points plus a `+4` bonus
+
+Rejection is 12.13/15 and calibration 9.78/10, both decided by one scalar. The
+shipped scalar is `min(score, zncc)`, chosen by hand over two of the four
+signals the pipeline computes; `peak_ratio` and `pose_peak` are computed and
+discarded. `scripts/fit_rejector.py` fits a small logistic over all four on
+training shards. `scripts/optimize_threshold.py` tunes the operating point
+against the *total* rubric rather than F1 alone, because declining a present
+pair forfeits its localisation and pose credit too.
 
 ### 3. The 1 px tier is bounded by the label, not the method
 
