@@ -45,21 +45,61 @@ VERIFY_TOP_K = 4
 
 
 def make_template(reference: np.ndarray, factor: float = SCALE,
-                  rotation_deg: float = 0.0) -> np.ndarray:
+                  rotation_deg: float = 0.0,
+                  canvas: tuple[int, int] | None = None) -> np.ndarray:
     """Reference -> template at the search frame's pixel size and pose.
 
-    INTER_AREA because that is the same area-average the physical search
-    image underwent; bilinear here measurably softens the match. Any rotation
-    is applied after the reduction, where it costs a hundredth of the pixels.
+    The realised scale must be *continuous* in `factor`. Resizing straight to
+    `round(H/factor)` does not give that: the template can only ever be an
+    integer number of pixels, so the scale it actually realises is
+    `W / round(W / factor)` -- a 43-step staircase across [8, 12] whose steps
+    are 0.81-1.22% wide. The Phase 2 scale tier pays full credit below 1%, so
+    the quantisation step is as wide as the whole full-credit band, and any
+    search over `factor` is optimising a piecewise-constant function. That is
+    the real reason correlation-vs-scale looked "nearly flat": it *was* flat,
+    in 43 plateaus.
+
+    So the reduction is done in two stages. INTER_AREA takes it to the nearest
+    enclosing integer size -- the same area-average the physical search image
+    underwent, and bilinear here measurably softens the match. A single affine
+    then applies the residual sub-pixel scale *and* any rotation together, so
+    continuity costs no extra resampling pass over the previous code, which
+    already paid for a warp whenever rotation was non-zero.
+
+    The canvas is floor()ed rather than round()ed so that every canvas pixel
+    holds real reference content. Rounding up would leave a replicated border
+    whose width jumps as the canvas crosses an integer, reintroducing a
+    discontinuity in the correlation value at exactly the scales we are trying
+    to resolve. At `factor` values that divide the reference exactly (10.0 for
+    a 1000 px reference) this returns bit-identical output to the old path.
+
+    `canvas` pins the output size (height, width), centre-cropping the content
+    instead of letting the canvas follow `factor`. Comparing TM_CCOEFF_NORMED
+    across templates of *different* sizes is biased -- fewer pixels correlate
+    better by chance, which pushes any scale search towards larger `factor` --
+    so a search that sweeps scale must hold the canvas fixed to be fair.
     """
-    th = max(int(round(reference.shape[0] / factor)), 1)
-    tw = max(int(round(reference.shape[1] / factor)), 1)
-    tpl = cv2.resize(reference, (tw, th), interpolation=cv2.INTER_AREA)
-    if rotation_deg != 0.0:
-        M = cv2.getRotationMatrix2D(((tw - 1) / 2.0, (th - 1) / 2.0), rotation_deg, 1.0)
-        tpl = cv2.warpAffine(tpl, M, (tw, th), flags=cv2.INTER_LINEAR,
-                             borderMode=cv2.BORDER_REPLICATE)
-    return tpl
+    h, w = reference.shape[:2]
+    fh, fw = h / float(factor), w / float(factor)          # exact footprint
+    th, tw = max(int(np.floor(fh)), 1), max(int(np.floor(fw)), 1)
+    if canvas is not None:
+        th, tw = max(int(canvas[0]), 1), max(int(canvas[1]), 1)
+    ah, aw = max(int(np.ceil(fh)), 1), max(int(np.ceil(fw)), 1)
+
+    base = cv2.resize(reference, (aw, ah), interpolation=cv2.INTER_AREA)
+    resid = fw / aw                                        # (0.5, 1.0]
+    if rotation_deg == 0.0 and abs(resid - 1.0) < 1e-9 and (aw, ah) == (tw, th):
+        return base
+
+    # Rotate/scale about the reference centre, then move that centre to the
+    # canvas centre. Both are expressed in pixel-centre coordinates, which
+    # keeps the "centre = top-left + tw/2" convention the rest of the file
+    # relies on.
+    M = cv2.getRotationMatrix2D(((aw - 1) / 2.0, (ah - 1) / 2.0), rotation_deg, resid)
+    M[0, 2] += (tw - 1) / 2.0 - (aw - 1) / 2.0
+    M[1, 2] += (th - 1) / 2.0 - (ah - 1) / 2.0
+    return cv2.warpAffine(base, M, (tw, th), flags=cv2.INTER_LINEAR,
+                          borderMode=cv2.BORDER_REPLICATE)
 
 
 def template_hypotheses(reference: np.ndarray) -> list[float]:
@@ -187,6 +227,31 @@ def uncanonicalize_point(M: np.ndarray, x: float, y: float) -> tuple[float, floa
 PHASE2_SCALE_BOUNDS = (8.0, 12.0)
 PHASE2_ROTATION_BOUNDS = (-5.0, 5.0)
 
+# Samples in the coarse scale sweep. This is a *sampling* parameter, not a
+# ranking one, and it was undersampling its own objective: 17 points across
+# [8, 12] is a 2.5% step at m=10, while the correlation-vs-scale peak is only
+# ~1-2% wide -- which is why the full-credit pose tier is 1% wide in the first
+# place. The sweep could therefore step straight over the true peak, so the
+# true basin never became a local maximum at all.
+#
+# That is also why raising the hypothesis count did nothing when it was tried:
+# extra candidate slots cannot hold a peak that was never sampled. A true-pose
+# oracle confirmed the diagnosis -- 52% of the >5 px failures were pose-search
+# failures, with median scale error 2.99% among failures against 0.40% among
+# successes.
+#
+# The obvious fix does not pay, and the measurement is kept here so nobody
+# re-runs it. 41 points (a 1.0% step) moved set B credit 0.7566 -> 0.7669 but
+# gave it all back on set A (0.9509 -> 0.9440) and on rotation, for a net
+# **-0.006 points**. Decoupling the refinement window from the sample count so
+# the finer grid kept the wider refine reach was worse still (73.76 against
+# 74.32). So the sampling really is not the binding constraint: the coarse
+# score itself is noise-dominated on degraded frames, and ranking, not
+# resolution, is what fails. See .agents/PHASE2_STATE.md for the next lever
+# (a rank-transform coarse score, which is robust to the impulse noise that
+# dominates these failures).
+COARSE_SCALES = 17
+
 
 def _golden_max(f, lo: float, hi: float, iters: int = 8) -> tuple[float, float]:
     """Maximise a unimodal f on [lo, hi]. Returns (argmax, max).
@@ -244,7 +309,8 @@ def _refine_pose_local(reference, search, f0: float, r0: float,
 def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
-                    coarse_scales: int = 17, coarse_rotations: int = 11) -> list:
+                    coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
+                    refine_span_scales: int = 17) -> list:
     """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
 
     Correlation against a periodic layout is multi-peaked in *scale*: a wrong
@@ -273,7 +339,15 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
              and (i == len(grid) - 1 or vals[i] >= vals[i + 1])]
     peaks.sort(key=lambda i: -vals[i])
 
-    span_s = (hi_s - lo_s) / (coarse_scales - 1)
+    # The refinement window is deliberately NOT derived from the sample count.
+    # Sampling density and refinement reach are independent concerns: a finer
+    # grid resolves *which* basin is real, but the local refine still needs a
+    # window wide enough to walk to the true optimum from a grid point that may
+    # sit up to a full step away. Tying them together meant that going from 17
+    # to 41 samples silently shrank the refine window from 0.25 to 0.10 and
+    # gave back on set A and on pose what it won on set B (measured: a net
+    # -0.006 points, i.e. exactly nothing).
+    span_s = (hi_s - lo_s) / (refine_span_scales - 1)
     span_r = (hi_r - lo_r) / (coarse_rotations - 1)
     out = []
     for i in peaks[:k]:
@@ -517,23 +591,39 @@ def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
 
     Returns (scale, rotation, peak). Bands are deliberately narrow -- this
     polishes an estimate, it does not search.
+
+    Both axes are polished. An earlier version deliberately threw the scale
+    result away because polishing it *lowered* scale credit (0.860 -> 0.808),
+    which was read at the time as correlation-vs-scale being flat inside the
+    window. It was flat, but not for that reason: `make_template` quantised the
+    realised scale to `W / round(W / m)`, so the objective really was constant
+    across plateaus ~1% wide and the search returned an arbitrary point inside
+    one. With the template continuous in `m`, and the canvas pinned so that
+    every candidate is scored over the same pixel count, the objective is a
+    genuine unimodal peak and the scale result is worth keeping.
     """
-    tpl0 = make_template(reference, magnification, rotation_deg)
-    th, tw = tpl0.shape[:2]
+    m, r = float(magnification), float(rotation_deg)
+    ds, dr = m * scale_band, rot_band
+
+    # Pin the canvas to the *smallest* template in the band, so content always
+    # covers it and every candidate is scored over an identical pixel count.
+    h, w = reference.shape[:2]
+    hi = m + ds
+    canvas = (max(int(np.floor(h / hi)), 1), max(int(np.floor(w / hi)), 1))
+
+    th, tw = canvas
     pad = int(max(th, tw) * 0.6)
     y0 = max(int(round(y - th / 2.0)) - pad, 0)
     x0 = max(int(round(x - tw / 2.0)) - pad, 0)
     win = search[y0:int(round(y + th / 2.0)) + pad, x0:int(round(x + tw / 2.0)) + pad]
 
-    def fit(m, r):
-        t = make_template(reference, m, r)
+    def fit(mm, rr):
+        t = make_template(reference, mm, rr, canvas=canvas)
         if t.shape[0] >= win.shape[0] or t.shape[1] >= win.shape[1]:
             return -np.inf
         return float(cv2.minMaxLoc(cv2.matchTemplate(win, t, cv2.TM_CCOEFF_NORMED))[1])
 
-    m, r = float(magnification), float(rotation_deg)
     peak = fit(m, r)
-    ds, dr = magnification * scale_band, rot_band
     for _ in range(rounds):
         m, peak = _golden_max(lambda v: fit(v, r), m - ds, m + ds, iters)
         r, peak = _golden_max(lambda v: fit(m, v), r - dr, r + dr, iters)
@@ -545,7 +635,9 @@ def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
 def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine: bool = True, pose: tuple[float, float] | None = None,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
-                  hypotheses: int = 3, **kw) -> dict:
+                  polish_scale: bool = True, refit_xy: bool = False,
+                  hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
+                  **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     For each pose hypothesis: canonicalise the search frame, let the network
@@ -585,7 +677,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     if pose is not None:
         best = attempt(float(pose[0]), float(pose[1]))
     else:
-        cands = pose_candidates(reference, search, k=max(int(hypotheses), 1))
+        cands = pose_candidates(reference, search, k=max(int(hypotheses), 1),
+                                coarse_scales=int(coarse_scales))
         best = None
         for m, rot, coarse_peak in cands:
             r = attempt(m, rot)
@@ -596,13 +689,63 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         best["n_hypotheses"] = len(cands)
 
     if refine and polish:
-        # Rotation only. Measured: polishing rotation raised its credit
-        # 0.808 -> 0.824, while polishing scale *lowered* scale credit
-        # 0.860 -> 0.808 -- the polish window is barely wider than the
-        # template, so correlation-vs-scale is nearly flat inside it.
-        _, pr, _ = polish_pose(reference, search, best["x"], best["y"],
-                               best["scale"], best["theta"])
+        pm, pr, _ = polish_pose(reference, search, best["x"], best["y"],
+                                best["scale"], best["theta"])
         best["theta"] = float(pr)
+        # Scale is adopted too now that `make_template` is continuous in it and
+        # `polish_pose` pins the canvas; see the note in `polish_pose`. Kept
+        # switchable because this was the one change that previously made the
+        # metric worse, and a regression here is worth being able to isolate.
+        if polish_scale:
+            best["scale"] = float(pm)
+
+        # The ZNCC snap that placed x, y ran against a template built from the
+        # *pre-polish* pose. A 0.9% scale error displaces the template's own
+        # edges by ~0.4 px relative to its centre, which broadens the
+        # correlation peak and biases the parabolic sub-pixel fit. Re-snapping
+        # against the polished template costs one more matchTemplate over a
+        # +/-2 px window and is the only route by which better pose feeds back
+        # into the 40-point metric. Off by default: it is the change most able
+        # to trade localisation for pose, so it ships only if measured to help.
+        if refit_xy:
+            tpl = make_template(reference, best["scale"], best["theta"])
+            rx, ry, zn = refine_zncc(standardize(search / 255.0),
+                                     standardize(tpl / 255.0),
+                                     best["x"], best["y"], radius=2)
+            if np.hypot(rx - best["x"], ry - best["y"]) <= 3.0:
+                best.update({"x": rx, "y": ry, "zncc": float(zn)})
+
+    # The statement guarantees the true pose lies in these boxes and the rules
+    # explicitly permit hard-coding them, so clipping a reported value into the
+    # feasible set can only reduce the error -- it is arithmetic, not a
+    # heuristic. It matters because `polish_pose` searches a band around its
+    # starting estimate without regard to the bound, so a pair whose true
+    # magnification sits near 8 or 12 can be polished just outside it. Measured
+    # on 400 external present pairs: 9 predictions fell outside [8, 12] and 4
+    # outside +/-5 deg, and clipping them lifted scale credit 0.9000 -> 0.9057.
+    best["scale"] = float(np.clip(best["scale"], *PHASE2_SCALE_BOUNDS))
+    best["theta"] = float(np.clip(best["theta"], *PHASE2_ROTATION_BOUNDS))
+
+    # Reported confidence: the *weaker* of the network's peak probability and
+    # the full-resolution ZNCC at the chosen location. Both are already
+    # computed; the ZNCC was previously thrown away.
+    #
+    # They fail differently, which is the whole point of taking the minimum.
+    # The network can be confident on a plausible wrong repeat -- it is a
+    # relative judgement between candidates and something always wins. ZNCC
+    # can be respectable on a heavily degraded frame that contains no true
+    # instance at all. Requiring both to be high is what separates present
+    # from absent; requiring either alone does not.
+    #
+    # Measured on the full 2500-pair external set, swapping the reported
+    # statistic from the raw network score to this minimum (and retuning the
+    # threshold against the total rubric) was worth **+1.45 points**: present
+    # pairs wrongly declined fell 179 -> 88, localisation credit rose
+    # 0.7907 -> 0.8168, rejection F1 0.7961 -> 0.8193 and calibration AUC
+    # 0.9743 -> 0.9791. The held-out estimate matched in-sample exactly, so
+    # this is not a threshold fitted to the test set.
+    best["confidence"] = float(min(float(best.get("score", 0.0)),
+                                   float(best.get("zncc", best.get("score", 0.0)))))
     return best
 
 

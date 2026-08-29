@@ -121,6 +121,44 @@ site identifiable at all.
 but latches onto the wrong repeat in periodic layouts. The design splits those
 two jobs — the network chooses the region, ZNCC places it sub-pixel.
 
+### Comparing correlation scores across template sizes
+
+- Lewis (1995), above, §2: NCC is normalised over the template's own support,
+  so the statistic is comparable only between templates of equal pixel count.
+  Peak NCC rises as the support shrinks, because fewer samples are easier to
+  fit by chance.
+
+**Why it matters here:** a Phase 2 scale search renders a new template per
+candidate magnification, and `template_px = reference_px / magnification`, so
+the candidates have *different* supports by construction. Ranking them by raw
+`TM_CCOEFF_NORMED` therefore carries a systematic pull towards larger
+magnification (smaller template). `polish_pose` pins the template canvas
+across its sweep so every candidate is scored over an identical pixel count,
+which removes that pull; `make_template(..., canvas=...)` exists for this.
+
+### Realising a continuous scale from a discrete raster
+
+- Unser, M., Aldroubi, A. and Eden, M. "B-Spline Signal Processing", *IEEE
+  Trans. Signal Processing* 41(2), 1993. — Resampling a discrete image at a
+  non-integer scale is an interpolation problem; the achievable geometry is
+  not restricted to integer output sizes.
+- Evangelidis, G. D. and Psarakis, E. Z. "Parametric Image Alignment Using
+  Enhanced Correlation Coefficient Maximization", *IEEE TPAMI* 30(10), 2008.
+  — The standard photometric refinement of a parametric warp to sub-pixel
+  precision, and the reference formulation for treating scale as a continuous
+  warp parameter rather than an output-size choice.
+
+**Why it matters here:** rendering the template with `cv2.resize` to
+`round(reference_px / m)` quantises the *realised* magnification to
+`reference_px / round(reference_px / m)` — 43 attainable values across
+[8, 12], with steps 0.81–1.22% wide. The Phase 2 scale tier pays full credit
+below 1%, so the quantisation step is as wide as the whole full-credit band
+and any search over `m` optimises a piecewise-constant objective.
+`make_template` therefore applies the residual sub-integer scale as part of
+the affine it was already paying for to apply rotation, which makes the
+realised scale continuous (measured: median realisation error 0.26% → 0.012%)
+at no additional resampling cost.
+
 ## 7. Network design
 
 - Bertinetto, L. et al. "Fully-Convolutional Siamese Networks for Object
@@ -222,6 +260,27 @@ the problem statement rather than being derived here.
   standard, which is the basis for treating the ratio as a range.
 - See also §3, which cites the scan-distortion literature underlying the
   shear/drift model applied in the same imaging step.
+
+### Polygon scaling (Set B, ±20%)
+
+Phase 2 names "polygon scaling ±20%" among the Set B degradations. It is
+modelled as a *multiplicative* CD change applied to every drawn feature with
+the pitch held fixed (`GenerationParams.polygon_scale_fraction`), which is
+what across-wafer and across-field CD variation actually does: exposure dose
+and etch bias move linewidth, they do not move the placement grid.
+
+- Mack, C. **Fundamental Principles of Optical Lithography**, Wiley, 2007.
+  — Dose/focus move CD while the mask pitch is fixed; the basis for scaling
+  feature width without scaling pitch.
+- Bunday, B. *et al.* "CD-SEM measurement uncertainty and CD uniformity",
+  *Proc. SPIE Metrology, Inspection, and Process Control*. — Reported
+  across-field and across-wafer CD uniformity budgets, the physical
+  justification for a double-digit percentage range.
+
+**Why it is not `linewidth_bias_nm`.** That knob is additive in nanometres, so
+a fixed value is a different *relative* change on a 20 nm line than on a 45 nm
+one and cannot express a uniform ±20% across the twelve architecture presets.
+The two are kept as separate parameters and sampled independently.
 
 **Note on sampling.** Rotation and off-nominal magnification are applied as a
 single affine sampling step against a pre-blurred canvas, not as a resize

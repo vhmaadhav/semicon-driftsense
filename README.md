@@ -48,17 +48,74 @@ Runs CPU-only with no network access; weights load from `weights/`.
 
 ### Results
 
-200 held-out scenes at the disclosed operating point (160 present, 40 absent),
-scored against the published credit tiers:
+Measured on **2500 pairs from a held-out generation run** (`data/ext_p2/`,
+sets A 875 / B 875 / C 500 / D 250), scored against the published credit tiers
+with `scripts/eval_ext.py`. Two rules are enforced that a naive self-score does
+not, and both cost points:
+
+* a pair we decline (`found=0`) is credited **zero** for localisation and pose,
+  because that is what `register.py` writes and what the grader will see;
+* rejection F1 is reported with *rejection* as the positive class as well as
+  the lenient convention, because the two differ by ~1.7 points and the brief
+  does not settle which is meant.
 
 | Component | Score | Detail |
 | --------- | ----- | ------ |
-| Localisation | **0.872** | 94% ≤5px, 93% ≤3px, 88% ≤2px, 68% ≤1px; median 0.55 px |
-| Pose — scale | **0.785** | median relative error 0.86% |
-| Pose — rotation | **0.875** | median error 0.11° |
-| Rejection | **F1 0.978** | at the shipped threshold; stable over 0.20–0.35 |
-| Calibration | **AUC 0.993** | score against per-pair correctness |
-| Runtime | **3.31 s** median | p90 4.38 s, max 5.20 s on 4 threads |
+| Localisation | **0.825** | set A 0.942 (95.3% ≤5px, 90.1% ≤1px), set B 0.730 (81.4% ≤5px); weighted 0.45·A + 0.55·B |
+| Pose — scale | **0.903** | median relative error 0.41% |
+| Pose — rotation | **0.905** | median error 0.103° |
+| Rejection | **F1 0.808** | reject-as-positive; 0.946 under the lenient convention |
+| Calibration | **AUC 0.978** | `min(score, zncc)` against per-pair correctness |
+| Runtime | **3.35 s** median | p90 4.16 s, max 4.42 s, 4 threads, idle machine |
+| Set D (bonus) | **0.938** | 94.8% ≤5px, untrained for — clears the +6 gate |
+
+**72.6 of the 95 self-measurable points**, scoring localisation and pose the
+way the grader will (zero on declined pairs). Efficiency (5) is a relative
+ranking we cannot self-assess and the generator/report component (10) is judged.
+
+An earlier version of this README reported ~92/100. That figure came from our
+*own* validation split under the lenient F1 convention and without charging
+declined pairs, and it is not comparable to the number above. The measurement
+changed, not the method.
+
+### The `score` column: what our confidence means
+
+The brief leaves the confidence scale to each team and asks that the README say
+how it is formed, so that a grader can read it quickly.
+
+**Scale:** `score` lies in `[0, 1]`, higher means more confident that the
+reference really is present at the reported `(x, y)`. It is monotonic, not
+calibrated to a probability — only its ordering is claimed.
+
+**How it is formed:** it is the full-resolution ZNCC of the reference template,
+rendered at the recovered pose, against the search frame at the reported centre,
+combined with the network's own peak confidence. Both terms are already computed
+by the pipeline:
+
+* the **network confidence** is the sigmoid of the winning cell in the response
+  map — it answers *"which of these identical-looking repeats is the right one"*,
+  which is the question the network was trained on;
+* the **native ZNCC** answers *"does the reference actually sit here at full
+  resolution"* — on a wrong pose basin it is near zero while the right basin is
+  around 0.9, which is also how the pose hypotheses are arbitrated.
+
+They fail differently, which is the point of using both. The network can be
+confident on a plausible wrong repeat; ZNCC can be respectable on a heavily
+degraded frame with no true instance. Requiring *both* to be high is what
+separates present from absent.
+
+**Where the threshold comes from:** `found = 1` when the confidence clears a
+fixed threshold chosen on our own validation data — never on anything
+organizer-supplied. It is deliberately biased *low*, because the two errors do
+not cost the same: declining a pair that really did contain the target forfeits
+its localisation credit (40 pts) and its pose credit (20 pts) as well as hurting
+rejection F1, whereas accepting an absent pair only costs F1. The operating
+point is therefore chosen against the total rubric, not against F1 alone
+(`scripts/optimize_threshold.py`).
+
+**False positives vs false negatives:** we lean towards answering rather than
+declining, for the asymmetry above. Both counts are reported separately by
+`scripts/eval_ext.py`.
 
 ### How it works
 
@@ -88,9 +145,42 @@ constant +0.442 px residual in y with a standard deviation of only 0.107.
 Correcting it moved ≤1px from 57% to 68% and the median error from 0.86 px to
 0.55 px on identical scenes.
 
+4. **Pose polish.** Once ZNCC has placed the match, scale and rotation are
+   re-fit against that known location, in a window around it rather than over
+   the whole frame.
+
 Refinement deliberately happens in the **native** frame, never the canonical
 one, so the reported centre never inherits the resampling blur — the credit
 tiers pay 1.00 at 1 px against 0.40 at 5 px.
+
+#### The template had to be made continuous in scale
+
+`make_template` rendered the template with `cv2.resize` to
+`round(reference_px / m)`. Because a template is an integer number of pixels,
+the magnification it *actually realised* was `reference_px / round(reference_px / m)`
+— only **43 attainable values across [8, 12]**, in steps **0.81–1.22%** wide.
+The Phase 2 scale tier pays full credit below 1%, so the quantisation step was
+as wide as the entire full-credit band, and any search over `m` was optimising
+a piecewise-constant objective.
+
+This is the real explanation for an earlier observation that
+correlation-vs-scale was "nearly flat" inside the polish window, which had led
+to the scale result being computed and then deliberately thrown away because
+keeping it lowered scale credit from 0.860 to 0.808. The function was not flat
+because the window was too small; it was flat because it was a staircase, and
+golden-section search on a staircase returns an arbitrary point on a plateau.
+
+The fix costs nothing: the residual sub-integer scale is folded into the affine
+that was already being paid for to apply rotation. Measured realisation error
+fell from a median of **0.26%** (worst 0.55%) to **0.012%** (worst 0.021%), and
+the nominal 10× path stays bit-identical to the old one.
+
+A second, independent bias was removed at the same time. `TM_CCOEFF_NORMED` is
+normalised over the template's own support, so peak correlation rises as the
+template shrinks — and a scale search changes the template size by
+construction, which pulled the estimate towards larger magnification. The
+polish stage now pins the template canvas across its sweep so every candidate
+is scored over an identical pixel count.
 
 This matters more than it sounds. Measured against a true-pose oracle, the
 unchanged Phase 1 weights reach **99%** at the 5 px tolerance; with a single
@@ -921,6 +1011,29 @@ variations"*. Coverage:
 python generate_dataset.py --architecture mixed --num-pairs 20 \
     --edge-brightening 0.25 --rotation-deg 2.0 --magnification 9.5
 ```
+
+### Phase 2 Set B degradation coverage
+
+Phase 2 additionally names, for Set B: *charging, scan distortion, defocus,
+elevated shot noise, and polygon scaling ±20%*, in four undisclosed severity
+levels. Coverage:
+
+| required | where |
+| --- | --- |
+| charging | `charging_streak_prob`, `charging_streak_intensity` — [CITATIONS §2](CITATIONS.md) |
+| scan distortion | `shear_amplitude_px`, `drift_jitter_px`, `barrel_distortion_k` — [CITATIONS §3](CITATIONS.md) |
+| defocus | `beam_spot_size_nm`, `astigmatism_ratio` — [CITATIONS §2](CITATIONS.md) |
+| elevated shot noise | `dose_search`, `detector_noise_sigma_search`, `speckle_sigma` — [CITATIONS §2](CITATIONS.md) |
+| polygon scaling ±20% | `polygon_scale_fraction` — [CITATIONS §10](CITATIONS.md) |
+
+`polygon_scale_fraction` was added for Phase 2 and is a *multiplicative* CD
+change applied to every drawn feature with the pitch held fixed, which is what
+dose and etch bias actually do — they move linewidth, not the placement grid.
+It is deliberately a separate parameter from the pre-existing
+`linewidth_bias_nm`: that one is additive in nanometres, so a single value is a
+different *relative* change on a 20 nm line than on a 45 nm one and cannot
+express a uniform ±20% across the twelve architecture presets. Both are sampled
+independently and both are recorded per pair in the manifest.
 
 All three pose/edge knobs default to the nominal no-op, so every split reported
 above regenerates byte-for-byte. **The shipped weights were trained without

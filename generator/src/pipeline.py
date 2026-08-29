@@ -71,9 +71,18 @@ class GenerationParams:
     boundary_bias: float = 0.35
 
     # Deterministic global CD/etch bias applied to every drawn line/contact,
-    # in nm ("polygon scaling" -- positive grows features, negative shrinks
-    # them), on top of each pattern module's own per-instance jitter.
+    # in nm, on top of each pattern module's own per-instance jitter.
     linewidth_bias_nm: float = 0.0
+    # Multiplicative CD scaling of every drawn polygon, pitch left untouched.
+    # This is the Phase 2 Set B "polygon scaling +/-20%" degradation, and is
+    # deliberately separate from `linewidth_bias_nm`: an additive nm bias is a
+    # different *relative* change on a 20 nm line than on a 45 nm one, so it
+    # cannot express a fixed +/-20% across the twelve architecture presets.
+    polygon_scale_fraction: float = 0.0
+    # Latent Set B severity in [0, 1] that drove the acquisition knobs for this
+    # sample. Carried purely so it lands in the manifest -- nothing reads it
+    # during rendering -- which makes "accuracy vs severity" a one-line query.
+    severity_continuous: float = 0.0
     # Morphological corner-rounding radius (px) applied to the rendered
     # pattern mask -- real lithography/etch never produces perfectly sharp
     # polygon corners.
@@ -107,6 +116,7 @@ def generate_fine_canvas(
         FINE_CANVAS_SIZE_PX, preset, params.collapse_threshold_nm, rng,
         linewidth_bias_nm=params.linewidth_bias_nm,
         corner_rounding_px=params.corner_rounding_px,
+        polygon_scale_fraction=params.polygon_scale_fraction,
     )
 
 
@@ -131,6 +141,7 @@ def generate_fine_canvas_zoned(
         strip_width_nm=params.strip_width_nm,
         linewidth_bias_nm=params.linewidth_bias_nm,
         corner_rounding_px=params.corner_rounding_px,
+        polygon_scale_fraction=params.polygon_scale_fraction,
     )
 
 
