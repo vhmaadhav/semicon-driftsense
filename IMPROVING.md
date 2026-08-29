@@ -54,8 +54,10 @@ quietly keeping:
 **+1.94 points.** Localisation and pose are credited zero on declined pairs,
 as the grader will see them. Present pairs wrongly declined fell 167 → 94.
 Runtime 3.35 s median (p90 4.16, max 4.42) at 4 threads on an idle machine.
-Set D scores 0.938 untouched, clearing the +6 gate; rejection F1 is under 0.90
-so the +4 bonus is not earned.
+Set D scores 0.938 untouched, but the +6 requires Sets A-C above 95 (confirmed
+with the organisers, stricter than the slide's "A-C >= 0.50") and we are at
+72.55, so it is **not reachable**. Rejection F1 is under 0.90 so the +4 is not
+earned either. **Assume zero bonus and plan against 100.**
 
 Rotation credit regressed slightly (0.9163 → 0.9054, −0.11 pts) — the canvas
 pinning that fixed scale costs a little on rotation. It is bought back many

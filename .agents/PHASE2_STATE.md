@@ -38,7 +38,16 @@ Weights ship inside the ZIP. Median ≤5 s/pair, hard timeout 20 s.
 | Calibration | 10 | AUC of our `score` column vs per-pair correctness |
 | Efficiency | 5 | relative quartile ranking on **median** wall-clock per pair |
 | Generator, citations, failure analysis | 10 | carried forward, re-judged |
-| **Bonus** | +10 | +6 if Set D credit ≥0.40 with A–C ≥0.50; +4 if rejection F1 ≥0.90 |
+| **Bonus** | +10 | +6 for Set D, +4 if rejection F1 ≥ 0.90 |
+
+**The Set D bonus is out of reach — treat it as unavailable.** The slide reads
+"+6 if Set D credit >= 0.40 with Sets A-C >= 0.50", which we clear easily (Set D
+0.938, A-C 0.814). But the gate confirmed with the organisers is that **Sets
+A-C must be above 95**, not 0.50, and we are at 72.55 of the 95 measurable. The
+briefing call's phrasing — it "only unlocks if your scores are extremely good on
+grayscale" — matches the stricter reading. So Set D work has no expected value
+at our current standing, and the only reachable bonus is the **+4 at rejection
+F1 >= 0.90**. Plan against 100, not 110.
 
 Credit tiers — localisation: 1.00 ≤1px, 0.80 ≤2px, 0.60 ≤3px, 0.40 ≤5px, else 0.
 Scale: 1.00 ≤1%, 0.60 ≤2%, 0.30 ≤5%. Rotation: 1.00 ≤0.25°, 0.60 ≤0.5°, 0.30 ≤1.0°.
@@ -85,8 +94,9 @@ gap"; that was wrong.
 Localisation and pose are credited **zero on declined pairs**, as the grader
 will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
 4 threads on an idle machine, against a 5 s median target and a 20 s hard
-timeout. Set D scores 0.938 untouched, clearing the **+6** bonus gate;
-rejection F1 is below 0.90 so the **+4** bonus is not earned.
+timeout. Set D scores 0.938 untouched but the **+6 is not reachable** (it
+requires Sets A-C above 95; see §1), and rejection F1 is below 0.90 so the
+**+4** is not earned either. Assume **zero bonus**.
 
 ### Beware the subsample
 
