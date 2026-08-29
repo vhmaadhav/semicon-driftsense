@@ -43,7 +43,7 @@ Weights ship inside the ZIP. Median ≤5 s/pair, hard timeout 20 s.
 **The Set D bonus is out of reach — treat it as unavailable.** The slide reads
 "+6 if Set D credit >= 0.40 with Sets A-C >= 0.50", which we clear easily (Set D
 0.938, A-C 0.814). But the gate confirmed with the organisers is that **Sets
-A-C must be above 95**, not 0.50, and we are at 72.55 of the 95 measurable. The
+A-C must be above 95**, not 0.50, and we are at 72.55 of the 85 measurable. The
 briefing call's phrasing — it "only unlocks if your scores are extremely good on
 grayscale" — matches the stricter reading. So Set D work has no expected value
 at our current standing, and the only reachable bonus is the **+4 at rejection
@@ -89,7 +89,7 @@ gap"; that was wrong.
 | Pose — rotation (10) | 0.9054 | 9.05 |
 | Rejection (15), reject-positive F1 | 0.8084 | 12.13 |
 | Calibration (10), AUC | 0.9777 | 9.78 |
-| **Total of the 95 measurable** | | **72.55** |
+| **Total of the 85 measurable** | | **72.55** |
 
 Localisation and pose are credited **zero on declined pairs**, as the grader
 will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
@@ -97,6 +97,18 @@ will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
 timeout. Set D scores 0.938 untouched but the **+6 is not reachable** (it
 requires Sets A-C above 95; see §1), and rejection F1 is below 0.90 so the
 **+4** is not earned either. Assume **zero bonus**.
+
+### The denominator is 85, not 95
+
+An earlier version of this file said "of the 95 measurable". That was wrong and
+it was repeated for a while. The components we can self-score are
+**localisation 40 + scale 10 + rotation 10 + rejection 15 + calibration 10 =
+85**. Efficiency (5) and generator/citations/failure-analysis (10) are the
+remaining 15 and are judged, not measured.
+
+So **72.55 / 85**, and the absolute ceiling with full marks on both judged
+components is **87.55 / 100**. Reaching 92 would require **+4.45** on the
+measurable part, not the ~+1 the old arithmetic implied.
 
 ### Beware the subsample
 
@@ -530,6 +542,14 @@ evaluation, 100 °C with GPU training added. It thermally throttles rather than
 failing, but it means the machine is the constraint on parallelism: four
 concurrent jobs roughly doubled the rejector's ETA. Prefer sequencing the
 measurements you actually need over running everything at once.
+
+**Stride must be coprime with 4, or the sample is severity-biased.** The
+manifests order pairs by a repeating severity cycle `[1,2,3,4,1,2,3,4,...]`, so
+`--stride 4` samples **severity 1 only** and `--stride 2` samples only 1 and 3.
+A stride-4 subset of Set B reads 95.4% within 5 px where the full set reads
+81.4% -- and that is not sampling noise, it is a different population. Use
+stride 3 or 5 (or 1). Two experiments were invalidated this way before it was
+spotted.
 
 **Timings inside a parallel run are fiction.** The box is memory-bandwidth
 bound at ~0.42 pairs/s total regardless of the worker/thread split. Runtime

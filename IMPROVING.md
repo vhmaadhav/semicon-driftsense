@@ -49,7 +49,7 @@ quietly keeping:
 | Pose — rotation | 10 | 0.9163 | 0.9054 |
 | Rejection (reject-positive F1) | 15 | 0.8004 | **0.8084** |
 | Calibration | 10 | 0.9715 | **0.9777** |
-| **Total of the 95 measurable** | | **70.61** | **72.55** |
+| **Total of the 85 measurable** | | **70.61** | **72.55** |
 
 **+1.94 points.** Localisation and pose are credited zero on declined pairs,
 as the grader will see them. Present pairs wrongly declined fell 167 → 94.
@@ -141,7 +141,7 @@ the same drift model is unknown.
 ## Corrections to the previous version of this file
 
 * It reported **92/100**. Measured externally, the same code scores **~72 of
-  the 95 measurable points**. The gap is a domain gap plus two scoring
+  the 85 measurable points**. The gap is a domain gap plus two scoring
   conventions, not a regression.
 * It reported **rejection F1 0.978** without saying which class was positive.
   The same predictions give **0.833** under reject-as-positive. Both are real;

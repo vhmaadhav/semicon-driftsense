@@ -69,7 +69,7 @@ not, and both cost points:
 | Runtime | **3.35 s** median | p90 4.16 s, max 4.42 s, 4 threads, idle machine |
 | Set D (bonus) | **0.938** | 94.8% ≤5px, untrained for — clears the +6 gate |
 
-**72.6 of the 95 self-measurable points**, scoring localisation and pose the
+**72.6 of the 85 self-measurable points**, scoring localisation and pose the
 way the grader will (zero on declined pairs). Efficiency (5) is a relative
 ranking we cannot self-assess and the generator/report component (10) is judged.
 

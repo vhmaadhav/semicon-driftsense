@@ -704,7 +704,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
                   band: bool = True, return_hypotheses: bool = False,
-                  verification: str = "zncc", **kw) -> dict:
+                  verification: str = "zncc", denoise: int = 0, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     For each pose hypothesis: canonicalise the search frame, let the network
@@ -744,6 +744,28 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             search_features["dog"] = dog_feature(search)
         verification_secs += time.perf_counter() - t_verify
 
+    # Suppress impulse noise before anything looks at the frame. Every
+    # similarity tried so far changed the *metric*; this changes the *input*,
+    # which is a different axis and the one the registration literature points
+    # at -- noise corrupts the similarity surface itself, so a more robust
+    # statistic on a corrupted surface is fighting the wrong battle. Set B's
+    # failures are led by salt-and-pepper (Cohen's d = 1.21), speckle (1.18)
+    # and detector noise (1.15), and a median filter is the textbook answer to
+    # the first. Costs ~2 ms against a 3.35 s pair.
+    # ...but only on the *correlation* path. Measured on one Set B pair, a 3x3
+    # median lifts native ZNCC 0.812 -> 0.855 while dropping the network score
+    # 0.714 -> 0.361: the network was trained on noisy frames, so denoising its
+    # input is a distribution shift and it pays for it. A 5x5 median moves the
+    # answer 600 px, i.e. destroys the match outright.
+    #
+    # So the network keeps raw pixels and the classical stages -- the coarse
+    # pose sweep and the full-resolution ZNCC -- get the cleaned frame. They
+    # are the parts that noise actually corrupts, and they have no learned
+    # distribution to violate.
+    search_corr = search
+    if denoise and denoise >= 3:
+        search_corr = cv2.medianBlur(search, int(denoise) | 1)
+
     def attempt(m: float, rot: float) -> dict:
         nonlocal verification_secs
         canon, M = canonicalize_search(search, m, rot)
@@ -758,7 +780,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         template = None
         if refine:
             template = make_template(reference, m, rot)
-            rx, ry, zn = refine_zncc(standardize(search / 255.0),
+            rx, ry, zn = refine_zncc(standardize(search_corr / 255.0),
                                      standardize(template / 255.0),
                                      cx, cy, radius=refine_radius)
             if np.hypot(rx - cx, ry - cy) <= 10.0:
@@ -799,7 +821,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         candidates[0]["pose_peak"] = float("nan")
         best = choose(candidates)
     else:
-        cands = pose_candidates(reference, search, k=max(int(hypotheses), 1),
+        cands = pose_candidates(reference, search_corr, k=max(int(hypotheses), 1),
                                 coarse_scales=int(coarse_scales), band=band)
         candidates = []
         for m, rot, coarse_peak in cands:
