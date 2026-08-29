@@ -57,8 +57,11 @@ def test_local_match_score_does_not_modify_coordinates_or_inputs():
 
 def _stub_phase2(monkeypatch, feature_counts=None):
     candidates = [(9.0, -1.0, .3), (10.0, 0.0, .4), (11.0, 1.0, .2)]
+    # **kw so the stub keeps working as pose_candidates gains parameters
+    # (coarse_scales, band). The test is about hypothesis *selection*; how the
+    # candidates were generated is not what it is asserting.
     monkeypatch.setattr(matching, "pose_candidates",
-                        lambda reference, search, k: candidates[:k])
+                        lambda reference, search, k, **kw: candidates[:k])
     monkeypatch.setattr(matching, "canonicalize_search",
                         lambda search, m, r: (search, np.array([[1., 0., 0.], [0., 1., 0.]])))
     monkeypatch.setattr(matching, "locate",
