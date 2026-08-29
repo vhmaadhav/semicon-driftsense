@@ -19,8 +19,20 @@ The features, and why each carries independent information:
               winner scored.
 * `pose_peak` coarse correlation of the winning pose hypothesis. Low when no
               pose explains the frame, which is the absent case.
+* `psr`       peak-to-sidelobe ratio of the response map (Bolme et al., MOSSE,
+              CVPR 2010), where it is used to detect tracking failure. Measures
+              how far the winner stands out from the surface's background
+              distribution rather than how tall it is.
+* `apce`      average peak-to-correlation energy, the same idea with a
+              different normalisation and reported as the more stable of the
+              two in the correlation-filter literature.
 
-Deliberately kept to a 5-parameter linear model on 4 features. The point is to
+The last two are the reason this is worth fitting rather than hand-combining:
+`score` and `zncc` are peak *heights*, `peak_ratio` is a margin over the
+runner-up, and neither describes the *shape* of the surface the peak sits on. A
+confident wrong lock-on is a tall peak on a busy surface.
+
+Deliberately kept to a small linear model over features that already exist. The point is to
 weight signals that already exist, not to learn a second detector, and a
 logistic this small cannot memorise 20k pairs. Fitted on *training* shards and
 scored on a held-out fold; the blind-set analogue is never touched.
@@ -39,7 +51,7 @@ import pandas as pd
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-FEATURES = ["score", "zncc", "peak_ratio", "pose_peak"]
+FEATURES = ["score", "zncc", "peak_ratio", "pose_peak", "psr", "apce"]
 
 
 def _worker(job):

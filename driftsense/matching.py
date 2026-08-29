@@ -501,6 +501,45 @@ def response_to_center(i: float, j: float, th: int, tw: int,
     return (j + dx) * STRIDE + tw / 2.0, (i + dy) * STRIDE + th / 2.0
 
 
+def peak_stats(prob: np.ndarray, i: int, j: int, exclude: int = 5) -> tuple[float, float]:
+    """Peak-to-sidelobe ratio and APCE for a response map.
+
+    Both measure how far the winner stands out from the *background
+    distribution* of the surface, which is different information from the
+    winner's height (`score`) or from its margin over the runner-up
+    (`peak_ratio`). A confident lock-on to the wrong repeat produces a tall
+    peak on a busy surface; a true match produces a tall peak on a quiet one.
+    Height alone cannot tell those apart, and on a periodic layout that is
+    exactly the confusion we are trying to resolve.
+
+    PSR  = (peak - mean(sidelobe)) / std(sidelobe), sidelobe excluding an
+           (2*exclude+1)^2 window around the peak. Bolme, D. S., Beveridge,
+           J. R., Draper, B. A. and Lui, Y. M., "Visual Object Tracking using
+           Adaptive Correlation Filters", CVPR 2010 -- where it is used to
+           detect occlusion and tracking failure, structurally the same
+           present/absent question we face.
+    APCE = (peak - min)^2 / mean((surface - min)^2), the average
+           peak-to-correlation energy, reported in the correlation-filter
+           literature as the more stable of the two.
+
+    Free: the response map is already computed by `locate`.
+    """
+    p = np.asarray(prob, dtype=np.float64)
+    h, w = p.shape
+    peak = float(p[i, j])
+    mask = np.ones_like(p, dtype=bool)
+    mask[max(i - exclude, 0):i + exclude + 1, max(j - exclude, 0):j + exclude + 1] = False
+    side = p[mask]
+    if side.size < 16:
+        return 0.0, 0.0
+    sd = float(side.std())
+    psr = float((peak - side.mean()) / sd) if sd > 1e-9 else 0.0
+    mn = float(p.min())
+    denom = float(((p - mn) ** 2).mean())
+    apce = float((peak - mn) ** 2 / denom) if denom > 1e-12 else 0.0
+    return psr, apce
+
+
 def find_peaks(prob: np.ndarray, max_peaks: int = 32) -> list[tuple[int, int, float]]:
     """Local maxima of the response map, strongest first."""
     t = torch.from_numpy(np.ascontiguousarray(prob))[None, None]
@@ -890,8 +929,9 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
                   if np.hypot(p_[0] - i, p_[1] - j) > 2.0), None)
     peak_ratio = (float(rival[2]) / max(float(peaks[0][2]), 1e-9)) if rival else 0.0
 
+    psr, apce = peak_stats(prob, i, j)
     result = {"x": cx, "y": cy, "score": float(score), "coarse": (cx, cy),
-              "peak_ratio": peak_ratio}
+              "peak_ratio": peak_ratio, "psr": psr, "apce": apce}
 
     if refine:
         rx, ry, zn = refine_zncc(sea_n, tpl_n, cx, cy, radius=refine_radius)
