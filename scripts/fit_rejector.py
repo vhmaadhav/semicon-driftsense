@@ -70,7 +70,7 @@ def _worker(job):
     return out
 
 
-def extract(shards, weights, jobs, threads, per_shard):
+def extract(shards, weights, jobs, threads, per_shard, cache=None):
     import multiprocessing as mp
     tasks = []
     for d in shards:
@@ -86,7 +86,15 @@ def extract(shards, weights, jobs, threads, per_shard):
             rows.append(r)
             if i % 200 == 0:
                 el = time.perf_counter() - t0
-                print(f"  {i}/{len(tasks)}  eta {(len(tasks)-i)*el/i/60:.1f} min", flush=True)
+                # Checkpoint as we go. This extraction takes ~90 min on the
+                # reference laptop, and writing the cache only at the end makes
+                # the whole run all-or-nothing -- an interrupt at 95% costs
+                # everything. Partial output is still usable: the fit reads
+                # whatever rows exist.
+                if cache:
+                    pd.DataFrame(rows).to_csv(cache, index=False)
+                print(f"  {i}/{len(tasks)}  eta {(len(tasks)-i)*el/i/60:.1f} min "
+                      f"(cached {len(rows)})", flush=True)
     return pd.DataFrame(rows)
 
 
@@ -140,8 +148,8 @@ def main():
         d = pd.read_csv(a.cache)
         print(f"reusing cached features: {len(d)} pairs")
     else:
-        d = extract(a.shards, a.weights, a.jobs, a.threads, a.per_shard)
         os.makedirs(os.path.dirname(a.cache) or ".", exist_ok=True)
+        d = extract(a.shards, a.weights, a.jobs, a.threads, a.per_shard, cache=a.cache)
         d.to_csv(a.cache, index=False)
     d = d.dropna(subset=FEATURES)
     y = (d.found.values == 0).astype(float)          # 1 = should reject
