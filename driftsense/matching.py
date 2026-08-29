@@ -182,6 +182,24 @@ POSE_PROBE_DOWNSCALE = 2
 POSE_SKIP_ABOVE = 0.70
 
 
+# Band-pass the coarse probe before correlating. Measured on Set B: of the
+# >5 px failures, only 24% had a correct pose hypothesis generated at all --
+# the other 76% never had a right answer to select, so the *search* was
+# failing, not the ranking. The coarse score is a half-resolution correlation
+# on raw pixels, and Set B's dominant degradations sit at both ends of the
+# spectrum: charging streaks are low-frequency, shot and impulse noise are
+# high-frequency, and the layout structure is in between. A difference of
+# Gaussians keeps the band that carries the pattern and discards both.
+#
+# The same filter beat raw ZNCC at *verifying* hypotheses in the same
+# experiment (net +10 pairs against +7; scripts/verify_scores.py), which is
+# what suggested trying it one stage earlier. A rank transform recovered as
+# many failures but broke three times as many successes, so it is not used.
+def _band(img: np.ndarray, s1: float = 1.0, s2: float = 4.0) -> np.ndarray:
+    f = img.astype(np.float32)
+    return cv2.GaussianBlur(f, (0, 0), s1) - cv2.GaussianBlur(f, (0, 0), s2)
+
+
 def _probe(img: np.ndarray, k: int = POSE_PROBE_DOWNSCALE) -> np.ndarray:
     h, w = img.shape[:2]
     return cv2.resize(img, (max(w // k, 1), max(h // k, 1)),
@@ -310,7 +328,7 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
                     coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
-                    refine_span_scales: int = 17) -> list:
+                    refine_span_scales: int = 17, band: bool = True) -> list:
     """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
 
     Correlation against a periodic layout is multi-peaked in *scale*: a wrong
@@ -327,9 +345,12 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     lo_s, hi_s = scale_bounds
     lo_r, hi_r = rotation_bounds
     probe_search = _probe(search)
+    if band:
+        probe_search = _band(probe_search)
 
     def coarse(f, r=0.0):
-        return _peak_score(probe_search, _probe(make_template(reference, f, r)))
+        t = _probe(make_template(reference, f, r))
+        return _peak_score(probe_search, _band(t) if band else t)
 
     grid = np.linspace(lo_s, hi_s, coarse_scales)
     vals = [coarse(f) for f in grid]
@@ -637,7 +658,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
-                  **kw) -> dict:
+                  band: bool = True, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     For each pose hypothesis: canonicalise the search frame, let the network
@@ -678,7 +699,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         best = attempt(float(pose[0]), float(pose[1]))
     else:
         cands = pose_candidates(reference, search, k=max(int(hypotheses), 1),
-                                coarse_scales=int(coarse_scales))
+                                coarse_scales=int(coarse_scales), band=band)
         best = None
         for m, rot, coarse_peak in cands:
             r = attempt(m, rot)

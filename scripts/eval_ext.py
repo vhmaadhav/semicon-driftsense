@@ -51,7 +51,7 @@ def tier(value: float, tiers) -> float:
 
 def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
-    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse = job
+    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse, band = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -74,7 +74,7 @@ def _worker(job):
     res = locate_phase2(model, ref, sea, device, refine=True,
                         hypotheses=hypotheses, polish=polish,
                         polish_scale=polish_scale, refit_xy=refit_xy,
-                        coarse_scales=coarse)
+                        coarse_scales=coarse, band=band)
     dt = time.perf_counter() - t0
     return {
         "pair_id": row["pair_id"], "set": row["phase2_set"],
@@ -105,7 +105,7 @@ def _worker(job):
 
 
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
-        polish_scale, refit_xy, stride, coarse):
+        polish_scale, refit_xy, stride, coarse, band):
     import multiprocessing as mp
 
     tasks = []
@@ -117,7 +117,7 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
             man = man.head(limit)
         for _, r in man.iterrows():
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
-                          polish_scale, refit_xy, coarse))
+                          polish_scale, refit_xy, coarse, band))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
 
     out, t0 = [], time.perf_counter()
@@ -250,7 +250,8 @@ def main():
     ap.add_argument("--no-polish-scale", action="store_true")
     ap.add_argument("--refit-xy", action="store_true")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth pair")
-    ap.add_argument("--coarse-scales", type=int, default=41)
+    ap.add_argument("--coarse-scales", type=int, default=17)
+    ap.add_argument("--no-band", action="store_true")
     ap.add_argument("--threshold", type=float, default=0.25)
     a = ap.parse_args()
 
@@ -259,7 +260,7 @@ def main():
     else:
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
-                 a.refit_xy, a.stride, a.coarse_scales)
+                 a.refit_xy, a.stride, a.coarse_scales, not a.no_band)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

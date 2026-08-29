@@ -79,7 +79,14 @@ def extract(shards, weights, jobs, threads, per_shard, cache=None):
             m = m.iloc[:: max(len(m) // per_shard, 1)][:per_shard]
         for _, r in m.iterrows():
             tasks.append((d, r.to_dict(), weights, threads))
-    print(f"extracting {len(tasks)} pairs from {len(shards)} shards", flush=True)
+    # Shuffle before dispatch. Tasks are built shard by shard, so an
+    # interrupted run would otherwise cache one class only -- a first attempt
+    # died at 400/2340 having seen 400 present pairs and zero absent ones,
+    # which cannot fit a present/absent decision at all. Shuffled, any prefix
+    # of the run is a usable sample.
+    np.random.RandomState(0).shuffle(tasks)
+    print(f"extracting {len(tasks)} pairs from {len(shards)} shards "
+          f"(shuffled, so a partial cache is still representative)", flush=True)
     rows, t0 = [], time.perf_counter()
     with mp.Pool(jobs) as pool:
         for i, r in enumerate(pool.imap_unordered(_worker, tasks, chunksize=4), 1):
