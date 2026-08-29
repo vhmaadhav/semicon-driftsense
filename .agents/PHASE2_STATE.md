@@ -223,6 +223,40 @@ impulse noise high-frequency — with the layout structure between them, so a
 band keeps what the search needs and discards both noise families. Switchable
 via `band=` / `--no-band`; the A/B against the incumbent is the open item.
 
+## 3c. Sub-pixel precision is bounded by the label, and here is the proof
+
+The briefing says sub-pixel placement carries "slightly higher weightage".
+There is **no separate nanometre bonus** — that weighting *is* the <=1 px tier
+paying 1.00 against <=2 px paying 0.80. At 10 nm/px, <=1 px is <=10 nm.
+
+The tier looks like a large lever: Set B is only 52.1% within 1 px against Set
+A's 90.1%, its median error is 0.94 px, and **114 Set B pairs (13%) sit between
+1.0 and 1.5 px** — one nudge from full credit. Shrinking Set B errors by 25%
+would be worth about +0.86 rubric points, and by 35% about +1.20.
+
+**It is not reachable, because the error is the label.** Localisation error is
+proportional to the generator's per-pair drift jitter, with a near-constant
+ratio across a fourfold range (present pairs within 5 px):
+
+| drift jitter px | n | median error px | error / drift |
+| --- | ---: | ---: | ---: |
+| 0.0 - 0.4 | 374 | 0.221 | 0.75 |
+| 0.4 - 0.8 | 678 | 0.435 | 0.72 |
+| 0.8 - 1.2 | 179 | 0.700 | 0.70 |
+| 1.2 - 1.6 | 156 | 1.023 | 0.75 |
+| 1.6 - 3.0 | 159 | 1.147 | 0.63 |
+
+A *method* error would not scale that cleanly with a generator parameter. This
+also explains the whole Set A / Set B precision gap without invoking anything
+else: Set A drift 0.46 -> 0.31 px error, Set B drift 1.11 -> 0.71 px error. Set
+B is not matched worse, it is jittered 2.4x more. The ratio sitting below 1.0
+says the matcher is already averaging across rows about as well as it can.
+
+**Do not spend time on sub-pixel refinement against this data.** The one caveat
+worth keeping: this is *our* generator's drift model, and the blind set's is
+unknown. If the graders drift less, our <=1 px share is better there than it
+looks here — which is upside, not something to engineer for.
+
 ## 4. Dead ends already paid for
 
 Do not spend a session re-attempting these. Each was measured, not guessed.
