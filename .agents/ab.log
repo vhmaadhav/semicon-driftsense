@@ -1,0 +1,137 @@
+########## BASELINE (HEAD: quantised template, rotation-only polish) ##########
+500 pairs over 6 shard(s), 10 workers
+  100/500  2.91s/pair wall  eta 19.4 min
+  200/500  2.61s/pair wall  eta 13.1 min
+  300/500  2.53s/pair wall  eta 8.4 min
+  400/500  2.52s/pair wall  eta 4.2 min
+  500/500  2.38s/pair wall  eta 0.0 min
+wrote /home/pranesh/Documents/semicon/semicon-driftsense/.agents/ext_base.csv
+
+==========================================================================
+EXTERNAL TEST SET — 500 pairs (A 175, B 175, C 100, D 50)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8351     33.40
+   set A (175 pairs)        0.9520  <=5px 96.6%  <=1px 90.3%
+                                         median 0.34px
+   set B (175 pairs)        0.7394  <=5px 82.9%  <=1px 52.0%
+                                         median 0.95px
+Pose — scale (10)             credit 0.8242  med 0.78%      8.24
+Pose — rotation (10)        credit 0.9137  med 0.100deg      9.14
+Rejection (15)                  F1 0.9455 @fixed 0.250     14.18
+                                     tp 321 fp 8 fn 29
+                            [best-possible F1 0.9579 @ 0.2060]
+Calibration (10)                            AUC 0.9785      9.79
+--------------------------------------------------------------------------
+SUBTOTAL (95 measurable)                                   74.75
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9720  <=5px 98.0%
+                            +6 needs D>=0.40 and A-C>=0.50
+
+########## VARIANT 1 (continuous template + scale polish) ##########
+500 pairs over 6 shard(s), 10 workers
+  100/500  2.87s/pair wall  eta 19.1 min
+  200/500  2.73s/pair wall  eta 13.7 min
+  300/500  2.68s/pair wall  eta 8.9 min
+  400/500  2.59s/pair wall  eta 4.3 min
+  500/500  2.44s/pair wall  eta 0.0 min
+wrote /home/pranesh/Documents/semicon/semicon-driftsense/.agents/ext_v1.csv
+
+==========================================================================
+EXTERNAL TEST SET — 500 pairs (A 175, B 175, C 100, D 50)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8440     33.76
+   set A (175 pairs)        0.9509  <=5px 96.6%  <=1px 89.7%
+                                         median 0.33px
+   set B (175 pairs)        0.7566  <=5px 84.6%  <=1px 53.1%
+                                         median 0.92px
+Pose — scale (10)             credit 0.9000  med 0.36%      9.00
+Pose — rotation (10)        credit 0.9025  med 0.099deg      9.03
+Rejection (15)              F1(reject) 0.8426 @fix 0.250     12.64
+                            correct-rej 91  lost-real 25  missed-abs 9
+                            [lenient F1(present) 0.9503]
+                            [best-possible F1(reject) 0.8585 @ 0.1839]
+Calibration (10)                            AUC 0.9840      9.84
+--------------------------------------------------------------------------
+SUBTOTAL (95 measurable)                                   74.26
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9760  <=5px 98.0%
+                            +6 needs D>=0.40 and A-C>=0.50
+
+########## VARIANT 2 (v1 + refit xy) ##########
+500 pairs over 6 shard(s), 10 workers
+  100/500  2.84s/pair wall  eta 18.9 min
+  200/500  2.60s/pair wall  eta 13.0 min
+  300/500  2.57s/pair wall  eta 8.6 min
+  400/500  2.50s/pair wall  eta 4.2 min
+  500/500  2.39s/pair wall  eta 0.0 min
+wrote /home/pranesh/Documents/semicon/semicon-driftsense/.agents/ext_v2.csv
+
+==========================================================================
+EXTERNAL TEST SET — 500 pairs (A 175, B 175, C 100, D 50)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8449     33.80
+   set A (175 pairs)        0.9543  <=5px 96.6%  <=1px 90.9%
+                                         median 0.32px
+   set B (175 pairs)        0.7554  <=5px 84.6%  <=1px 52.6%
+                                         median 0.92px
+Pose — scale (10)             credit 0.9000  med 0.36%      9.00
+Pose — rotation (10)        credit 0.9025  med 0.099deg      9.03
+Rejection (15)              F1(reject) 0.8426 @fix 0.250     12.64
+                            correct-rej 91  lost-real 25  missed-abs 9
+                            [lenient F1(present) 0.9503]
+                            [best-possible F1(reject) 0.8585 @ 0.1839]
+Calibration (10)                            AUC 0.9840      9.84
+--------------------------------------------------------------------------
+SUBTOTAL (95 measurable)                                   74.30
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9760  <=5px 98.0%
+                            +6 needs D>=0.40 and A-C>=0.50
+
+ALLDONE
+########## VARIANT 3 (v1 + gated dihedral TTA, gate score<0.60) ##########
+500 pairs over 6 shard(s), 10 workers
+  100/500  3.74s/pair wall  eta 25.0 min
+  200/500  4.04s/pair wall  eta 20.2 min
+  300/500  4.25s/pair wall  eta 14.2 min
+  400/500  5.46s/pair wall  eta 9.1 min
+  500/500  5.55s/pair wall  eta 0.0 min
+wrote /home/pranesh/Documents/semicon/semicon-driftsense/.agents/ext_v3.csv
+
+==========================================================================
+EXTERNAL TEST SET — 500 pairs (A 175, B 175, C 100, D 50)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8471     33.89
+   set A (175 pairs)        0.9509  <=5px 96.6%  <=1px 89.7%
+                                         median 0.33px
+   set B (175 pairs)        0.7623  <=5px 85.1%  <=1px 53.7%
+                                         median 0.91px
+Pose — scale (10)             credit 0.8981  med 0.36%      8.98
+Pose — rotation (10)        credit 0.9028  med 0.099deg      9.03
+Rejection (15)              F1(reject) 0.8426 @fix 0.250     12.64
+                            correct-rej 91  lost-real 25  missed-abs 9
+                            [lenient F1(present) 0.9503]
+                            [best-possible F1(reject) 0.8585 @ 0.1839]
+Calibration (10)                            AUC 0.9838      9.84
+--------------------------------------------------------------------------
+SUBTOTAL (95 measurable)                                   74.37
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9760  <=5px 98.0%
+                            +6 needs D>=0.40 and A-C>=0.50
+
+V3DONE

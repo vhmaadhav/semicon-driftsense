@@ -1,0 +1,8 @@
+[22:07:19] === stage 1: wait for downloads ===
+[22:12:19] downloads complete: 33 tars, 15G
+[22:12:19] === stage 2: extract shards into pool dirs ===
+[22:12:30] train shards: 64   heldout: data/ext_train/B_0004 data/ext_train/B_0004.tar 
+[22:12:30] pairs available: 17000
+[22:12:30] === stage 2b: keep feeding the pool while training runs ===
+[22:12:30] === stage 3: fine-tune from the shipped weights ===
+[22:12:30] epochs=30 samples_per_epoch=15000 lr=1e-4
