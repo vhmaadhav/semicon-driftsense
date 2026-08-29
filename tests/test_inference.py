@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 import torch
 
-from driftsense.matching import locate, locate_tta, zncc_only
+from driftsense.matching import locate, locate_phase2, locate_tta, zncc_only
 from driftsense.model import DriftSenseNet
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -78,6 +78,17 @@ def test_locate_returns_a_point_inside_the_frame(model, pair):
     r = locate(model, ref, sea, torch.device("cpu"))
     assert 0 <= r["x"] <= sea.shape[1] - 1
     assert 0 <= r["y"] <= sea.shape[0] - 1
+
+
+def test_phase2_explicit_zncc_reproduces_default(model, pair):
+    rp, sp, _ = pair
+    ref = cv2.imread(rp, cv2.IMREAD_GRAYSCALE)
+    sea = cv2.imread(sp, cv2.IMREAD_GRAYSCALE)
+    default = locate_phase2(model, ref, sea, torch.device("cpu"), polish=False)
+    explicit = locate_phase2(model, ref, sea, torch.device("cpu"), polish=False,
+                             verification="zncc")
+    for key in ("x", "y", "scale", "theta", "score", "zncc"):
+        assert explicit[key] == pytest.approx(default[key], abs=1e-7)
 
 
 @pytest.mark.parametrize("shape", [(1000, 1000), (800, 1200), (1200, 800)])
