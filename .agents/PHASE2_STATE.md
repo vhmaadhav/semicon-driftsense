@@ -294,6 +294,38 @@ scratch tree behind `tta_gate=0.0` (off) if anyone wants to re-check.
 compute the firing rate over *all* pairs the gate will see, absent ones
 included — not over the subpopulation you hope to fix.
 
+### Spectral (Fourier-Mellin) pose estimation — tried, does not work here
+
+The idea was sound and the physics is right: layouts are periodic, the FFT
+magnitude is translation-invariant, and for a lattice of pitch P the reference
+(1 nm/px) shows it at N/P cycles while the search (m nm/px) shows it at N*m/P,
+so the **ratio of reciprocal-lattice peak radii is exactly m** and the angular
+offset is the rotation. That would give pose *without localising first*,
+breaking the circular dependency the coarse sweep has — and it targets the 76%
+of Set B failures the sweep never generates a candidate for.
+
+Measured (`scripts/spectral_pose.py`, 240 present pairs):
+
+| set | median \|m\| error | ≤1% | ≤2% | ≤5% | median \|rot\| error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A | 8.95% | 4% | 10% | 24% | 2.07° |
+| B | 10.35% | 4% | 8% | 26% | 2.48° |
+
+Only **15%** land within 3% of true magnification — the window a local refine
+could close — against a coarse sweep that puts most pairs in a workable basin.
+The vote-concentration confidence is useless as a gate: correlation with
+accuracy is −0.13 and every confidence decile is 15%.
+
+**Why it fails, which is the transferable part.** Fourier-Mellin registration
+assumes the two images show *the same content* under a pose change. Ours do
+not: the reference is a 1 µm patch, the search is a ~10 µm field containing
+that patch plus a great deal of other die — different mats, strips and pitches
+per zone. The search spectrum is dominated by content the reference never
+contained, so peak pairing is mostly coincidence, and with a [8,12] window any
+two radii have a good chance of producing an admissible ratio. This is a
+template-in-larger-image problem, not an image-to-image registration problem,
+and FMT is the wrong tool for it regardless of tuning.
+
 ## 5. Landed this session
 
 All in the working tree on branch `phase2-unknown-pose` (**not yet committed**).
