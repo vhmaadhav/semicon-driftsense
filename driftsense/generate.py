@@ -681,15 +681,20 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
     """
     import csv
 
+    # Exact pair counts: full canvases carry `crops_per_canvas` crops and the
+    # final canvas carries only the remainder. divmod alone determines both
+    # the canvas count and that final budget -- never shave crops off one
+    # canvas at a time, which leaves the overrun short-removed (e.g. 5 pairs
+    # at 8 crops/canvas must be ONE canvas of 5, not one of 7).
     if max_pairs is not None:
         full, rem = divmod(max_pairs, crops_per_canvas)
-        if full + (1 if rem else 0) < num_canvases:
-            num_canvases = full + (1 if rem else 0)
-    crop_budgets = [crops_per_canvas] * num_canvases
-    if max_pairs is not None:
-        overrun = num_canvases * crops_per_canvas - max_pairs
-        for i in range(min(overrun, num_canvases)):
-            crop_budgets[num_canvases - 1 - i] -= 1
+        exact_canvases = full + (1 if rem else 0)
+        if exact_canvases < num_canvases:
+            num_canvases = exact_canvases
+        crop_budgets = [crops_per_canvas] * full + ([rem] if rem else [])
+        num_canvases = len(crop_budgets)
+    else:
+        crop_budgets = [crops_per_canvas] * num_canvases
     crop_budgets = [c for c in crop_budgets if c > 0]
     num_canvases = len(crop_budgets)
 

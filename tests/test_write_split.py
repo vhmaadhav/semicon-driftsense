@@ -75,6 +75,34 @@ def test_write_split_cap_multiple_of_crops(tmp_path, monkeypatch):
     assert len(_read_manifest(tmp_path)) == 4
 
 
+def test_write_split_final_budget_takes_whole_remainder(tmp_path, monkeypatch):
+    """Codex P1: the overrun must be removed from the final canvas in one
+    go. With crops_per_canvas=8 and max_pairs=5 there is one canvas whose
+    budget is exactly 5 -- not 8 minus one crop per canvas (= 7)."""
+    recorded = []
+    monkeypatch.setattr(gen, "build_one", _fake_build_one_factory(recorded))
+    pairs = gen.write_split(str(tmp_path), num_canvases=1, seed=1,
+                            noise="clean", architectures=["finfet"],
+                            workers=0, crops_per_canvas=8, progress_every=0,
+                            max_pairs=5)
+    assert pairs == 5
+    assert recorded == [5], recorded
+    assert len(_read_manifest(tmp_path)) == 5
+
+
+def test_write_split_multi_canvas_large_crops(tmp_path, monkeypatch):
+    """13 pairs at 8 crops/canvas = one full canvas + one 5-crop canvas."""
+    recorded = []
+    monkeypatch.setattr(gen, "build_one", _fake_build_one_factory(recorded))
+    pairs = gen.write_split(str(tmp_path), num_canvases=2, seed=1,
+                            noise="clean", architectures=["finfet"],
+                            workers=0, crops_per_canvas=8, progress_every=0,
+                            max_pairs=13)
+    assert pairs == 13
+    assert recorded == [8, 5], recorded
+    assert len(_read_manifest(tmp_path)) == 13
+
+
 def test_failed_imwrite_raises(tmp_path, monkeypatch):
     import cv2
 
