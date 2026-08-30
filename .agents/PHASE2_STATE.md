@@ -133,6 +133,52 @@ judged components is **90.27 / 100**. Efficiency should score full marks
 **80 + whatever the 10 judged points award**. Reaching 92 still requires
 **+1.73** more on the measurable part on top of full marks everywhere judged.
 
+### The grade is 200 pairs, so anything under ~1.2 points is unmeasurable
+
+The set that decides the score is **200 blind organizer-generated pairs**, not
+our 2250. Scoring the shipped configuration on 1500 random 200-pair draws from
+`ext_p2`:
+
+| | |
+| --- | ---: |
+| mean | 75.36 / 85 |
+| standard deviation | **1.22 points** |
+| 90% of draws | 73.38 - 77.34 (a 3.96 point spread) |
+
+**Sampling noise on the real grade is +/-1.22 points at one sigma.** A measured
+improvement of 0.05 points is 0.04 sigma; the rejector refit at +0.11 is 0.09
+sigma. Neither is distinguishable from chance on the set that counts, however
+carefully it was measured on 2250 pairs.
+
+Use this as the bar before spending a day on something:
+
+| change | measured | sigma on the real grade | verdict |
+| --- | ---: | ---: | --- |
+| p6_last weights | +2.72 | 2.2 | real, shipped |
+| p8 label-noise weighting | +0.05 | 0.04 | noise |
+| rejector refit (6 features) | +0.11 | 0.09 | noise |
+| pose-polish variants | -0.33 to +0.00 | <0.3 | noise |
+| efficiency quartile | up to +5 | n/a, judged | **real, and untouched** |
+| generator / citations / failure analysis | up to +10 | n/a, judged | **real, and untouched** |
+
+The two components with real headroom left are the two that are *judged* rather
+than measured. Everything on the accuracy side is now inside the noise floor of
+the grading set itself.
+
+### `data/ext_p2` is not organizer data -- neither team has any
+
+Worth stating plainly because it is easy to overclaim when comparing against
+another team: `ext_p2` is the `test` split of the Drive dataset
+`driftsense_phase2_synthetic_v1`, whose data card says **"no organizer data"**,
+and its `generator_bundle_sha256` is *identical* to the training shards'
+(`1f336770...`). Same generator, different split. The organizers' 200 blind
+pairs have not been released to anyone.
+
+So the honest claim against a rival implementation is **sample size and
+hold-out discipline** -- 2250 pairs across separate tarballs with verified zero
+`pair_sha256` overlap, against their 30- and 150-pair self-made sets -- and not
+"we tested on real data and they did not". Both are self-generated.
+
 ### Beware the subsample
 
 The 500-pair stride-5 subsample used during development read **~1.5 points
