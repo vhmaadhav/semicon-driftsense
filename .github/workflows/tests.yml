@@ -1,0 +1,21 @@
+name: tests
+
+on:
+  push:
+    branches: [main, phase2-unknown-pose, phase2-pose-accuracy]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+      - name: Run test suite
+        run: python -m pytest -q

@@ -1,7 +1,7 @@
 # Phase 2 — current state, and how to not waste a session
 
 **Read this file first.** It is the single source of truth for where Phase 2
-stands. Last updated 2026-08-28. Deadline: **3 September 2026**, code frozen,
+stands. Last updated 2026-08-29. Deadline: **3 September 2026**, code frozen,
 no resubmission.
 
 If you only read one section, read *Do not re-derive these* and *Dead ends
@@ -38,7 +38,16 @@ Weights ship inside the ZIP. Median ≤5 s/pair, hard timeout 20 s.
 | Calibration | 10 | AUC of our `score` column vs per-pair correctness |
 | Efficiency | 5 | relative quartile ranking on **median** wall-clock per pair |
 | Generator, citations, failure analysis | 10 | carried forward, re-judged |
-| **Bonus** | +10 | +6 if Set D credit ≥0.40 with A–C ≥0.50; +4 if rejection F1 ≥0.90 |
+| **Bonus** | +10 | +6 for Set D, +4 if rejection F1 ≥ 0.90 |
+
+**The Set D bonus is out of reach — treat it as unavailable.** The slide reads
+"+6 if Set D credit >= 0.40 with Sets A-C >= 0.50", which we clear easily (Set D
+0.938, A-C 0.814). But the gate confirmed with the organisers is that **Sets
+A-C must be above 95**, not 0.50, and we are at 72.55 of the 85 measurable. The
+briefing call's phrasing — it "only unlocks if your scores are extremely good on
+grayscale" — matches the stricter reading. So Set D work has no expected value
+at our current standing, and the only reachable bonus is the **+4 at rejection
+F1 >= 0.90**. Plan against 100, not 110.
 
 Credit tiers — localisation: 1.00 ≤1px, 0.80 ≤2px, 0.60 ≤3px, 0.40 ≤5px, else 0.
 Scale: 1.00 ≤1%, 0.60 ≤2%, 0.30 ≤5%. Rotation: 1.00 ≤0.25°, 0.60 ≤0.5°, 0.30 ≤1.0°.
@@ -71,22 +80,138 @@ harness that adds the A/B/C/D split, a four-level severity ladder, polygon
 scaling and content hashes. An earlier note called the score drop a "domain
 gap"; that was wrong.
 
-### Final, full-set numbers (2500 pairs, shipped configuration)
+### Final numbers (2250 A/B/C pairs, shipped configuration, 2026-08-30)
+
+`weights/driftsense.pt` is now **`driftsense_p9_last.pt`** -- the p6 epoch-39
+checkpoint plus 30 epochs with the label-noise weighting *inverted*
+(`--jitter-power -1`, up-weighting high-drift pairs) -- with
+`DEFAULT_FOUND_THRESHOLD = 0.2018`. It scores **75.51/85**. The pre-retrain
+weights are kept as `weights/driftsense_pre_p6last_72.55.pt`.
+
+The three label-noise arms, all resumed from `p6_last` with an identical recipe
+so the only difference is the flag, scored on the same 2250 pairs:
+
+| arm | jitter-power | total/85 | locA | locB | F1 | AUC |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `p6_last` (baseline) | n/a | 75.35 | 0.9680 | 0.7689 | 0.8779 | 0.9873 |
+| `p8_last` | +1 (drift is noise) | 75.40 | 0.9669 | 0.7733 | 0.8756 | 0.9869 |
+| **`p9_last`** | **-1 (drift is learnable)** | **75.51** | **0.9691** | **0.7746** | **0.8780** | **0.9876** |
+
+**Use a paired bootstrap to compare checkpoints, not the +/-1.22 absolute-score
+figure.** That figure is the spread of the score across *different* 200-pair
+draws; comparing two checkpoints scored on the *same* pairs removes all of that
+variance, and the paired standard deviation is **0.173**:
+
+| comparison | paired delta | 95% CI | P(better) |
+| --- | ---: | --- | ---: |
+| p8 vs p6_last | +0.055 | [-0.27, +0.39] | 61.6% |
+| p9 vs p6_last | +0.159 | [-0.17, +0.50] | 81.4% |
+| **p9 vs p8** | **+0.108** | -- | **87.8%** |
+
+The last row is the controlled result and the one that carries information: p8
+and p9 differ *only* in `--jitter-power`, same epochs and same recipe, so the
+p10 control arm was cancelled as redundant. **Up-weighting high-drift pairs
+beats down-weighting them at 87.8% confidence**, which is what the label-gap
+measurement in 3e predicts -- the drift-dependent part of the offset target is
+learnable structure, and the network already learns it.
+
+p9 against the baseline is a weak positive: 81.4% likely better, with a
+confidence interval that still crosses zero. It was shipped because it is
+non-inferior on *every* component and its expected value is positive, not
+because +0.159 is established.
 
 | Component | Credit | Points |
 | --- | --- | ---: |
-| Localisation (40) — set A 0.942, set B 0.730 | 0.8138 | 32.55 |
-| Pose — scale (10) | 0.9039 | 9.04 |
-| Pose — rotation (10) | 0.9054 | 9.05 |
-| Rejection (15), reject-positive F1 | 0.8084 | 12.13 |
-| Calibration (10), AUC | 0.9777 | 9.78 |
-| **Total of the 95 measurable** | | **72.55** |
+| Localisation (40) — set A 0.968, set B 0.769 | 0.8585 | 34.34 |
+| Pose — scale (10) | 0.8988 | 8.99 |
+| Pose — rotation (10) | 0.8980 | 8.98 |
+| Rejection (15), reject-positive F1 | 0.8779 | 13.17 |
+| Calibration (10), AUC | 0.9873 | 9.87 |
+| **Total of the 85 measurable** | | **75.35** |
+
+Held-out estimate under a two-fold threshold split: **75.27**. Quote that one.
+The previous shipped configuration measured **72.55**, so the retrain is worth
+**+2.72**, of which only +0.30 comes from retuning the threshold — the rest is
+the weights. Set B credit moved 0.6986 → 0.7689 and set A 0.942 → 0.968.
+
+Every candidate checkpoint, same 2250 pairs, each at its own best threshold:
+
+| checkpoint | total/85 | locA | locB | F1 | AUC |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `driftsense_p6` (epoch 0) | 73.80 | 0.9511 | 0.7371 | 0.8390 | 0.9871 |
+| `driftsense_p6_last` (epoch 39) | **75.35** | 0.9680 | 0.7689 | 0.8779 | 0.9873 |
+| `driftsense_p7_last` (epoch 29) | 74.94 | 0.9623 | 0.7616 | 0.8679 | 0.9859 |
+
+p7 resumed from the epoch-0 p6 file and trained 30 more epochs at a lower LR; it
+lands below p6_last, so the extra round bought nothing and the second download
+was unnecessary.
 
 Localisation and pose are credited **zero on declined pairs**, as the grader
 will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
 4 threads on an idle machine, against a 5 s median target and a 20 s hard
-timeout. Set D scores 0.938 untouched, clearing the **+6** bonus gate;
-rejection F1 is below 0.90 so the **+4** bonus is not earned.
+timeout. Set D scores 0.938 untouched but the **+6 is not reachable** (it
+requires Sets A-C above 95; see §1), and rejection F1 is below 0.90 so the
+**+4** is not earned either. Assume **zero bonus**.
+
+### The denominator is 85, not 95
+
+An earlier version of this file said "of the 95 measurable". That was wrong and
+it was repeated for a while. The components we can self-score are
+**localisation 40 + scale 10 + rotation 10 + rejection 15 + calibration 10 =
+85**. Efficiency (5) and generator/citations/failure-analysis (10) are the
+remaining 15 and are judged, not measured.
+
+So **75.27 / 85** held out, and the absolute ceiling with full marks on both
+judged components is **90.27 / 100**. Efficiency should score full marks
+(median 3.13 s against a 5 s target), which would put the realistic total near
+**80 + whatever the 10 judged points award**. Reaching 92 still requires
+**+1.73** more on the measurable part on top of full marks everywhere judged.
+
+### The grade is 200 pairs, so anything under ~1.2 points is unmeasurable
+
+The set that decides the score is **200 blind organizer-generated pairs**, not
+our 2250. Scoring the shipped configuration on 1500 random 200-pair draws from
+`ext_p2`:
+
+| | |
+| --- | ---: |
+| mean | 75.36 / 85 |
+| standard deviation | **1.22 points** |
+| 90% of draws | 73.38 - 77.34 (a 3.96 point spread) |
+
+**Sampling noise on the real grade is +/-1.22 points at one sigma.** A measured
+improvement of 0.05 points is 0.04 sigma; the rejector refit at +0.11 is 0.09
+sigma. Neither is distinguishable from chance on the set that counts, however
+carefully it was measured on 2250 pairs.
+
+Use this as the bar before spending a day on something:
+
+| change | measured | sigma on the real grade | verdict |
+| --- | ---: | ---: | --- |
+| p6_last weights | +2.72 | 2.2 | real, shipped |
+| p8 label-noise weighting | +0.05 | 0.04 | noise |
+| rejector refit (6 features) | +0.11 | 0.09 | noise |
+| pose-polish variants | -0.33 to +0.00 | <0.3 | noise |
+| efficiency quartile | up to +5 | n/a, judged | **real, and untouched** |
+| generator / citations / failure analysis | up to +10 | n/a, judged | **real, and untouched** |
+
+The two components with real headroom left are the two that are *judged* rather
+than measured. Everything on the accuracy side is now inside the noise floor of
+the grading set itself.
+
+### `data/ext_p2` is not organizer data -- neither team has any
+
+Worth stating plainly because it is easy to overclaim when comparing against
+another team: `ext_p2` is the `test` split of the Drive dataset
+`driftsense_phase2_synthetic_v1`, whose data card says **"no organizer data"**,
+and its `generator_bundle_sha256` is *identical* to the training shards'
+(`1f336770...`). Same generator, different split. The organizers' 200 blind
+pairs have not been released to anyone.
+
+So the honest claim against a rival implementation is **sample size and
+hold-out discipline** -- 2250 pairs across separate tarballs with verified zero
+`pair_sha256` overlap, against their 30- and 150-pair self-made sets -- and not
+"we tested on real data and they did not". Both are self-generated.
 
 ### Beware the subsample
 
@@ -136,9 +261,201 @@ Use stride 5 to rank variants against each other; quote only full-set numbers.
   `SEVERITY_LADDER` with these measured endpoints, widened 12%, driven by one
   latent severity so the knobs move together (independent draws almost never
   produce the all-bad corner that actually breaks matching).
-* **Pose hypotheses are exhausted at K=3.** K=5 returns identical results; the
-  coarse sweep only produces ~3 local maxima.
+* **K=5 returns identical results to K=3 — but not because hypotheses are
+  "exhausted".** The coarse sweep samples [8,12] at 17 points, a 2.5% step,
+  while the correlation peak it hunts is 1–2% wide, so it can step over the
+  true peak entirely and that basin never becomes a local maximum. Extra
+  candidate slots cannot hold a peak the grid never sampled. Raising the
+  sample count does *not* fix it either (41 points measured −0.006 pts), so
+  the binding constraint is that the coarse *score* is noise-dominated, not
+  the resolution. See §3b.
 * **Set D needs no work.** 0.976 credit as-is.
+
+## 3b. Hypothesis verification: what the scores can and cannot reach
+
+Two independent investigations landed on this in parallel — `scripts/verify_scores.py`
+here, and PR #3 (`dev/phase2-robust-verification`, now merged). They used
+different harnesses and different data and agree on the important parts.
+
+### The ceiling: verification reaches 24% of Set B failures
+
+Measured on 270 Set B pairs from `data/ext_p2/`: of 90 pairs that currently
+fail at >5 px, only **22 (24%)** had a correct hypothesis *generated* and then
+not selected. The other **76% never had a right answer among the candidates**,
+so no similarity measure can rescue them — the coarse *search* is what failed,
+not the ranking. PR #3's oracle says the same thing in its own units: a
+recoverable gap of 2.68 pp (dev) and 2.41 pp (confirmation).
+
+**Consequence:** verification work is worth a few tenths of a point, not units.
+Budget it accordingly.
+
+### Which score, measured as an independent selector
+
+Each score replaces native ZNCC as the hypothesis picker. "Breaks" counts
+pairs that currently succeed and would stop succeeding — a score that rescues
+14 and breaks 13 is a loss, and only reporting rescues would hide that.
+
+| score | recovers | breaks | net |
+| --- | ---: | ---: | ---: |
+| `zncc` (incumbent) | 12/22 | 5/180 | +7 |
+| `zncc_rank` | 14/22 | **13/180** | +1 |
+| `zncc_dog` | **14/22** | **4/180** | **+10** |
+| `zncc_grad` | 13/22 | 7/180 | +6 |
+| `zncc_clip` | 12/22 | 5/180 | +7 |
+
+**Rank/census is the trap.** It rescues the most and is still the worst
+practical choice, because it discards too much on clean pairs. PR #3 reached
+the same verdict from a different harness (net −6 dev, −4 confirmation) and
+also rejected it. Do not revisit it on the strength of the ECCV citation
+alone; two measurements say no.
+
+### The safer construction: consensus, from PR #3
+
+Rather than swapping the selector, PR #3 keeps native ZNCC and overrides it
+only when **rank and band both agree** on the same different hypothesis
+(`verification="consensus"`, default `"zncc"`). Measured there: +2 rescued / 0
+broken (dev) and +1 / 0 (confirmation), about **+0.31 to +0.37 points**. Zero
+broken successes in both splits is the property that makes it worth having.
+
+**Two caveats on that report's numbers, which are not the code's fault:**
+
+1. Its branch was cut from `bd51fee`, **before PR #2**, so its baseline lacks
+   the continuous-scale template, canvas-pinned polish, pose clamping and
+   `min(score, zncc)` confidence — the +1.94 points already banked.
+2. Its Set B is a **local generator proxy** scoring credit 0.888 on 149 dev /
+   83 confirmation present pairs. The real external Set B scores **0.723 on
+   875 present pairs**. The report says outright that an external shard was
+   unavailable. We have one. **`verification="consensus"` has not yet been
+   measured on `data/ext_p2/` — do that before enabling it by default.**
+
+### Band-pass moved one stage earlier
+
+Because verification only reaches 24% of failures, `_band()` (difference of
+Gaussians) is also applied inside `pose_candidates`, where it can affect the
+other 76% by changing which candidates get generated at all. Set B's
+degradations sit at both spectral ends — charging low-frequency, shot and
+impulse noise high-frequency — with the layout structure between them, so a
+band keeps what the search needs and discards both noise families. Switchable
+via `band=` / `--no-band`; the A/B against the incumbent is the open item.
+
+## 3c. Sub-pixel precision is bounded by the label, and here is the proof
+
+The briefing says sub-pixel placement carries "slightly higher weightage".
+There is **no separate nanometre bonus** — that weighting *is* the <=1 px tier
+paying 1.00 against <=2 px paying 0.80. At 10 nm/px, <=1 px is <=10 nm.
+
+The tier looks like a large lever: Set B is only 52.1% within 1 px against Set
+A's 90.1%, its median error is 0.94 px, and **114 Set B pairs (13%) sit between
+1.0 and 1.5 px** — one nudge from full credit. Shrinking Set B errors by 25%
+would be worth about +0.86 rubric points, and by 35% about +1.20.
+
+**It is not reachable, because the error is the label.** Localisation error is
+proportional to the generator's per-pair drift jitter, with a near-constant
+ratio across a fourfold range (present pairs within 5 px):
+
+| drift jitter px | n | median error px | error / drift |
+| --- | ---: | ---: | ---: |
+| 0.0 - 0.4 | 374 | 0.221 | 0.75 |
+| 0.4 - 0.8 | 678 | 0.435 | 0.72 |
+| 0.8 - 1.2 | 179 | 0.700 | 0.70 |
+| 1.2 - 1.6 | 156 | 1.023 | 0.75 |
+| 1.6 - 3.0 | 159 | 1.147 | 0.63 |
+
+A *method* error would not scale that cleanly with a generator parameter. This
+also explains the whole Set A / Set B precision gap without invoking anything
+else: Set A drift 0.46 -> 0.31 px error, Set B drift 1.11 -> 0.71 px error. Set
+B is not matched worse, it is jittered 2.4x more. The ratio sitting below 1.0
+says the matcher is already averaging across rows about as well as it can.
+
+**Do not spend time on sub-pixel refinement against this data.** The one caveat
+worth keeping: this is *our* generator's drift model, and the blind set's is
+unknown. If the graders drift less, our <=1 px share is better there than it
+looks here — which is upside, not something to engineer for.
+
+## 3d. The pose search re-measured on the epoch-39 weights (2026-08-30)
+
+The oracle moved with the weights, so the old bound is stale. On Set B, stride 3,
+292 present pairs, `weights/driftsense.pt` = p6_last:
+
+| | est. pose | true pose |
+| --- | ---: | ---: |
+| within 5 px | 87.0% | **93.5%** |
+| median error | 0.90 px | 0.82 px |
+
+38 failures, **57.9% of them fixed by the true pose alone**. So the split is now
+58% pose search / 42% network error, against 52/48 on the old weights, and the
+ceiling rose from 87.1% to 93.5%. Failures are wrong-scale lock-ons: median
+scale error **6.65%** among failures against **0.60%** among successes.
+
+**Widening the candidate generator does not help, and hurts monotonically.**
+Same 292 pairs, each config end-to-end:
+
+| config | credit | <=5px | <=1px | s/pair |
+| --- | ---: | ---: | ---: | ---: |
+| baseline (17 scales, 3 hyp) | **0.7740** | 87.0% | 54.1% | 0.59 |
+| coarse 29 | 0.7582 | 85.3% | 54.1% | 0.68 |
+| coarse 43 | 0.7534 | 84.9% | 53.1% | 0.73 |
+| 4 hypotheses | 0.7774 | 87.3% | 54.5% | 0.64 |
+| 4 hyp + coarse 43 | 0.7719 | 87.0% | 54.8% | 0.92 |
+| 5 hyp + coarse 43 | 0.7726 | 87.0% | 54.8% | 1.11 |
+
+This replicates the earlier "41 coarse scales is worse" result on new weights and
+extends it: the degradation is *monotonic* in scale count. More candidates means
+more plausible decoys, and selection loses ground faster than coverage gains it.
+43 was the sensible top end (template rasterisation makes only ~43 magnifications
+realizable across [8,12]) and it is the worst of the three.
+
+A fourth hypothesis is +0.003 credit on 292 pairs — inside the noise — for +8%
+runtime. Not worth it. **The 58% pose-search gap is not reachable by generating
+more candidates.** It is a basin problem: once the sweep locks onto the wrong
+scale, `polish_pose` refines within that basin and cannot leave it.
+
+## 3e. What the "label gap" actually is, and who closes it (2026-08-30)
+
+Localisation error tracks 0.73x the frame's raster drift. That was read for a
+while as "label noise, so the sub-pixel tier is capped". The first half is
+right; the conclusion was wrong, and it matters because it points at the only
+lever that still works.
+
+**What it is.** Raster drift displaces each *scan row* differently, so the
+imaged target is not a rigid copy of the reference. No single (x, y) aligns a
+wobbled pattern to a flat one. The best rigid fit is a blend of the per-row
+displacements; `gt_x_corr` is specifically the *centre's* displacement. The two
+quantities differ by roughly the drift amplitude. Correlation and the label are
+measuring different things.
+
+**Measured, with pose error removed entirely** (true magnification and rotation
+taken from the manifest, exhaustive sub-pixel ZNCC on a +/-2 px grid at 0.2 px,
+80 random set B pairs across all four severities):
+
+| | median distance from label | / jitter | <=1px |
+| --- | ---: | ---: | ---: |
+| best possible rigid ZNCC, true pose supplied | 1.077 px | 0.99 | 42.0% |
+| our shipped pipeline, pose estimated | 0.685 px | 0.64 | 59.4% |
+
+On the same 69 pairs, **we beat the ZNCC optimum on 59.4% of them**, at 0.64x
+its median error, while also having to estimate the pose it was handed.
+
+**So the gap does not cap us -- it caps *correlation*.** The learned offset head
+is trained against `gt_x_corr`, so it learns to predict the label rather than
+the correlation peak, and it has already absorbed about a third of the
+definitional mismatch. Centre-weighting the ZNCC (the obvious analytic fix, if
+the label is the centre row's displacement) changes nothing: 1.077 -> 1.077 px.
+
+Two consequences:
+
+1. **Sub-pixel accuracy is a training problem, not a matching problem.** Every
+   inference-side sub-pixel idea is bounded by that 1.077 px line, which is
+   worse than where we already are. This is why the pose-polish variants, the
+   interpolator check and centre-weighting all came back flat or negative.
+2. **It casts doubt on the label-noise weighting now training as p8.** That loss
+   down-weights high-jitter pairs on the premise that their offset target is
+   noise. This measurement says the drift-induced part of the target is
+   partly *learnable structure* -- the network is already learning it. If p8
+   loses, the follow-up is not to abandon the idea but to **invert it**:
+   up-weight high-jitter pairs, which is where the <=1 px tier is actually being
+   lost (set B is 88.9% <=1px in the lowest jitter quartile and 40.4% in the
+   highest).
 
 ## 4. Dead ends already paid for
 
@@ -177,6 +494,38 @@ scratch tree behind `tta_gate=0.0` (off) if anyone wants to re-check.
 compute the firing rate over *all* pairs the gate will see, absent ones
 included — not over the subpopulation you hope to fix.
 
+### Spectral (Fourier-Mellin) pose estimation — tried, does not work here
+
+The idea was sound and the physics is right: layouts are periodic, the FFT
+magnitude is translation-invariant, and for a lattice of pitch P the reference
+(1 nm/px) shows it at N/P cycles while the search (m nm/px) shows it at N*m/P,
+so the **ratio of reciprocal-lattice peak radii is exactly m** and the angular
+offset is the rotation. That would give pose *without localising first*,
+breaking the circular dependency the coarse sweep has — and it targets the 76%
+of Set B failures the sweep never generates a candidate for.
+
+Measured (`scripts/spectral_pose.py`, 240 present pairs):
+
+| set | median \|m\| error | ≤1% | ≤2% | ≤5% | median \|rot\| error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A | 8.95% | 4% | 10% | 24% | 2.07° |
+| B | 10.35% | 4% | 8% | 26% | 2.48° |
+
+Only **15%** land within 3% of true magnification — the window a local refine
+could close — against a coarse sweep that puts most pairs in a workable basin.
+The vote-concentration confidence is useless as a gate: correlation with
+accuracy is −0.13 and every confidence decile is 15%.
+
+**Why it fails, which is the transferable part.** Fourier-Mellin registration
+assumes the two images show *the same content* under a pose change. Ours do
+not: the reference is a 1 µm patch, the search is a ~10 µm field containing
+that patch plus a great deal of other die — different mats, strips and pitches
+per zone. The search spectrum is dominated by content the reference never
+contained, so peak pairing is mostly coincidence, and with a [8,12] window any
+two radii have a good chance of producing an admissible ratio. This is a
+template-in-larger-image problem, not an image-to-image registration problem,
+and FMT is the wrong tool for it regardless of tuning.
+
 ## 5. Landed this session
 
 All in the working tree on branch `phase2-unknown-pose` (**not yet committed**).
@@ -199,49 +548,84 @@ All in the working tree on branch `phase2-unknown-pose` (**not yet committed**).
 
 ## 6. Ranked next work
 
-1. **Set B localisation — ~6 of the 40 points.** The entire localisation gap.
-   The failures are acquisition-severity failures, so the fixes below attack
-   the *verification* signal, not the pose search (which is solved) and not the
-   network (retraining scored 0.000 last time).
+**2026-08-30: a literature-grounded research pass (`/autonomous-research`) produced
+three costed proposals — margin-gated second pose search, rank/band rejector features,
+coarse-sweep pruning — plus a runtime-split correction: `pose_candidates` is 66.8% of
+pair time and the network 21.3% on current code (n=12, Set A), so the "86% network"
+figure is stale. Specs, novelty anchors and measurement protocols:
+`.agents/RESEARCH_NOTES.md` (mirrored in the GitHub issues created from it).**
 
-   **(a) ~~Gated dihedral TTA~~ — measured at +0.11 pts and rejected on
-   runtime. See §4.**
+Ordered by measured expected value, not by how interesting the idea is.
 
-   **(b) Rank-transform verification — researched, not yet implemented.** The
-   two strongest failure discriminators are impulse noise (salt-pepper,
-   d=1.21) and speckle (d=1.18), and ZNCC is a least-squares statistic, so a
-   handful of outlier pixels move it a lot. The standard fix is to correlate
-   *non-parametric local transforms* instead of intensities: the rank transform
-   replaces each pixel by the count of neighbours darker than it, so the
-   statistic depends only on local intensity *ordering* and tolerates a
-   substantial fraction of outliers, as well as being invariant to monotonic
-   intensity change (charging, dose drift, gamma).
+### 1. ~~Rejection → F1 ≥ 0.90 by refitting the scalar.~~ ANSWERED: +0.11. Closed.
 
-   - Zabih, R. and Woodfill, J. "Non-parametric Local Transforms for Computing
-     Visual Correspondence", *ECCV* 1994 — the rank and census transforms.
-   - Elboher, E. and Werman, M. "Asymmetric Correlation: A Noise Robust
-     Similarity Measure for Template Matching", *IEEE TIP* 2013 — a template
-     matching similarity invariant to affine illumination change and robust
-     under extreme noise.
+This was ranked first for two sessions on the reasoning that rejection and
+calibration are decided by one hand-picked scalar, `min(score, zncc)`, over two
+of the six signals the pipeline computes. It has now been measured properly and
+**the answer is no**.
 
-   Suggested shape: keep ZNCC for sub-pixel *placement* (rank transform
-   quantises and would blunt the parabolic fit) and add rank correlation as a
-   second *verification* statistic for choosing between pose hypotheses and for
-   the confidence column. Cost is one 5×5 rank pass over the search frame
-   (~24 shifted compares, well under 0.1 s), so it fits the budget. Measure it
-   as its own variant — do not combine it with anything else in the same run.
+`scripts/rejector_cv.py` cross-validates a logistic over the features *inside*
+`data/ext_p2` — fit on one fold, threshold picked on that same fold, scored on
+the other, on the total rubric — so nothing about the held-out fold touches the
+fit and no new data is needed. 2250 pairs, 4 folds:
 
-   **(c) Charging is low-frequency.** Charging streaks are slowly-varying
-   horizontal bands, so a high-pass / difference-of-Gaussians prefilter before
-   verification should suppress them where a rank transform will not. Cheapest
-   of the three to try; test after (b).
-2. **Rejection to F1 ≥ 0.90 — ~2 points plus the +4 bonus.** `min(score, zncc)`
-   is already the better statistic (the full-res ZNCC was being computed and
-   discarded); worth ~+0.65 held-out. Needs to be wired into `register.py`.
-3. **Document the confidence scale in the README.** The mentor asked for this
-   explicitly on the call so graders can read how our `score` is formed.
-4. **Ship `failure_analysis.pdf`** (max 2 pages) — generator exists
-   (`scripts/failure_analysis.py`), regenerate from the final results CSV.
+| statistic | held-out total | F1 | AUC |
+| --- | ---: | ---: | ---: |
+| shipped `min(score,zncc)` | 75.21 | 0.8664 | 0.9875 |
+| logistic, all 6 features | **75.32** | 0.8622 | 0.9913 |
+| logistic, `score,zncc` | 75.26 | 0.8668 | 0.9873 |
+| logistic, `score,zncc,psr,apce` | 75.28 | 0.8673 | 0.9885 |
+| logistic, `score,zncc,peak_ratio,pose_peak` | 75.12 | 0.8578 | 0.9908 |
+
+**+0.11 points**, which is inside the noise. The shape of it is consistent
+across variants: adding features raises calibration AUC (0.9875 → 0.9913) and
+*lowers* rejection F1 (0.8664 → 0.8622), and the two nearly cancel. The
+hand-picked rule is already close to optimal for these signals.
+
+The +4 bonus needs F1 ≥ 0.90 and we are at 0.878. Reweighting these six numbers
+does not get there. What *did* move rejection was training: F1 went 0.8390 →
+0.8779 between the epoch-0 and epoch-39 checkpoints of the same run. If the
+bonus is reachable at all it is through the network, not through post-hoc
+weighting — which also means a trained presence head is the only version of
+this idea still worth anything, at the cost of a from-scratch retrain.
+
+Two earlier attempts at this failed for **data** reasons and their numbers
+should be ignored: one fitted on 200 rows, and one fitted on `data/ext_train`
+shards whose `reference_px` is 100, where localisation runs at chance (600 px
+median) so every feature was noise.
+
+### 2. Measure `verification="consensus"` on `data/ext_p2/`.
+
+PR #3 shipped it as opt-in and could not measure it on external data. This is
+the cheapest open question in the repo: one eval run answers whether its
++0.31–0.37 holds on the real Set B, or whether it was an artefact of a
+149-pair local proxy. Until then, leave the default at `"zncc"`.
+
+### 3. Band-passed coarse sweep — A/B in flight.
+
+Targets the 76% of Set B failures that verification cannot reach, by changing
+which candidates are generated. Compare `--no-band` against the default.
+
+### 4. Training, scoped to the half it can reach.
+
+The true-pose oracle bounds this: Set B's ceiling with a *perfect* pose is
+**87.1%**, not 99%. So ~52% of failures are pose-side and only **48% are the
+network's own error** — that is all training can address. A 4-epoch probe moved
+Set B by 0.000, but it was mis-configured (see §6e) and its one-cycle schedule
+never left warmup. One properly configured run is justified; an open-ended
+search is not. **Promote only if Set B credit improves on the external 2500-pair
+test** — training loss is not a proxy: the last run's loss fell 0.404 → 0.32
+while Set B credit moved exactly zero.
+
+### 5. Not worth doing yet
+
+* **Lattice fallback.** The failures track acquisition severity (drift jitter
+  d=1.23, salt-pepper 1.21, charging 1.20), not periodicity. Attack the noise
+  first; the same pairs are reachable more directly.
+* **Rank/census as a selector.** Rejected twice, by two harnesses. §3b.
+* **DINO / LoFTR / RoMa.** Beyond the rules question, the current 0.46M network
+  is already 86% of a 3.35 s pair against a 5 s median budget, paid three times
+  over for three hypotheses. There is no room.
 
 ## 6b. Training on the Drive shards — verified recipe
 
@@ -342,6 +726,124 @@ disqualifier.
   than 100%.
 * **Config:** `--resume weights/driftsense.pt --finetune --lr 1e-4`, one-cycle,
   30 epochs x 15k, `--refresh-pool` so shards still downloading are picked up.
+
+## 6e. Operational traps that cost real time here
+
+Each of these wasted at least one run. They are environment facts, not
+insights, which is exactly why they are easy to rediscover the hard way.
+
+**`train.py` needs `--phase2`, or validation is meaningless.** `evaluate()`
+takes `phase2=args.phase2`. Without the flag it scores posed scenes (mag 8–12,
+rot ±5°) with a *nominal* 10×/0° validator and reads ~chance — 429 px median,
+acc@5 0.28 — from epoch 0, before training could have changed anything. A run
+was stopped on the strength of that number, which was a false alarm.
+
+**`--val-dir` must hold full 1000 px references.** Pointing it at a *train*
+shard gives 100 px template references, and the validator builds its template
+from a full reference: val acc@5 reads exactly **0.000**. Use `data/val_p2`
+(reference_px 1000, and it carries absent pairs). `data/ext_train/*` and
+`data/ext_holdout/*` are training-format shards and are **not** valid
+validation sets.
+
+**Background jobs need `setsid`, not `nohup`.** `nohup cmd &` from a tool call
+still dies when the session ends. Two multi-hour jobs were lost that way. Use:
+
+```bash
+setsid nohup ./script.sh > log 2>&1 < /dev/null &
+```
+
+**Long extractions must checkpoint *and* shuffle.** `fit_rejector.py` wrote its
+cache only at the end, so a 90-minute run interrupted at 400/2340 lost
+everything. Worse, tasks were built shard-by-shard, so the partial cache held
+400 present pairs and **zero absent** — useless for fitting a present/absent
+decision. Both fixed: it writes every 200 pairs and shuffles first, so any
+prefix is a representative sample.
+
+**This laptop runs at 100 °C under any sustained load.** 97 °C on CPU-only
+evaluation, 100 °C with GPU training added. It thermally throttles rather than
+failing, but it means the machine is the constraint on parallelism: four
+concurrent jobs roughly doubled the rejector's ETA. Prefer sequencing the
+measurements you actually need over running everything at once.
+
+**Stride must be coprime with 4, or the sample is severity-biased.** The
+manifests order pairs by a repeating severity cycle `[1,2,3,4,1,2,3,4,...]`, so
+`--stride 4` samples **severity 1 only** and `--stride 2` samples only 1 and 3.
+A stride-4 subset of Set B reads 95.4% within 5 px where the full set reads
+81.4% -- and that is not sampling noise, it is a different population. Use
+stride 3 or 5 (or 1). Two experiments were invalidated this way before it was
+spotted.
+
+**A "best" checkpoint is meaningless once the validator saturates.** `train.py`
+keeps `<name>.pt` as the best-scoring epoch by `val_p2` and `<name>_last.pt` as
+the final one. On `val_p2` the model reaches `acc@2 1.000, acc@5 1.000` in
+**epoch 0**, so the best-score file is written once and never beaten -- both the
+40-epoch p6 run and the 30-epoch p7 run finished reporting the identical
+`best score: 0.29895`. `weights/driftsense_p6.pt` is therefore an *epoch-0*
+checkpoint. The overnight supervisor scored that file and reported 73.36/85 as
+if it were the trained result. **When val is saturated, evaluate `_last.pt`, and
+select on `scripts/eval_ext.py` against Set B, never on the training log.**
+
+**Resolve the checkpoint path once, outside the loop that produces it.**
+`overnight_supervisor.sh` set `W=weights/driftsense_p6.pt` *inside* its round
+loop, so round 2 trained `driftsense_p7.pt` and then re-scored p6. It got the
+same number, concluded "no improvement", and stopped -- a verdict comparing a
+checkpoint against itself. Any loop that both trains and evaluates must derive
+the weights path from the round it is in.
+
+**`data/ext_train` and `data/pool_p2` cannot be fed to `locate_phase2` at all.**
+Not just as validation sets -- as *anything*. They carry `reference_px=100`, a
+pre-cropped template, while `locate_phase2` builds its own template from a full
+1000 px reference. Feeding it a template produced a median localisation error of
+**600 px with zero pairs inside 5 px** -- chance. A whole rejector fit was run on
+those features before the guard below caught it, and its "-0.71 points" verdict
+was noise, not a result. Only `data/ext_p2` (the `test` split) and `data/val_p2`
+have 1000 px references. Any script that scores pairs must assert
+`reference_px == 1000` and that present pairs actually land within 5 px before
+believing its own output.
+
+**`pgrep -f` matches the watcher's own command line, and anyone else's.**
+`grind.sh` waited on `pgrep -f "train\.py --train-dirs"` and `pgrep -f
+"labelnoise_run"`. Training had finished, yet the chain sat in its wait loop for
+ten minutes -- because *diagnostic commands typed to inspect it* contained those
+exact strings, and `pgrep -f` matches against full command lines, so the
+supervisor kept seeing "training is still running" and re-slept. Looking at the
+job was what kept it stuck. Use the bracket trick, which matches a real process
+but never the pattern itself:
+
+```bash
+pgrep -f "[t]rain\.py --train-dirs"
+```
+
+Related: **never edit a shell script while it is running.** bash reads a script
+incrementally by byte offset, so an in-place edit can make a running job execute
+garbage from the middle of a line. `grind.sh` carries the unhardened idiom until
+it finishes for exactly this reason.
+
+**Timings inside a parallel run are fiction.** The box is memory-bandwidth
+bound at ~0.42 pairs/s total regardless of the worker/thread split. Runtime
+claims come from `scripts/profile_pair.py`, single process, 4 threads, idle.
+
+**Three traps from the automated review of this branch (Codex, 2026-08-30) —
+all verified real; documented here first, one-line code fixes queued.**
+
+* **`scripts/morning_pipeline.sh` Phases B–D fit the rejector from unusable
+  data.** They extract features from `data/ext_train/B_*` and `C_*` shards,
+  which carry `reference_px=100` (see the trap above), so `locate_phase2` runs
+  at chance on them and every feature is noise — the `weights/rejector.json`
+  that path writes is not a result. This is the same data defect as the
+  discarded fits in §6 item 1. The live fit path is `scripts/rejector_cv.py`
+  (and `rejector_pipeline.sh`, which states the exclusion explicitly); do not
+  run morning_pipeline Phases B–D until they point at a 1000 px-reference
+  source.
+* **`scripts/eval_ext.py --verification` advertises selectors that do not
+  exist.** The help offers `rank`, `band` and `dog`, but `locate_phase2`
+  validates only `zncc`, `majority` and `consensus`, so those three values
+  abort the evaluation with a `ValueError` before any results. `rank`/`band`/
+  `dog` were measured as scores in §3b and never wired in as selectors.
+* **`scripts/apply_rejector.py`'s malformed-features fallback calls
+  `shipped.ptp()`.** `ndarray.ptp` was removed in NumPy 2.0 and the pin is
+  `numpy==2.4.6`, so the fallback raises `AttributeError` exactly on the
+  non-finite-feature case it exists to preserve. The fix is `np.ptp(shipped)`.
 
 ## 7. Data, and the leakage rule
 

@@ -51,7 +51,7 @@ def tier(value: float, tiers) -> float:
 
 def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
-    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse = job
+    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -74,7 +74,9 @@ def _worker(job):
     res = locate_phase2(model, ref, sea, device, refine=True,
                         hypotheses=hypotheses, polish=polish,
                         polish_scale=polish_scale, refit_xy=refit_xy,
-                        coarse_scales=coarse)
+                        coarse_scales=coarse, band=band,
+                        verification=verification, denoise=denoise,
+                        tie_tol=tie_tol)
     dt = time.perf_counter() - t0
     return {
         "pair_id": row["pair_id"], "set": row["phase2_set"],
@@ -99,13 +101,21 @@ def _worker(job):
         # winning pose hypothesis.
         "peak_ratio": float(res.get("peak_ratio", np.nan)),
         "pose_peak": float(res.get("pose_peak", np.nan)),
+        # Peak-shape statistics (Bolme et al., MOSSE, CVPR 2010). score and
+        # zncc are peak *heights* and peak_ratio is a margin over the runner-up;
+        # neither describes the surface the peak sits on, and a confident wrong
+        # lock-on is a tall peak on a busy surface. Recorded here so a rejector
+        # fitted on training shards can be scored on this set without a second
+        # inference pass -- without them the fit could never be validated.
+        "psr": float(res.get("psr", np.nan)),
+        "apce": float(res.get("apce", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
         "secs": dt,
     }
 
 
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
-        polish_scale, refit_xy, stride, coarse):
+        polish_scale, refit_xy, stride, coarse, band, verification, denoise, tie_tol):
     import multiprocessing as mp
 
     tasks = []
@@ -117,7 +127,7 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
             man = man.head(limit)
         for _, r in man.iterrows():
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
-                          polish_scale, refit_xy, coarse))
+                          polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
 
     out, t0 = [], time.perf_counter()
@@ -223,7 +233,7 @@ def score(df, threshold, quiet=False):
     print(f"{'Calibration (10)':<28}{f'AUC {auc:.4f}':>26}{10*auc:>10.2f}")
     print("-" * 74)
     sub = sum(v[1] for v in res.values())
-    print(f"{'SUBTOTAL (95 measurable)':<28}{'':>26}{sub:>10.2f}")
+    print(f"{'SUBTOTAL (85 measurable)':<28}{'':>26}{sub:>10.2f}")
     print(f"{'  + efficiency (5)':<28}{'not measurable in parallel':>26}")
     print(f"{'  + generator/report (10)':<28}{'judged, not self-assessable':>26}")
 
@@ -250,8 +260,23 @@ def main():
     ap.add_argument("--no-polish-scale", action="store_true")
     ap.add_argument("--refit-xy", action="store_true")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth pair")
-    ap.add_argument("--coarse-scales", type=int, default=41)
-    ap.add_argument("--threshold", type=float, default=0.25)
+    ap.add_argument("--coarse-scales", type=int, default=17)
+    ap.add_argument("--no-band", action="store_true")
+    ap.add_argument("--verification", default="zncc",
+                    choices=["zncc", "consensus", "majority"],
+                    help="hypothesis selector implemented in locate_phase2. rank/band/"
+                         "dog were measured as research scores and are NOT implemented "
+                         "as selectors; the earlier help text advertising them was "
+                         "stale and passing them aborted the run")
+    ap.add_argument("--denoise", type=int, default=0,
+                    help="median filter kernel applied to the search frame (0=off)")
+    ap.add_argument("--tie-tol", type=float, default=0.04,
+                    help="peaks within this relative margin of the best are "
+                         "treated as tied and resolved toward the frame centre")
+    ap.add_argument("--threshold", type=float, default=0.2018,
+                    help="found operating point; aligned with register.py's "
+                         "DEFAULT_FOUND_THRESHOLD so a default run reads the shipped "
+                         "configuration instead of a stale 0.25")
     a = ap.parse_args()
 
     if a.rescore:
@@ -259,7 +284,8 @@ def main():
     else:
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
-                 a.refit_xy, a.stride, a.coarse_scales)
+                 a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
+                 a.verification, a.denoise, a.tie_tol)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

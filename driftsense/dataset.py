@@ -108,7 +108,8 @@ def gaussian_heatmap(h: int, w: int, ci: float, cj: float, sigma: float = 1.0) -
 def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float,
                  crop: int, train: bool, rng: np.random.Generator, resp: int,
                  magnification: float = float(SCALE), rotation_deg: float = 0.0,
-                 found: int = 1, pose_jitter: tuple[float, float] = (0.0, 0.0)) -> dict:
+                 found: int = 1, pose_jitter: tuple[float, float] = (0.0, 0.0),
+                 drift_jitter: float = 0.0) -> dict:
     """Turn one (reference, search, ground-truth) triple into a training tensor
     sample: dihedral + photometric augmentation, window crop, standardisation,
     and the response-grid heatmap/offset targets.
@@ -219,6 +220,12 @@ def build_sample(reference: np.ndarray, search: np.ndarray, gx: float, gy: float
         "found": torch.tensor(float(found), dtype=torch.float32),
         "gt": torch.tensor([bx + TEMPLATE_SIZE / 2.0, by + TEMPLATE_SIZE / 2.0],
                            dtype=torch.float32),
+        # Per-pair raster-drift amplitude. The offset target is only accurate to
+        # about 0.72x this (measured, see PHASE2_STATE.md 3c), so it is the
+        # scale of the label noise on the sub-pixel head. Carried through so the
+        # loss can down-weight what it cannot learn. 0.0 means "unknown", which
+        # the loss treats as unweighted.
+        "jitter": torch.tensor(float(drift_jitter), dtype=torch.float32),
     }
 
 
@@ -296,4 +303,5 @@ class DriftSenseDataset(Dataset):
                             magnification=float(row.get("magnification", SCALE) or SCALE),
                             rotation_deg=float(row.get("rotation_deg", 0.0) or 0.0),
                             found=int(float(row.get("found", 1))),
-                            pose_jitter=self.pose_jitter)
+                            pose_jitter=self.pose_jitter,
+                            drift_jitter=float(row.get("drift_jitter_px", 0.0) or 0.0))

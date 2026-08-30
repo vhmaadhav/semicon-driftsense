@@ -22,6 +22,12 @@ import torch
 import torch.nn.functional as F
 
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
+from driftsense.verification import (
+    common_band,
+    dog_feature,
+    local_match_score,
+    rank_transform,
+)
 
 # Two candidates whose scores differ by less than this are treated as tied,
 # and the problem statement's rule applies: prefer the one nearer the centre
@@ -182,6 +188,24 @@ POSE_PROBE_DOWNSCALE = 2
 POSE_SKIP_ABOVE = 0.70
 
 
+# Band-pass the coarse probe before correlating. Measured on Set B: of the
+# >5 px failures, only 24% had a correct pose hypothesis generated at all --
+# the other 76% never had a right answer to select, so the *search* was
+# failing, not the ranking. The coarse score is a half-resolution correlation
+# on raw pixels, and Set B's dominant degradations sit at both ends of the
+# spectrum: charging streaks are low-frequency, shot and impulse noise are
+# high-frequency, and the layout structure is in between. A difference of
+# Gaussians keeps the band that carries the pattern and discards both.
+#
+# The same filter beat raw ZNCC at *verifying* hypotheses in the same
+# experiment (net +10 pairs against +7; scripts/verify_scores.py), which is
+# what suggested trying it one stage earlier. A rank transform recovered as
+# many failures but broke three times as many successes, so it is not used.
+def _band(img: np.ndarray, s1: float = 1.0, s2: float = 4.0) -> np.ndarray:
+    f = img.astype(np.float32)
+    return cv2.GaussianBlur(f, (0, 0), s1) - cv2.GaussianBlur(f, (0, 0), s2)
+
+
 def _probe(img: np.ndarray, k: int = POSE_PROBE_DOWNSCALE) -> np.ndarray:
     h, w = img.shape[:2]
     return cv2.resize(img, (max(w // k, 1), max(h // k, 1)),
@@ -310,7 +334,7 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
                     coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
-                    refine_span_scales: int = 17) -> list:
+                    refine_span_scales: int = 17, band: bool = True) -> list:
     """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
 
     Correlation against a periodic layout is multi-peaked in *scale*: a wrong
@@ -327,9 +351,12 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     lo_s, hi_s = scale_bounds
     lo_r, hi_r = rotation_bounds
     probe_search = _probe(search)
+    if band:
+        probe_search = _band(probe_search)
 
     def coarse(f, r=0.0):
-        return _peak_score(probe_search, _probe(make_template(reference, f, r)))
+        t = _probe(make_template(reference, f, r))
+        return _peak_score(probe_search, _band(t) if band else t)
 
     grid = np.linspace(lo_s, hi_s, coarse_scales)
     vals = [coarse(f) for f in grid]
@@ -472,6 +499,45 @@ def response_to_center(i: float, j: float, th: int, tw: int,
                        dy: float = 0.0, dx: float = 0.0) -> tuple[float, float]:
     """Response cell (+ sub-cell offset) -> search-image centre (x, y)."""
     return (j + dx) * STRIDE + tw / 2.0, (i + dy) * STRIDE + th / 2.0
+
+
+def peak_stats(prob: np.ndarray, i: int, j: int, exclude: int = 5) -> tuple[float, float]:
+    """Peak-to-sidelobe ratio and APCE for a response map.
+
+    Both measure how far the winner stands out from the *background
+    distribution* of the surface, which is different information from the
+    winner's height (`score`) or from its margin over the runner-up
+    (`peak_ratio`). A confident lock-on to the wrong repeat produces a tall
+    peak on a busy surface; a true match produces a tall peak on a quiet one.
+    Height alone cannot tell those apart, and on a periodic layout that is
+    exactly the confusion we are trying to resolve.
+
+    PSR  = (peak - mean(sidelobe)) / std(sidelobe), sidelobe excluding an
+           (2*exclude+1)^2 window around the peak. Bolme, D. S., Beveridge,
+           J. R., Draper, B. A. and Lui, Y. M., "Visual Object Tracking using
+           Adaptive Correlation Filters", CVPR 2010 -- where it is used to
+           detect occlusion and tracking failure, structurally the same
+           present/absent question we face.
+    APCE = (peak - min)^2 / mean((surface - min)^2), the average
+           peak-to-correlation energy, reported in the correlation-filter
+           literature as the more stable of the two.
+
+    Free: the response map is already computed by `locate`.
+    """
+    p = np.asarray(prob, dtype=np.float64)
+    h, w = p.shape
+    peak = float(p[i, j])
+    mask = np.ones_like(p, dtype=bool)
+    mask[max(i - exclude, 0):i + exclude + 1, max(j - exclude, 0):j + exclude + 1] = False
+    side = p[mask]
+    if side.size < 16:
+        return 0.0, 0.0
+    sd = float(side.std())
+    psr = float((peak - side.mean()) / sd) if sd > 1e-9 else 0.0
+    mn = float(p.min())
+    denom = float(((p - mn) ** 2).mean())
+    apce = float((peak - mn) ** 2 / denom) if denom > 1e-12 else 0.0
+    return psr, apce
 
 
 def find_peaks(prob: np.ndarray, max_peaks: int = 32) -> list[tuple[int, int, float]]:
@@ -637,7 +703,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
-                  **kw) -> dict:
+                  band: bool = True, return_hypotheses: bool = False,
+                  verification: str = "zncc", denoise: int = 0, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     For each pose hypothesis: canonicalise the search frame, let the network
@@ -656,7 +723,51 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
       failure -- but at full resolution the wrong basin correlates near zero
       while the right one is around 0.9, so the decision becomes easy.
     """
+    verification = str(verification).lower()
+    valid_verification = {"zncc", "majority", "consensus"}
+    if verification not in valid_verification:
+        raise ValueError(f"verification must be one of {sorted(valid_verification)}")
+
+    # The baseline path never enters this block. Research instrumentation and
+    # optional selectors share one set of full-search feature maps per pair.
+    need_verification_scores = return_hypotheses or verification != "zncc"
+    search_features = None
+    verification_secs = 0.0
+    if need_verification_scores:
+        import time
+        t_verify = time.perf_counter()
+        search_features = {
+            "rank": rank_transform(search),
+            "band": common_band(search),
+        }
+        if return_hypotheses:
+            search_features["dog"] = dog_feature(search)
+        verification_secs += time.perf_counter() - t_verify
+
+    # Suppress impulse noise before anything looks at the frame. Every
+    # similarity tried so far changed the *metric*; this changes the *input*,
+    # which is a different axis and the one the registration literature points
+    # at -- noise corrupts the similarity surface itself, so a more robust
+    # statistic on a corrupted surface is fighting the wrong battle. Set B's
+    # failures are led by salt-and-pepper (Cohen's d = 1.21), speckle (1.18)
+    # and detector noise (1.15), and a median filter is the textbook answer to
+    # the first. Costs ~2 ms against a 3.35 s pair.
+    # ...but only on the *correlation* path. Measured on one Set B pair, a 3x3
+    # median lifts native ZNCC 0.812 -> 0.855 while dropping the network score
+    # 0.714 -> 0.361: the network was trained on noisy frames, so denoising its
+    # input is a distribution shift and it pays for it. A 5x5 median moves the
+    # answer 600 px, i.e. destroys the match outright.
+    #
+    # So the network keeps raw pixels and the classical stages -- the coarse
+    # pose sweep and the full-resolution ZNCC -- get the cleaned frame. They
+    # are the parts that noise actually corrupts, and they have no learned
+    # distribution to violate.
+    search_corr = search
+    if denoise and denoise >= 3:
+        search_corr = cv2.medianBlur(search, int(denoise) | 1)
+
     def attempt(m: float, rot: float) -> dict:
+        nonlocal verification_secs
         canon, M = canonicalize_search(search, m, rot)
         coarse = locate(model, reference, canon, device, refine=False,
                         factor=float(SCALE), rotation_deg=0.0, **kw)
@@ -664,28 +775,60 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         out = dict(coarse)
         out.update({"x": cx, "y": cy, "scale": float(m), "theta": float(rot),
                     "canonical": (coarse["x"], coarse["y"])})
+        if return_hypotheses:
+            out.update({"coarse_x_native": float(cx), "coarse_y_native": float(cy)})
+        template = None
         if refine:
             template = make_template(reference, m, rot)
-            rx, ry, zn = refine_zncc(standardize(search / 255.0),
+            rx, ry, zn = refine_zncc(standardize(search_corr / 255.0),
                                      standardize(template / 255.0),
                                      cx, cy, radius=refine_radius)
             if np.hypot(rx - cx, ry - cy) <= 10.0:
                 out.update({"x": rx, "y": ry})
             out["zncc"] = float(zn)
+        if search_features is not None:
+            import time
+            t_verify = time.perf_counter()
+            if template is None:
+                template = make_template(reference, m, rot)
+            out.update({
+                "rank": local_match_score(search_features["rank"],
+                                          rank_transform(template), out["x"], out["y"]),
+                "band": local_match_score(search_features["band"],
+                                          common_band(template), out["x"], out["y"]),
+            })
+            if "dog" in search_features:
+                out["dog"] = local_match_score(search_features["dog"],
+                                                dog_feature(template), out["x"], out["y"])
+            verification_secs += time.perf_counter() - t_verify
         return out
 
+    def choose(candidates: list[dict]) -> dict:
+        zncc_i = max(range(len(candidates)),
+                     key=lambda i: candidates[i].get("zncc", candidates[i].get("score", -np.inf)))
+        if verification == "zncc" or len(candidates) == 1:
+            return candidates[zncc_i]
+        rank_i = max(range(len(candidates)), key=lambda i: candidates[i]["rank"])
+        band_i = max(range(len(candidates)), key=lambda i: candidates[i]["band"])
+        if verification == "consensus":
+            return candidates[rank_i] if rank_i == band_i else candidates[zncc_i]
+        votes = [zncc_i, rank_i, band_i]
+        winner = max(range(len(candidates)), key=votes.count)
+        return candidates[winner] if votes.count(winner) >= 2 else candidates[zncc_i]
+
     if pose is not None:
-        best = attempt(float(pose[0]), float(pose[1]))
+        candidates = [attempt(float(pose[0]), float(pose[1]))]
+        candidates[0]["pose_peak"] = float("nan")
+        best = choose(candidates)
     else:
-        cands = pose_candidates(reference, search, k=max(int(hypotheses), 1),
-                                coarse_scales=int(coarse_scales))
-        best = None
+        cands = pose_candidates(reference, search_corr, k=max(int(hypotheses), 1),
+                                coarse_scales=int(coarse_scales), band=band)
+        candidates = []
         for m, rot, coarse_peak in cands:
             r = attempt(m, rot)
             r["pose_peak"] = float(coarse_peak)
-            key = r.get("zncc", r.get("score", -np.inf))
-            if best is None or key > best.get("zncc", best.get("score", -np.inf)):
-                best = r
+            candidates.append(r)
+        best = choose(candidates)
         best["n_hypotheses"] = len(cands)
 
     if refine and polish:
@@ -746,6 +889,29 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     # this is not a threshold fitted to the test set.
     best["confidence"] = float(min(float(best.get("score", 0.0)),
                                    float(best.get("zncc", best.get("score", 0.0)))))
+
+    if return_hypotheses:
+        best["hypotheses"] = [{
+            "scale": float(r["scale"]),
+            "theta": float(r["theta"]),
+            "pose_peak": float(r.get("pose_peak", np.nan)),
+            "network_score": float(r.get("score", np.nan)),
+            "peak_ratio": float(r.get("peak_ratio", np.nan)),
+            "coarse_x_native": float(r["coarse_x_native"]),
+            "coarse_y_native": float(r["coarse_y_native"]),
+            "x": float(r["x"]),
+            "y": float(r["y"]),
+            "zncc": float(r.get("zncc", np.nan)),
+            "rank": float(r.get("rank", np.nan)),
+            "band": float(r.get("band", np.nan)),
+            "dog": float(r.get("dog", np.nan)),
+        } for r in candidates]
+        best["secs_verification"] = float(verification_secs)
+    else:
+        # Optional selectors change only the chosen hypothesis, not the result
+        # dictionary contract consumed by register.py and downstream callers.
+        for key in ("rank", "band", "dog"):
+            best.pop(key, None)
     return best
 
 
@@ -785,8 +951,9 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
                   if np.hypot(p_[0] - i, p_[1] - j) > 2.0), None)
     peak_ratio = (float(rival[2]) / max(float(peaks[0][2]), 1e-9)) if rival else 0.0
 
+    psr, apce = peak_stats(prob, i, j)
     result = {"x": cx, "y": cy, "score": float(score), "coarse": (cx, cy),
-              "peak_ratio": peak_ratio}
+              "peak_ratio": peak_ratio, "psr": psr, "apce": apce}
 
     if refine:
         rx, ry, zn = refine_zncc(sea_n, tpl_n, cx, cy, radius=refine_radius)

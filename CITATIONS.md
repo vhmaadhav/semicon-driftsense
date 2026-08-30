@@ -136,6 +136,33 @@ magnification (smaller template). `polish_pose` pins the template canvas
 across its sweep so every candidate is scored over an identical pixel count,
 which removes that pull; `make_template(..., canvas=...)` exists for this.
 
+### Robust similarity for hypothesis verification
+
+- Zabih, R. and Woodfill, J. "Non-parametric Local Transforms for Computing
+  Visual Correspondence", *ECCV* 1994. — The rank and census transforms:
+  each pixel is replaced by a summary of the local intensity *ordering*, so
+  correlation over them tolerates a large fraction of outliers and is invariant
+  to monotonic intensity change.
+- Elboher, E. and Werman, M. "Asymmetric Correlation: A Noise Robust Similarity
+  Measure for Template Matching", *IEEE TIP* 2013.
+- Marr, D. and Hildreth, E. "Theory of Edge Detection", *Proc. R. Soc. B* 1980.
+  — The difference-of-Gaussians band-pass.
+
+**What we actually adopted, and why not the obvious one.** The rank transform
+is the textbook answer for impulse noise, and impulse noise is the second
+strongest discriminator of our Set B failures (Cohen's d = 1.21). It was
+measured as a hypothesis selector and **rejected**: it rescues the most
+failures (14 of 22) but breaks 13 of 180 pairs that currently succeed, for a
+net far below the incumbent ZNCC. It discards too much signal on clean frames.
+An independent investigation (PR #3) reached the same verdict on different
+data. The citation is kept because the method was tried and the negative result
+is the useful part.
+
+A difference-of-Gaussians band was the better measured choice (net +10 against
+the incumbent's +7) and is applied in the coarse pose sweep, where Set B's
+degradations sit at both spectral extremes — charging low-frequency, shot and
+impulse noise high-frequency — with the layout structure between them.
+
 ### Realising a continuous scale from a discrete raster
 
 - Unser, M., Aldroubi, A. and Eden, M. "B-Spline Signal Processing", *IEEE

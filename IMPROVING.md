@@ -8,10 +8,15 @@ bottom rather than deleted, because how they were wrong is the useful part.
 ## How these numbers are measured
 
 `scripts/eval_ext.py` scores the published Phase 2 rubric against
-`data/ext_p2/`, a 2500-pair set (A 875, B 875, C 500, D 250) produced by a
-different generator, with full ground truth for position, rotation,
-magnification and presence. It is not the blind set, but it is the only thing
-available that does not share our modelling assumptions.
+`data/ext_p2/`, a 2500-pair set (A 875, B 875, C 500, D 250) with full ground
+truth for position, rotation, magnification and presence.
+
+It is **not** an independent generator — its manifest is a strict superset of
+ours and the twelve architecture presets match exactly, so it is our generator
+in a Phase-2 harness that adds the A/B/C/D split, a four-level severity ladder
+and polygon scaling. What it *does* give us is a far harder and better-specified
+draw than `data/val_p2`, and enough Set B pairs (875 present) to measure changes
+that a 100-pair split cannot resolve.
 
 Two rules are enforced, and both cost points that the old self-measurement was
 quietly keeping:
@@ -44,13 +49,15 @@ quietly keeping:
 | Pose — rotation | 10 | 0.9163 | 0.9054 |
 | Rejection (reject-positive F1) | 15 | 0.8004 | **0.8084** |
 | Calibration | 10 | 0.9715 | **0.9777** |
-| **Total of the 95 measurable** | | **70.61** | **72.55** |
+| **Total of the 85 measurable** | | **70.61** | **72.55** |
 
 **+1.94 points.** Localisation and pose are credited zero on declined pairs,
 as the grader will see them. Present pairs wrongly declined fell 167 → 94.
 Runtime 3.35 s median (p90 4.16, max 4.42) at 4 threads on an idle machine.
-Set D scores 0.938 untouched, clearing the +6 gate; rejection F1 is under 0.90
-so the +4 bonus is not earned.
+Set D scores 0.938 untouched, but the +6 requires Sets A-C above 95 (confirmed
+with the organisers, stricter than the slide's "A-C >= 0.50") and we are at
+72.55, so it is **not reachable**. Rejection F1 is under 0.90 so the +4 is not
+earned either. **Assume zero bonus and plan against 100.**
 
 Rotation credit regressed slightly (0.9163 → 0.9054, −0.11 pts) — the canvas
 pinning that fixed scale costs a little on rotation. It is bought back many
@@ -89,17 +96,53 @@ does not discriminate) and modelling polygon scaling harder (d = −0.12).
 Failure rate is 17.1% on set B against 3.4% on set A, and 13% at severity 3–4
 against 5% at severity 1–2.
 
-### 2. Rejection — ~2 points plus a `+4` bonus
+### 1b. …but only a quarter of those failures are reachable by verification
 
-F1 is 0.843 at the shipped threshold and 0.867 at the best available one, so
-the `+4` bonus at F1 ≥ 0.90 is **not currently earned**. At the shipped
-threshold, 25 present pairs are declined and 9 absent pairs accepted. The 25
-declined pairs cost their localisation and pose credit as well.
+Measured on 270 Set B pairs (`scripts/verify_scores.py`): of 90 current >5 px
+failures, only **22 (24%)** had a correct hypothesis generated and then not
+selected. The other **76% never had a right answer among the candidates**, so
+no similarity measure can rescue them.
 
-`scripts/optimize_threshold.py` tunes the threshold against the *total* rubric
-rather than F1 alone, and finds `min(score, zncc)` the best statistic — the
-full-resolution ZNCC is already computed and was being discarded. Worth about
-+0.65 points, held-out.
+Scored as independent selectors, with breakage counted (a score that rescues
+14 and breaks 13 is a loss):
+
+| score | recovers | breaks | net |
+| --- | ---: | ---: | ---: |
+| `zncc` (incumbent) | 12/22 | 5/180 | +7 |
+| `zncc_rank` | 14/22 | 13/180 | +1 |
+| `zncc_dog` | 14/22 | 4/180 | **+10** |
+| `zncc_grad` | 13/22 | 7/180 | +6 |
+
+Rank/census rescues the most and is still the worst choice. PR #3 reached the
+same verdict independently (net −6 / −4) and also rejected it. Its safer
+construction — override native ZNCC only when rank *and* band agree — is merged
+as `verification="consensus"`, opt-in, worth about +0.31–0.37 points on that
+report's local proxy and **not yet measured on `data/ext_p2/`**.
+
+Selector availability, recorded so nobody trusts the `--verification` help text
+blindly: `locate_phase2` accepts only `zncc`, `majority` and `consensus`.
+`rank`, `band` and `dog` were measured above as *scores*, never wired in as
+selectors, and `scripts/eval_ext.py --verification rank|band|dog` aborts with a
+`ValueError` before producing results. The help text advertising them is stale
+on this branch.
+
+### 2. Rejection — ~2.9 points plus a `+4` bonus
+
+Rejection is 12.13/15 and calibration 9.78/10, both decided by one scalar. The
+shipped scalar is `min(score, zncc)`, chosen by hand over two of the four
+signals the pipeline computes; `peak_ratio` and `pose_peak` are computed and
+discarded. `scripts/fit_rejector.py` fits a small logistic over all four on
+training shards. `scripts/optimize_threshold.py` tunes the operating point
+against the *total* rubric rather than F1 alone, because declining a present
+pair forfeits its localisation and pose credit too.
+
+Trap, recorded from the PR #4 review: `scripts/morning_pipeline.sh` Phases B–D
+extract rejector features from `data/ext_train/B_*` and `C_*` shards, whose
+`reference_px=100` makes localisation run at chance (see §5 and the
+`PHASE2_STATE.md` §6e trap) — every feature from them is noise and the
+`weights/rejector.json` that path produces is not a result. The only valid fit
+path is `scripts/rejector_cv.py`, which fits inside `data/ext_p2` (1000 px
+references) and asserts localisation beats chance before believing itself.
 
 ### 3. The 1 px tier is bounded by the label, not the method
 
@@ -113,7 +156,7 @@ the same drift model is unknown.
 ## Corrections to the previous version of this file
 
 * It reported **92/100**. Measured externally, the same code scores **~72 of
-  the 95 measurable points**. The gap is a domain gap plus two scoring
+  the 85 measurable points**. The gap is a domain gap plus two scoring
   conventions, not a regression.
 * It reported **rejection F1 0.978** without saying which class was positive.
   The same predictions give **0.833** under reject-as-positive. Both are real;

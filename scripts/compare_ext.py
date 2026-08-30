@@ -105,7 +105,7 @@ def main():
             ("f1", f"rejection F1 @{a.threshold}"), ("f1len", "  lenient F1(present)"),
             ("bf1", "  best-possible F1"),
             ("auc", "calibration AUC"),
-            ("pts", "POINTS (of 95 measurable)")]
+            ("pts", "POINTS (of 85 measurable)")]
     w = max(len(v) for _, v in keys) + 2
     print(f"{'':<{w}}" + "".join(f"{k:>16}" for k in runs))
     print("-" * (w + 16 * len(runs)))
