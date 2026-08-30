@@ -27,18 +27,18 @@ while true; do
   age=$(( $(date +%s) - $(stat -c %Y "$LOG" 2>/dev/null || date +%s) ))
   if [ "$age" -gt "$STALL" ]; then
     say "ALERT log stalled ${age}s -- killing training so the eval phase can still run"
-    pkill -9 -f "train\.py --train-dirs"; exit 1
+    pkill -9 -f "[t]rain\.py --train-dirs"; exit 1
   fi
 
   line=$(grep -E "^  e[0-9]+ \[" "$LOG" 2>/dev/null | tail -1)
   loss=$(echo "$line" | grep -oE "loss [0-9.]+|loss nan|loss inf" | awk '{print $2}')
   if [ -n "$loss" ]; then
     case "$loss" in
-      nan|inf) say "ALERT loss=$loss -- diverged, killing"; pkill -9 -f "train\.py --train-dirs"; exit 1;;
+      nan|inf) say "ALERT loss=$loss -- diverged, killing"; pkill -9 -f "[t]rain\.py --train-dirs"; exit 1;;
     esac
     [ -z "$start_loss" ] && { start_loss="$loss"; say "baseline loss $start_loss"; }
     bad=$(awk -v a="$loss" -v b="$start_loss" 'BEGIN{print (a > b*1.6) ? 1 : 0}')
-    [ "$bad" = "1" ] && { say "ALERT loss $loss >> start $start_loss -- diverging, killing"; pkill -9 -f "train\.py --train-dirs"; exit 1; }
+    [ "$bad" = "1" ] && { say "ALERT loss $loss >> start $start_loss -- diverging, killing"; pkill -9 -f "[t]rain\.py --train-dirs"; exit 1; }
   fi
   sleep 60
 done
