@@ -681,20 +681,21 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
     """
     import csv
 
-    # Exact pair counts: full canvases carry `crops_per_canvas` crops and the
-    # final canvas carries only the remainder. divmod alone determines both
-    # the canvas count and that final budget -- never shave crops off one
-    # canvas at a time, which leaves the overrun short-removed (e.g. 5 pairs
-    # at 8 crops/canvas must be ONE canvas of 5, not one of 7).
-    if max_pairs is not None:
-        full, rem = divmod(max_pairs, crops_per_canvas)
-        exact_canvases = full + (1 if rem else 0)
-        if exact_canvases < num_canvases:
-            num_canvases = exact_canvases
-        crop_budgets = [crops_per_canvas] * full + ([rem] if rem else [])
-        num_canvases = len(crop_budgets)
-    else:
-        crop_budgets = [crops_per_canvas] * num_canvases
+    # Exact pair counts under BOTH constraints: the caller's canvas count is
+    # authoritative for how much work runs, and `max_pairs` is a hard cap --
+    # never a target that spawns extra canvases. Each canvas takes
+    # min(crops_per_canvas, remaining), so the final canvas carries exactly
+    # the remainder (5 pairs at 8 crops/canvas = ONE canvas of 5, not one of
+    # 7) and a loose cap simply leaves the requested split intact.
+    crop_budgets = []
+    remaining = max_pairs
+    for _ in range(num_canvases):
+        if remaining is not None and remaining <= 0:
+            break
+        budget = crops_per_canvas if remaining is None else min(crops_per_canvas, remaining)
+        crop_budgets.append(budget)
+        if remaining is not None:
+            remaining -= budget
     crop_budgets = [c for c in crop_budgets if c > 0]
     num_canvases = len(crop_budgets)
 

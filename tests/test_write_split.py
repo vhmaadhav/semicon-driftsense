@@ -103,6 +103,34 @@ def test_write_split_multi_canvas_large_crops(tmp_path, monkeypatch):
     assert len(_read_manifest(tmp_path)) == 13
 
 
+def test_write_split_max_pairs_is_a_cap_not_a_target(tmp_path, monkeypatch):
+    """Codex P2: a caller asking for 1 canvas at 2 crops with max_pairs=5
+    must get one canvas / two rows -- max_pairs caps the output, it never
+    spawns extra canvases beyond the requested split size."""
+    recorded = []
+    monkeypatch.setattr(gen, "build_one", _fake_build_one_factory(recorded))
+    pairs = gen.write_split(str(tmp_path), num_canvases=1, seed=1,
+                            noise="clean", architectures=["finfet"],
+                            workers=0, crops_per_canvas=2, progress_every=0,
+                            max_pairs=5)
+    assert pairs == 2
+    assert recorded == [2], recorded
+    assert len(_read_manifest(tmp_path)) == 2
+
+
+def test_write_split_undersized_split_stays_undersized(tmp_path, monkeypatch):
+    """2 canvases at 4 crops with max_pairs=9 -> budgets [4, 4]; the cap is
+    loose (9 > 8) but the caller's canvas count is authoritative."""
+    recorded = []
+    monkeypatch.setattr(gen, "build_one", _fake_build_one_factory(recorded))
+    pairs = gen.write_split(str(tmp_path), num_canvases=2, seed=1,
+                            noise="clean", architectures=["finfet"],
+                            workers=0, crops_per_canvas=4, progress_every=0,
+                            max_pairs=9)
+    assert pairs == 8
+    assert recorded == [4, 4], recorded
+
+
 def test_failed_imwrite_raises(tmp_path, monkeypatch):
     import cv2
 
