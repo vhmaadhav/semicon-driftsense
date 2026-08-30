@@ -18,7 +18,7 @@ say() { echo "[$(date '+%H:%M:%S')] $*" >> "$W"; }
 say "watchdog started on $LOG"
 start_loss=""
 while true; do
-  if ! pgrep -f "train\.py --train-dirs" >/dev/null; then
+  if ! pgrep -f "[t]rain\.py --train-dirs" >/dev/null; then
     grep -q "SFT3DONE\|TRAIN.*DONE" "$LOG" 2>/dev/null && say "training exited normally" \
       || say "ALERT training process gone without a completion marker"
     exit 0

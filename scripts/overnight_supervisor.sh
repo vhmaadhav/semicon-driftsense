@@ -32,7 +32,7 @@ PY
 round=1
 while [ "$round" -le 2 ]; do
   say "=== round $round: waiting for training to finish ==="
-  while pgrep -f "train\.py --train-dirs" >/dev/null; do sleep 60; done
+  while pgrep -f "[t]rain\.py --train-dirs" >/dev/null; do sleep 60; done
   ep=$(grep -cE "^epoch" ".agents/train_$([ "$round" -eq 1 ] && echo p6 || echo p7).log" 2>/dev/null || echo 0)
   say "training stopped after $ep epochs"
   grep -q ALERT .agents/WATCHDOG.txt 2>/dev/null && say "NOTE watchdog raised: $(grep ALERT .agents/WATCHDOG.txt | tail -1)"

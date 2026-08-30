@@ -714,6 +714,24 @@ have 1000 px references. Any script that scores pairs must assert
 `reference_px == 1000` and that present pairs actually land within 5 px before
 believing its own output.
 
+**`pgrep -f` matches the watcher's own command line, and anyone else's.**
+`grind.sh` waited on `pgrep -f "train\.py --train-dirs"` and `pgrep -f
+"labelnoise_run"`. Training had finished, yet the chain sat in its wait loop for
+ten minutes -- because *diagnostic commands typed to inspect it* contained those
+exact strings, and `pgrep -f` matches against full command lines, so the
+supervisor kept seeing "training is still running" and re-slept. Looking at the
+job was what kept it stuck. Use the bracket trick, which matches a real process
+but never the pattern itself:
+
+```bash
+pgrep -f "[t]rain\.py --train-dirs"
+```
+
+Related: **never edit a shell script while it is running.** bash reads a script
+incrementally by byte offset, so an in-place edit can make a running job execute
+garbage from the middle of a line. `grind.sh` carries the unhardened idiom until
+it finishes for exactly this reason.
+
 **Timings inside a parallel run are fiction.** The box is memory-bandwidth
 bound at ~0.42 pairs/s total regardless of the worker/thread split. Runtime
 claims come from `scripts/profile_pair.py`, single process, 4 threads, idle.
