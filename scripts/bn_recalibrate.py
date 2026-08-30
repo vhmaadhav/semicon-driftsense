@@ -69,7 +69,7 @@ def main():
     else:
         device = torch.device(args.device)
 
-    ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
+    ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
     model = DriftSenseNet()
     model.load_state_dict(ckpt.get("model", ckpt))
     model.to(device)

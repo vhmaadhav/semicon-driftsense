@@ -152,6 +152,11 @@ def get_preset(name: str) -> dict:
     return dict(PRESETS[name])
 
 
+_KIND_PRESETS = {"dram": DRAM_PRESET_NAMES, "finfet": FINFET_PRESET_NAMES}
+
+
 def presets_for_kind(kind: str):
-    names = DRAM_PRESET_NAMES if kind == "dram" else FINFET_PRESET_NAMES
-    return [get_preset(n) for n in names]
+    if kind not in _KIND_PRESETS:
+        raise ValueError(f"Unknown pattern kind '{kind}'. "
+                         f"Available: {sorted(_KIND_PRESETS)}")
+    return [get_preset(n) for n in _KIND_PRESETS[kind]]

@@ -119,7 +119,7 @@ def main():
         device = (torch.device("mps" if torch.backends.mps.is_available()
                                else "cuda" if torch.cuda.is_available() else "cpu")
                   if args.device == "auto" else torch.device(args.device))
-        ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
+        ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
         model = DriftSenseNet()
         model.load_state_dict(ckpt.get("model", ckpt))
         model.to(device).eval()

@@ -37,10 +37,24 @@ from driftsense.matching import (  # noqa: E402
 from driftsense.model import DriftSenseNet  # noqa: E402
 
 
+def dihedral_proposals(model, ref, sea, device):
+    """Locate in each of the 8 dihedral frames, mapped back to original
+    coordinates. `_dihedral_point_inv` needs the full (h, w) shape -- a bare
+    width silently mis-inverts every non-square frame (and an int crashes)."""
+    h, w = sea.shape[:2]
+    props = []
+    for t in range(8):
+        res = locate(model, _dihedral_img(ref, t), _dihedral_img(sea, t),
+                     device, refine=False)
+        x, y = _dihedral_point_inv(res["x"], res["y"], (h, w), t)
+        props.append([float(x), float(y), float(res["score"])])
+    return props
+
+
 def build_cache(split: str, weights: str, cache_path: str, limit=None):
     device = torch.device("mps" if torch.backends.mps.is_available()
                           else ("cuda" if torch.cuda.is_available() else "cpu"))
-    ck = torch.load(weights, map_location="cpu", weights_only=False)
+    ck = torch.load(weights, map_location="cpu", weights_only=True)
     model = DriftSenseNet()
     model.load_state_dict(ck.get("model", ck))
     model.to(device).eval()
@@ -50,13 +64,7 @@ def build_cache(split: str, weights: str, cache_path: str, limit=None):
     for n, r in enumerate(rows):
         ref = cv2.imread(os.path.join(split, r["reference_path"]), cv2.IMREAD_GRAYSCALE)
         sea = cv2.imread(os.path.join(split, r["search_path"]), cv2.IMREAD_GRAYSCALE)
-        size = sea.shape[0]
-        props = []
-        for t in range(8):
-            res = locate(model, _dihedral_img(ref, t), _dihedral_img(sea, t),
-                         device, refine=False)
-            x, y = _dihedral_point_inv(res["x"], res["y"], size, t)
-            props.append([float(x), float(y), float(res["score"])])
+        props = dihedral_proposals(model, ref, sea, device)
         out.append({"ref": r["reference_path"], "search": r["search_path"],
                     "gt": [float(r["gt_x_corr"]), float(r["gt_y_corr"])],
                     "props": props})

@@ -197,6 +197,9 @@ def main():
         workers=args.workers,
         crops_per_canvas=args.crops_per_canvas,
         pose=spec,
+        # Exact contract: the last canvas gets a partial crop budget instead
+        # of writing ceil-overshoot pairs the caller never asked for.
+        max_pairs=args.num_pairs,
     )
 
     print(f"\nWrote {pairs} pairs to {args.output_dir}")
