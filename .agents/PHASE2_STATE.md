@@ -548,6 +548,13 @@ All in the working tree on branch `phase2-unknown-pose` (**not yet committed**).
 
 ## 6. Ranked next work
 
+**2026-08-30: a literature-grounded research pass (`/autonomous-research`) produced
+three costed proposals — margin-gated second pose search, rank/band rejector features,
+coarse-sweep pruning — plus a runtime-split correction: `pose_candidates` is 66.8% of
+pair time and the network 21.3% on current code (n=12, Set A), so the "86% network"
+figure is stale. Specs, novelty anchors and measurement protocols:
+`.agents/RESEARCH_NOTES.md` (mirrored in the GitHub issues created from it).**
+
 Ordered by measured expected value, not by how interesting the idea is.
 
 ### 1. ~~Rejection → F1 ≥ 0.90 by refitting the scalar.~~ ANSWERED: +0.11. Closed.
