@@ -30,6 +30,17 @@ from fit_rejector import apply_logistic, fit_logistic  # noqa: E402
 from optimize_threshold import points, prep  # noqa: E402
 
 ALL = ["score", "zncc", "peak_ratio", "pose_peak", "psr", "apce"]
+# Issue #6 features: peak-quality at the winner (rank/band, recorded under
+# --features) and the winner's min(score, zncc) margin over the runner-up
+# (recorded on every decode path). Older CSVs lack these columns, so feature
+# lists are filtered through available() before fitting.
+EXTENDED = ALL + ["rank", "band", "margin"]
+
+
+def available(d, feats):
+    """The requested features this DataFrame actually carries."""
+    missing = [f for f in feats if f not in d.columns]
+    return [f for f in feats if f in d.columns], missing
 
 
 def cv(d, build, folds=4, seed=0):
@@ -59,7 +70,11 @@ def main():
     d = prep(pd.read_csv(a.csv))
     sc = d.score.values
     zn = np.nan_to_num(d.zncc.values, nan=0.0)
-    X_all = {f: np.nan_to_num(d[f].values.astype(float), nan=0.0) for f in ALL}
+    feats, missing = available(d, EXTENDED)
+    if missing:
+        print(f"note: CSV lacks {', '.join(missing)} -- fitted trials restricted to "
+              f"{', '.join(feats)}")
+    X_all = {f: np.nan_to_num(d[f].values.astype(float), nan=0.0) for f in feats}
     y = (d.gt_found.values == 0).astype(float)      # 1 = should reject
 
     def shipped(dd, tr):
@@ -80,14 +95,27 @@ def main():
     print(f"{'shipped min(score,zncc)':<38}{base[0]:>16.2f}{base[1]:>9.4f}{base[2]:>9.4f}")
 
     trials = [
-        ("logistic: all 6 features", ALL),
+        ("logistic: all shipped features", ALL),
         ("logistic: score,zncc", ["score", "zncc"]),
         ("logistic: score,zncc,psr,apce", ["score", "zncc", "psr", "apce"]),
         ("logistic: score,zncc,peak_ratio,pose_peak", ["score", "zncc", "peak_ratio", "pose_peak"]),
     ]
+    if {"rank", "band", "margin"} <= set(X_all):
+        # The issue-#6 question: do peak-quality features move the
+        # present/absent decision out-of-sample?
+        trials += [
+            ("logistic: shipped + rank,band,margin", feats),
+            ("logistic: score,zncc,rank,band,margin",
+             ["score", "zncc", "rank", "band", "margin"]),
+            ("logistic: score,zncc,margin", ["score", "zncc", "margin"]),
+        ]
     best = ("shipped min(score,zncc)", base[0])
-    for name, feats in trials:
-        r = cv(d, make_logistic(feats), a.folds)
+    for name, wanted in trials:
+        use, missing = available(d, wanted)
+        if missing:
+            print(f"{name:<38}{'-- skipped (CSV lacks ' + ', '.join(missing) + ')':>40}")
+            continue
+        r = cv(d, make_logistic(use), a.folds)
         flag = "  <-- best" if r[0] > best[1] else ""
         print(f"{name:<38}{r[0]:>16.2f}{r[1]:>9.4f}{r[2]:>9.4f}{flag}")
         if r[0] > best[1]:
