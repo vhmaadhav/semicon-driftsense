@@ -63,7 +63,10 @@ def main():
     if bad.any():
         # Rank-align the fallback into the fitted statistic's range.
         lo, hi = np.nanmin(fitted), np.nanmax(fitted)
-        s_norm = (shipped - shipped.min()) / (shipped.ptp() + 1e-9)
+        # np.ptp, not ndarray.ptp: the method was removed in NumPy 2.0 and the
+        # pin is numpy==2.4.6 — this path runs exactly when features are
+        # malformed, so it must not crash on its own fallback.
+        s_norm = (shipped - shipped.min()) / (np.ptp(shipped) + 1e-9)
         fitted = np.where(bad, lo + s_norm * (hi - lo), fitted)
 
     print(f"{len(d)} pairs from {os.path.basename(a.csv)}   "

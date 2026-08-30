@@ -263,7 +263,11 @@ def main():
     ap.add_argument("--coarse-scales", type=int, default=17)
     ap.add_argument("--no-band", action="store_true")
     ap.add_argument("--verification", default="zncc",
-                    help="zncc (default) | consensus | majority | rank | band | dog")
+                    choices=["zncc", "consensus", "majority"],
+                    help="hypothesis selector implemented in locate_phase2. rank/band/"
+                         "dog were measured as research scores and are NOT implemented "
+                         "as selectors; the earlier help text advertising them was "
+                         "stale and passing them aborted the run")
     ap.add_argument("--denoise", type=int, default=0,
                     help="median filter kernel applied to the search frame (0=off)")
     ap.add_argument("--tie-tol", type=float, default=0.04,
