@@ -292,6 +292,44 @@ worth keeping: this is *our* generator's drift model, and the blind set's is
 unknown. If the graders drift less, our <=1 px share is better there than it
 looks here — which is upside, not something to engineer for.
 
+## 3d. The pose search re-measured on the epoch-39 weights (2026-08-30)
+
+The oracle moved with the weights, so the old bound is stale. On Set B, stride 3,
+292 present pairs, `weights/driftsense.pt` = p6_last:
+
+| | est. pose | true pose |
+| --- | ---: | ---: |
+| within 5 px | 87.0% | **93.5%** |
+| median error | 0.90 px | 0.82 px |
+
+38 failures, **57.9% of them fixed by the true pose alone**. So the split is now
+58% pose search / 42% network error, against 52/48 on the old weights, and the
+ceiling rose from 87.1% to 93.5%. Failures are wrong-scale lock-ons: median
+scale error **6.65%** among failures against **0.60%** among successes.
+
+**Widening the candidate generator does not help, and hurts monotonically.**
+Same 292 pairs, each config end-to-end:
+
+| config | credit | <=5px | <=1px | s/pair |
+| --- | ---: | ---: | ---: | ---: |
+| baseline (17 scales, 3 hyp) | **0.7740** | 87.0% | 54.1% | 0.59 |
+| coarse 29 | 0.7582 | 85.3% | 54.1% | 0.68 |
+| coarse 43 | 0.7534 | 84.9% | 53.1% | 0.73 |
+| 4 hypotheses | 0.7774 | 87.3% | 54.5% | 0.64 |
+| 4 hyp + coarse 43 | 0.7719 | 87.0% | 54.8% | 0.92 |
+| 5 hyp + coarse 43 | 0.7726 | 87.0% | 54.8% | 1.11 |
+
+This replicates the earlier "41 coarse scales is worse" result on new weights and
+extends it: the degradation is *monotonic* in scale count. More candidates means
+more plausible decoys, and selection loses ground faster than coverage gains it.
+43 was the sensible top end (template rasterisation makes only ~43 magnifications
+realizable across [8,12]) and it is the worst of the three.
+
+A fourth hypothesis is +0.003 credit on 292 pairs — inside the noise — for +8%
+runtime. Not worth it. **The 58% pose-search gap is not reachable by generating
+more candidates.** It is a basin problem: once the sweep locks onto the wrong
+scale, `polish_pose` refines within that basin and cannot leave it.
+
 ## 4. Dead ends already paid for
 
 Do not spend a session re-attempting these. Each was measured, not guessed.

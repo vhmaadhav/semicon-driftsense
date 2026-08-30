@@ -39,26 +39,59 @@ def focal_loss(logit: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
     return (pos_loss.sum() + neg_loss.sum()) / b
 
 
+# Label noise on the sub-pixel target scales with the frame's raster drift:
+# localisation error measures a near-constant 0.72x drift_jitter_px across a
+# fourfold range, so sigma_i ~= 0.72 * jitter_i is the irreducible part of the
+# offset label. LABEL_NOISE_GAIN is that 0.72; LABEL_NOISE_SIGMA0 is the median
+# sigma over the training pool (0.72 * 1.21 px), which sets where the weight
+# crosses one half.
+LABEL_NOISE_GAIN = 0.72
+LABEL_NOISE_SIGMA0 = 0.87
+
+
 def offset_loss(offset: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
-                found: torch.Tensor | None = None) -> torch.Tensor:
+                found: torch.Tensor | None = None,
+                jitter: torch.Tensor | None = None) -> torch.Tensor:
     """Smooth-L1 on the sub-cell offset, supervised only at the true cell.
 
     Absent pairs carry no true cell, so they are masked out entirely rather
     than regressed towards a placeholder.
+
+    With `jitter`, each pair is weighted by sigma0^2 / (sigma0^2 + sigma_i^2),
+    the usual inverse-variance form for heteroscedastic label noise, normalised
+    to mean one so the loss keeps its scale and the offset/focal balance is
+    untouched. A severity-4 frame carries roughly 2.9x the label noise variance
+    of a severity-1 frame, and without this the model spends that much more of
+    its capacity fitting drift it cannot predict.
+
+    Deliberately applied to the offset head only. The focal head decides *which*
+    stride-4 cell is correct, and up to 2 px of drift rarely moves that across a
+    4 px cell -- weighting it would only teach the hard frames less, and the hard
+    frames are where set B fails.
     """
     b = offset.shape[0]
     idx = torch.arange(b, device=offset.device)
     pred = offset[idx, :, peak[:, 0], peak[:, 1]]
-    if found is None:
+    if found is None and jitter is None:
         return F.smooth_l1_loss(pred, target, beta=0.1)
     per = F.smooth_l1_loss(pred, target, beta=0.1, reduction="none").mean(dim=1)
-    return (per * found).sum() / found.sum().clamp(min=1.0)
+    w = found if found is not None else torch.ones_like(per)
+    if jitter is not None and bool((jitter > 0).any()):
+        sig = LABEL_NOISE_GAIN * jitter
+        nw = LABEL_NOISE_SIGMA0 ** 2 / (LABEL_NOISE_SIGMA0 ** 2 + sig ** 2)
+        # Pairs with no recorded jitter keep weight 1 rather than being damped
+        # towards zero by a missing value.
+        nw = torch.where(jitter > 0, nw, torch.ones_like(nw))
+        nw = nw / nw.mean().clamp(min=1e-6)
+        w = w * nw
+    return (per * w).sum() / w.sum().clamp(min=1.0)
 
 
 def compute_loss(out: dict, batch: dict, offset_weight: float = 1.0) -> tuple:
     found = batch.get("found")
     lf = focal_loss(out["logit"], batch["heat"], batch["peak"], found)
-    lo = offset_loss(out["offset"], batch["offset"], batch["peak"], found)
+    lo = offset_loss(out["offset"], batch["offset"], batch["peak"], found,
+                     batch.get("jitter"))
     return lf + offset_weight * lo, {"focal": float(lf.detach()), "offset": float(lo.detach())}
 
 

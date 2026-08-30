@@ -101,3 +101,55 @@ def test_uncorrected_label_is_measurably_wrong():
     assert abs(px - seen_x) > 3.0        # the raw label is off by the shear
     corr_x, _ = correct_gt(float(px), float(py), row_shift, 0.0)
     assert abs(corr_x - seen_x) < 0.25   # the corrected one is not
+
+
+# --- label-noise weighting on the sub-pixel head ---------------------------
+# The offset target is only accurate to ~0.72x the frame's raster drift, so the
+# loss down-weights pairs whose labels are noisiest. Three things must hold: the
+# old behaviour is preserved when no jitter is recorded, the weights have the
+# intended magnitude, and the loss keeps its scale so the offset/focal balance
+# is not silently changed.
+
+def test_offset_loss_unchanged_without_jitter():
+    import torch
+    from driftsense.engine import offset_loss
+    torch.manual_seed(0)
+    b = 8
+    off, tgt = torch.randn(b, 2, 6, 6), torch.randn(b, 2)
+    peak, found = torch.zeros(b, 2, dtype=torch.long), torch.ones(b)
+    base = offset_loss(off, tgt, peak, found)
+    assert offset_loss(off, tgt, peak, found, None) == base
+    # A manifest without the column yields zeros, which must be a no-op rather
+    # than damping every pair towards zero weight.
+    assert offset_loss(off, tgt, peak, found, torch.zeros(b)) == base
+
+
+def test_offset_loss_downweights_noisy_labels():
+    import torch
+    from driftsense.engine import LABEL_NOISE_GAIN, LABEL_NOISE_SIGMA0, offset_loss
+    b = 8
+    peak, found = torch.zeros(b, 2, dtype=torch.long), torch.ones(b)
+    off = torch.zeros(b, 2, 6, 6)
+    # Give the noisy half a large residual and the clean half none. Weighting
+    # must pull the loss below the unweighted mean.
+    tgt = torch.cat([torch.zeros(b // 2, 2), torch.ones(b // 2, 2)])
+    jit = torch.tensor([0.55] * (b // 2) + [1.89] * (b // 2))
+    assert offset_loss(off, tgt, peak, found, jit) < offset_loss(off, tgt, peak, found)
+
+    sig = LABEL_NOISE_GAIN * jit
+    w = LABEL_NOISE_SIGMA0 ** 2 / (LABEL_NOISE_SIGMA0 ** 2 + sig ** 2)
+    w = w / w.mean()
+    assert abs(float(w.mean()) - 1.0) < 1e-5           # scale preserved
+    assert 2.5 < float(w[0] / w[-1]) < 3.3             # severity 1 vs 4
+
+
+def test_build_sample_carries_drift_jitter():
+    import numpy as np
+    from driftsense.dataset import build_sample
+    rng = np.random.default_rng(0)
+    ref = rng.integers(0, 255, (1000, 1000), dtype=np.uint8).astype(np.uint8)
+    sea = rng.integers(0, 255, (1000, 1000), dtype=np.uint8).astype(np.uint8)
+    s = build_sample(ref, sea, 500.0, 500.0, 512, True, rng, 4, drift_jitter=1.37)
+    assert abs(float(s["jitter"]) - 1.37) < 1e-5
+    # Absent by default means unknown, not zero-weighted.
+    assert float(build_sample(ref, sea, 500.0, 500.0, 512, True, rng, 4)["jitter"]) == 0.0
