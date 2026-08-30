@@ -39,7 +39,7 @@ from driftsense.matching import locate_phase2  # noqa: E402
 # present pair forfeits its localisation (40 pts) and pose (20 pts) credit as
 # well as hurting F1, so an F1-optimal threshold sits too high. Held-out and
 # in-sample agreed to 0.00 points at this value.
-DEFAULT_FOUND_THRESHOLD = 0.1907
+DEFAULT_FOUND_THRESHOLD = 0.2018
 
 OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
 

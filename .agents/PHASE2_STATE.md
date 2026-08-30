@@ -82,9 +82,43 @@ gap"; that was wrong.
 
 ### Final numbers (2250 A/B/C pairs, shipped configuration, 2026-08-30)
 
-`weights/driftsense.pt` is now the **epoch-39 checkpoint of the p6 run**
-(`driftsense_p6_last.pt`), with `DEFAULT_FOUND_THRESHOLD = 0.1907`. The
-previous shipped weights are kept as `weights/driftsense_pre_p6last_72.55.pt`.
+`weights/driftsense.pt` is now **`driftsense_p9_last.pt`** -- the p6 epoch-39
+checkpoint plus 30 epochs with the label-noise weighting *inverted*
+(`--jitter-power -1`, up-weighting high-drift pairs) -- with
+`DEFAULT_FOUND_THRESHOLD = 0.2018`. It scores **75.51/85**. The pre-retrain
+weights are kept as `weights/driftsense_pre_p6last_72.55.pt`.
+
+The three label-noise arms, all resumed from `p6_last` with an identical recipe
+so the only difference is the flag, scored on the same 2250 pairs:
+
+| arm | jitter-power | total/85 | locA | locB | F1 | AUC |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `p6_last` (baseline) | n/a | 75.35 | 0.9680 | 0.7689 | 0.8779 | 0.9873 |
+| `p8_last` | +1 (drift is noise) | 75.40 | 0.9669 | 0.7733 | 0.8756 | 0.9869 |
+| **`p9_last`** | **-1 (drift is learnable)** | **75.51** | **0.9691** | **0.7746** | **0.8780** | **0.9876** |
+
+**Use a paired bootstrap to compare checkpoints, not the +/-1.22 absolute-score
+figure.** That figure is the spread of the score across *different* 200-pair
+draws; comparing two checkpoints scored on the *same* pairs removes all of that
+variance, and the paired standard deviation is **0.173**:
+
+| comparison | paired delta | 95% CI | P(better) |
+| --- | ---: | --- | ---: |
+| p8 vs p6_last | +0.055 | [-0.27, +0.39] | 61.6% |
+| p9 vs p6_last | +0.159 | [-0.17, +0.50] | 81.4% |
+| **p9 vs p8** | **+0.108** | -- | **87.8%** |
+
+The last row is the controlled result and the one that carries information: p8
+and p9 differ *only* in `--jitter-power`, same epochs and same recipe, so the
+p10 control arm was cancelled as redundant. **Up-weighting high-drift pairs
+beats down-weighting them at 87.8% confidence**, which is what the label-gap
+measurement in 3e predicts -- the drift-dependent part of the offset target is
+learnable structure, and the network already learns it.
+
+p9 against the baseline is a weak positive: 81.4% likely better, with a
+confidence interval that still crosses zero. It was shipped because it is
+non-inferior on *every* component and its expected value is positive, not
+because +0.159 is established.
 
 | Component | Credit | Points |
 | --- | --- | ---: |

@@ -1,0 +1,13 @@
+[07:03] === waiting for the p8 arm (already running) ===
+[09:47] p8 arm done
+p8_last: total 75.40/85 at t=0.1986  locA 0.9669  locB 0.7733  F1 0.8756  AUC 0.9869
+[09:38] VERDICT: label-noise weighting WINS (set B 0.7733 vs 0.7689, total 75.40 vs 75.35).
+[09:47] === CPU/network: attempting more shards (Drive quota permitting) ===
+[09:47] Drive quota still exceeded (probe returned 2009 bytes) -- training on the 167 shards we hold
+[09:47] === GPU: training p9 (jitter-power -1), 30 epochs from driftsense_p6_last.pt ===
+[13:09] === GPU: evaluating p9 on 2250 held-out pairs ===
+  driftsense_p9_last         total  75.51/85  t=0.2018  locA 0.9691  locB 0.7746  F1 0.8780  AUC 0.9876
+[13:16] === GPU: training p10 (jitter-power 0), 30 epochs from driftsense_p6_last.pt ===
+[13:17] p9 scored -- stopping the chain before the p10 control arm
+[13:17] chain stopped; GPU free for CPU-side runtime work
+P9ONLYDONE
