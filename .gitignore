@@ -36,3 +36,6 @@ results/*/
 # Per-epoch training checkpoints (--keep-epochs); only the promoted weights ship.
 weights/*_e[0-9]*.pt
 weights/*_p2_history.json
+
+# agent memory (local only)
+.dsh/
