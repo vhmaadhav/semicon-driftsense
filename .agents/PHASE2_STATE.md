@@ -330,6 +330,53 @@ runtime. Not worth it. **The 58% pose-search gap is not reachable by generating
 more candidates.** It is a basin problem: once the sweep locks onto the wrong
 scale, `polish_pose` refines within that basin and cannot leave it.
 
+## 3e. What the "label gap" actually is, and who closes it (2026-08-30)
+
+Localisation error tracks 0.73x the frame's raster drift. That was read for a
+while as "label noise, so the sub-pixel tier is capped". The first half is
+right; the conclusion was wrong, and it matters because it points at the only
+lever that still works.
+
+**What it is.** Raster drift displaces each *scan row* differently, so the
+imaged target is not a rigid copy of the reference. No single (x, y) aligns a
+wobbled pattern to a flat one. The best rigid fit is a blend of the per-row
+displacements; `gt_x_corr` is specifically the *centre's* displacement. The two
+quantities differ by roughly the drift amplitude. Correlation and the label are
+measuring different things.
+
+**Measured, with pose error removed entirely** (true magnification and rotation
+taken from the manifest, exhaustive sub-pixel ZNCC on a +/-2 px grid at 0.2 px,
+80 random set B pairs across all four severities):
+
+| | median distance from label | / jitter | <=1px |
+| --- | ---: | ---: | ---: |
+| best possible rigid ZNCC, true pose supplied | 1.077 px | 0.99 | 42.0% |
+| our shipped pipeline, pose estimated | 0.685 px | 0.64 | 59.4% |
+
+On the same 69 pairs, **we beat the ZNCC optimum on 59.4% of them**, at 0.64x
+its median error, while also having to estimate the pose it was handed.
+
+**So the gap does not cap us -- it caps *correlation*.** The learned offset head
+is trained against `gt_x_corr`, so it learns to predict the label rather than
+the correlation peak, and it has already absorbed about a third of the
+definitional mismatch. Centre-weighting the ZNCC (the obvious analytic fix, if
+the label is the centre row's displacement) changes nothing: 1.077 -> 1.077 px.
+
+Two consequences:
+
+1. **Sub-pixel accuracy is a training problem, not a matching problem.** Every
+   inference-side sub-pixel idea is bounded by that 1.077 px line, which is
+   worse than where we already are. This is why the pose-polish variants, the
+   interpolator check and centre-weighting all came back flat or negative.
+2. **It casts doubt on the label-noise weighting now training as p8.** That loss
+   down-weights high-jitter pairs on the premise that their offset target is
+   noise. This measurement says the drift-induced part of the target is
+   partly *learnable structure* -- the network is already learning it. If p8
+   loses, the follow-up is not to abandon the idea but to **invert it**:
+   up-weight high-jitter pairs, which is where the <=1 px tier is actually being
+   lost (set B is 88.9% <=1px in the lowest jitter quartile and 40.4% in the
+   highest).
+
 ## 4. Dead ends already paid for
 
 Do not spend a session re-attempting these. Each was measured, not guessed.
