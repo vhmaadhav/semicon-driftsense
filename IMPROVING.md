@@ -119,6 +119,13 @@ construction — override native ZNCC only when rank *and* band agree — is mer
 as `verification="consensus"`, opt-in, worth about +0.31–0.37 points on that
 report's local proxy and **not yet measured on `data/ext_p2/`**.
 
+Selector availability, recorded so nobody trusts the `--verification` help text
+blindly: `locate_phase2` accepts only `zncc`, `majority` and `consensus`.
+`rank`, `band` and `dog` were measured above as *scores*, never wired in as
+selectors, and `scripts/eval_ext.py --verification rank|band|dog` aborts with a
+`ValueError` before producing results. The help text advertising them is stale
+on this branch.
+
 ### 2. Rejection — ~2.9 points plus a `+4` bonus
 
 Rejection is 12.13/15 and calibration 9.78/10, both decided by one scalar. The
@@ -128,6 +135,14 @@ discarded. `scripts/fit_rejector.py` fits a small logistic over all four on
 training shards. `scripts/optimize_threshold.py` tunes the operating point
 against the *total* rubric rather than F1 alone, because declining a present
 pair forfeits its localisation and pose credit too.
+
+Trap, recorded from the PR #4 review: `scripts/morning_pipeline.sh` Phases B–D
+extract rejector features from `data/ext_train/B_*` and `C_*` shards, whose
+`reference_px=100` makes localisation run at chance (see §5 and the
+`PHASE2_STATE.md` §6e trap) — every feature from them is noise and the
+`weights/rejector.json` that path produces is not a result. The only valid fit
+path is `scripts/rejector_cv.py`, which fits inside `data/ext_p2` (1000 px
+references) and asserts localisation beats chance before believing itself.
 
 ### 3. The 1 px tier is bounded by the label, not the method
 

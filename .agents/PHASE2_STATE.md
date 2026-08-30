@@ -816,6 +816,28 @@ it finishes for exactly this reason.
 bound at ~0.42 pairs/s total regardless of the worker/thread split. Runtime
 claims come from `scripts/profile_pair.py`, single process, 4 threads, idle.
 
+**Three traps from the automated review of this branch (Codex, 2026-08-30) —
+all verified real; documented here first, one-line code fixes queued.**
+
+* **`scripts/morning_pipeline.sh` Phases B–D fit the rejector from unusable
+  data.** They extract features from `data/ext_train/B_*` and `C_*` shards,
+  which carry `reference_px=100` (see the trap above), so `locate_phase2` runs
+  at chance on them and every feature is noise — the `weights/rejector.json`
+  that path writes is not a result. This is the same data defect as the
+  discarded fits in §6 item 1. The live fit path is `scripts/rejector_cv.py`
+  (and `rejector_pipeline.sh`, which states the exclusion explicitly); do not
+  run morning_pipeline Phases B–D until they point at a 1000 px-reference
+  source.
+* **`scripts/eval_ext.py --verification` advertises selectors that do not
+  exist.** The help offers `rank`, `band` and `dog`, but `locate_phase2`
+  validates only `zncc`, `majority` and `consensus`, so those three values
+  abort the evaluation with a `ValueError` before any results. `rank`/`band`/
+  `dog` were measured as scores in §3b and never wired in as selectors.
+* **`scripts/apply_rejector.py`'s malformed-features fallback calls
+  `shipped.ptp()`.** `ndarray.ptp` was removed in NumPy 2.0 and the pin is
+  `numpy==2.4.6`, so the fallback raises `AttributeError` exactly on the
+  non-finite-feature case it exists to preserve. The fix is `np.ptp(shipped)`.
+
 ## 7. Data, and the leakage rule
 
 * `data/ext_p2/` — 2500-pair external test set (A 875, B 875, C 500, D 250),
