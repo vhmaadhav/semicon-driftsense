@@ -109,6 +109,12 @@ def _worker(job):
         # inference pass -- without them the fit could never be validated.
         "psr": float(res.get("psr", np.nan)),
         "apce": float(res.get("apce", np.nan)),
+        # Rank/band peak-quality at the winner (issue #6): only present when
+        # --verification is not zncc (the features are computed then anyway).
+        # Recorded so rejector_cv.py can fit the present/absent decision on
+        # inference-time features without a second pass.
+        "rank": float(res.get("rank", np.nan)),
+        "band": float(res.get("band", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
         "secs": dt,
     }

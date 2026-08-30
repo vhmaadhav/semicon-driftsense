@@ -908,10 +908,13 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         } for r in candidates]
         best["secs_verification"] = float(verification_secs)
     else:
-        # Optional selectors change only the chosen hypothesis, not the result
-        # dictionary contract consumed by register.py and downstream callers.
-        for key in ("rank", "band", "dog"):
-            best.pop(key, None)
+        # Optional selectors change only the chosen hypothesis. Keep the
+        # WINNER's rank/band (drop dog — only computed under return_hypotheses):
+        # eval_ext records them, which is what lets rejector_cv.py fit the
+        # present/absent rejector on features that exist at inference time
+        # (issue #6). The default zncc path never computes them, so the result
+        # contract register.py consumes is unchanged there.
+        best.pop("dog", None)
     return best
 
 
