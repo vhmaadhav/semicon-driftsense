@@ -33,11 +33,18 @@ round=1
 while [ "$round" -le 2 ]; do
   say "=== round $round: waiting for training to finish ==="
   while pgrep -f "train\.py --train-dirs" >/dev/null; do sleep 60; done
-  ep=$(grep -cE "^epoch" .agents/train_p6.log 2>/dev/null || echo 0)
+  ep=$(grep -cE "^epoch" ".agents/train_$([ "$round" -eq 1 ] && echo p6 || echo p7).log" 2>/dev/null || echo 0)
   say "training stopped after $ep epochs"
   grep -q ALERT .agents/WATCHDOG.txt 2>/dev/null && say "NOTE watchdog raised: $(grep ALERT .agents/WATCHDOG.txt | tail -1)"
 
-  W=weights/driftsense_p6.pt; [ -f "$W" ] || W=weights/driftsense_p6_last.pt
+  # Derive the checkpoint from the round, and prefer *_last.pt. Two traps here,
+  # both hit on 2026-08-30: hardcoding p6 inside this loop made round 2 re-score
+  # round 1's weights and "conclude" no improvement by comparing a checkpoint
+  # against itself; and <name>.pt is the best-by-val file, which is meaningless
+  # because val_p2 saturates at acc@2 1.000 in epoch 0 -- it is an epoch-0
+  # checkpoint. _last.pt is the trained one.
+  tag=$([ "$round" -eq 1 ] && echo p6 || echo p7)
+  W="weights/driftsense_${tag}_last.pt"; [ -f "$W" ] || W="weights/driftsense_${tag}.pt"
   [ -f "$W" ] || { say "no checkpoint produced -- stopping"; break; }
 
   say "=== evaluating $W on the full 2500-pair set (gpu) ==="

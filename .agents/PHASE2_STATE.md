@@ -80,16 +80,37 @@ harness that adds the A/B/C/D split, a four-level severity ladder, polygon
 scaling and content hashes. An earlier note called the score drop a "domain
 gap"; that was wrong.
 
-### Final, full-set numbers (2500 pairs, shipped configuration)
+### Final numbers (2250 A/B/C pairs, shipped configuration, 2026-08-30)
+
+`weights/driftsense.pt` is now the **epoch-39 checkpoint of the p6 run**
+(`driftsense_p6_last.pt`), with `DEFAULT_FOUND_THRESHOLD = 0.1907`. The
+previous shipped weights are kept as `weights/driftsense_pre_p6last_72.55.pt`.
 
 | Component | Credit | Points |
 | --- | --- | ---: |
-| Localisation (40) — set A 0.942, set B 0.730 | 0.8138 | 32.55 |
-| Pose — scale (10) | 0.9039 | 9.04 |
-| Pose — rotation (10) | 0.9054 | 9.05 |
-| Rejection (15), reject-positive F1 | 0.8084 | 12.13 |
-| Calibration (10), AUC | 0.9777 | 9.78 |
-| **Total of the 85 measurable** | | **72.55** |
+| Localisation (40) — set A 0.968, set B 0.769 | 0.8585 | 34.34 |
+| Pose — scale (10) | 0.8988 | 8.99 |
+| Pose — rotation (10) | 0.8980 | 8.98 |
+| Rejection (15), reject-positive F1 | 0.8779 | 13.17 |
+| Calibration (10), AUC | 0.9873 | 9.87 |
+| **Total of the 85 measurable** | | **75.35** |
+
+Held-out estimate under a two-fold threshold split: **75.27**. Quote that one.
+The previous shipped configuration measured **72.55**, so the retrain is worth
+**+2.72**, of which only +0.30 comes from retuning the threshold — the rest is
+the weights. Set B credit moved 0.6986 → 0.7689 and set A 0.942 → 0.968.
+
+Every candidate checkpoint, same 2250 pairs, each at its own best threshold:
+
+| checkpoint | total/85 | locA | locB | F1 | AUC |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `driftsense_p6` (epoch 0) | 73.80 | 0.9511 | 0.7371 | 0.8390 | 0.9871 |
+| `driftsense_p6_last` (epoch 39) | **75.35** | 0.9680 | 0.7689 | 0.8779 | 0.9873 |
+| `driftsense_p7_last` (epoch 29) | 74.94 | 0.9623 | 0.7616 | 0.8679 | 0.9859 |
+
+p7 resumed from the epoch-0 p6 file and trained 30 more epochs at a lower LR; it
+lands below p6_last, so the extra round bought nothing and the second download
+was unnecessary.
 
 Localisation and pose are credited **zero on declined pairs**, as the grader
 will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
@@ -106,9 +127,11 @@ it was repeated for a while. The components we can self-score are
 85**. Efficiency (5) and generator/citations/failure-analysis (10) are the
 remaining 15 and are judged, not measured.
 
-So **72.55 / 85**, and the absolute ceiling with full marks on both judged
-components is **87.55 / 100**. Reaching 92 would require **+4.45** on the
-measurable part, not the ~+1 the old arithmetic implied.
+So **75.27 / 85** held out, and the absolute ceiling with full marks on both
+judged components is **90.27 / 100**. Efficiency should score full marks
+(median 3.13 s against a 5 s target), which would put the realistic total near
+**80 + whatever the 10 judged points award**. Reaching 92 still requires
+**+1.73** more on the measurable part on top of full marks everywhere judged.
 
 ### Beware the subsample
 
@@ -362,15 +385,42 @@ All in the working tree on branch `phase2-unknown-pose` (**not yet committed**).
 
 Ordered by measured expected value, not by how interesting the idea is.
 
-### 1. Rejection → F1 ≥ 0.90. ~2.9 points, plus a 4-point bonus.
+### 1. ~~Rejection → F1 ≥ 0.90 by refitting the scalar.~~ ANSWERED: +0.11. Closed.
 
-Still the largest and most certain item. Rejection is 12.13/15 and calibration
-9.78/10, both decided by one scalar. The shipped scalar is `min(score, zncc)` —
-a hand-picked rule over two of the four signals the pipeline computes.
-`peak_ratio` (how contested the decision was) and `pose_peak` (whether any pose
-explains the frame) are computed and discarded. `scripts/fit_rejector.py` fits
-a 5-parameter logistic over all four, on *training* shards, thresholded on a
-training fold, reported out-of-sample.
+This was ranked first for two sessions on the reasoning that rejection and
+calibration are decided by one hand-picked scalar, `min(score, zncc)`, over two
+of the six signals the pipeline computes. It has now been measured properly and
+**the answer is no**.
+
+`scripts/rejector_cv.py` cross-validates a logistic over the features *inside*
+`data/ext_p2` — fit on one fold, threshold picked on that same fold, scored on
+the other, on the total rubric — so nothing about the held-out fold touches the
+fit and no new data is needed. 2250 pairs, 4 folds:
+
+| statistic | held-out total | F1 | AUC |
+| --- | ---: | ---: | ---: |
+| shipped `min(score,zncc)` | 75.21 | 0.8664 | 0.9875 |
+| logistic, all 6 features | **75.32** | 0.8622 | 0.9913 |
+| logistic, `score,zncc` | 75.26 | 0.8668 | 0.9873 |
+| logistic, `score,zncc,psr,apce` | 75.28 | 0.8673 | 0.9885 |
+| logistic, `score,zncc,peak_ratio,pose_peak` | 75.12 | 0.8578 | 0.9908 |
+
+**+0.11 points**, which is inside the noise. The shape of it is consistent
+across variants: adding features raises calibration AUC (0.9875 → 0.9913) and
+*lowers* rejection F1 (0.8664 → 0.8622), and the two nearly cancel. The
+hand-picked rule is already close to optimal for these signals.
+
+The +4 bonus needs F1 ≥ 0.90 and we are at 0.878. Reweighting these six numbers
+does not get there. What *did* move rejection was training: F1 went 0.8390 →
+0.8779 between the epoch-0 and epoch-39 checkpoints of the same run. If the
+bonus is reachable at all it is through the network, not through post-hoc
+weighting — which also means a trained presence head is the only version of
+this idea still worth anything, at the cost of a from-scratch retrain.
+
+Two earlier attempts at this failed for **data** reasons and their numbers
+should be ignored: one fitted on 200 rows, and one fitted on `data/ext_train`
+shards whose `reference_px` is 100, where localisation runs at chance (600 px
+median) so every feature was noise.
 
 ### 2. Measure `verification="consensus"` on `data/ext_p2/`.
 
@@ -550,6 +600,34 @@ A stride-4 subset of Set B reads 95.4% within 5 px where the full set reads
 81.4% -- and that is not sampling noise, it is a different population. Use
 stride 3 or 5 (or 1). Two experiments were invalidated this way before it was
 spotted.
+
+**A "best" checkpoint is meaningless once the validator saturates.** `train.py`
+keeps `<name>.pt` as the best-scoring epoch by `val_p2` and `<name>_last.pt` as
+the final one. On `val_p2` the model reaches `acc@2 1.000, acc@5 1.000` in
+**epoch 0**, so the best-score file is written once and never beaten -- both the
+40-epoch p6 run and the 30-epoch p7 run finished reporting the identical
+`best score: 0.29895`. `weights/driftsense_p6.pt` is therefore an *epoch-0*
+checkpoint. The overnight supervisor scored that file and reported 73.36/85 as
+if it were the trained result. **When val is saturated, evaluate `_last.pt`, and
+select on `scripts/eval_ext.py` against Set B, never on the training log.**
+
+**Resolve the checkpoint path once, outside the loop that produces it.**
+`overnight_supervisor.sh` set `W=weights/driftsense_p6.pt` *inside* its round
+loop, so round 2 trained `driftsense_p7.pt` and then re-scored p6. It got the
+same number, concluded "no improvement", and stopped -- a verdict comparing a
+checkpoint against itself. Any loop that both trains and evaluates must derive
+the weights path from the round it is in.
+
+**`data/ext_train` and `data/pool_p2` cannot be fed to `locate_phase2` at all.**
+Not just as validation sets -- as *anything*. They carry `reference_px=100`, a
+pre-cropped template, while `locate_phase2` builds its own template from a full
+1000 px reference. Feeding it a template produced a median localisation error of
+**600 px with zero pairs inside 5 px** -- chance. A whole rejector fit was run on
+those features before the guard below caught it, and its "-0.71 points" verdict
+was noise, not a result. Only `data/ext_p2` (the `test` split) and `data/val_p2`
+have 1000 px references. Any script that scores pairs must assert
+`reference_px == 1000` and that present pairs actually land within 5 px before
+believing its own output.
 
 **Timings inside a parallel run are fiction.** The box is memory-bandwidth
 bound at ~0.42 pairs/s total regardless of the worker/thread split. Runtime

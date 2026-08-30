@@ -14,23 +14,29 @@ set -u
 SET="${1:?usage: fetch_shards.sh <A|B|C|D> <count> [workers]}"
 WANT="${2:?count required}"
 NPROC="${3:-5}"
+# Which split to pull, and where to put it. Defaults reproduce the original
+# behaviour exactly. The `test` split is the only source of full 1000 px
+# references -- `train` shards carry 100 px pre-cropped templates, which
+# locate_phase2 cannot consume because it builds its own template.
+SPLIT="${SPLIT:-train}"
+DEST="${DEST:-data/ext_train}"
 
 R="$(cd "$(dirname "$0")/.." && pwd)"
-D="$R/data/ext_train"
+D="$R/$DEST"
 IDX="$R/.agents/shards.tsv"
-LOG="$R/.agents/fetch_${SET}.log"
+LOG="$R/.agents/fetch_${SPLIT}_${SET}.log"
 mkdir -p "$D"
 
 [ -s "$IDX" ] || { echo "missing $IDX -- run scripts/index_drive.sh first"; exit 1; }
 
 # Queue the shards we do not already hold, newest ids last.
 queue=$(mktemp)
-awk -F'\t' -v s="$SET" '$1=="train" && $2==s {print $3"\t"$4}' "$IDX" | while IFS=$'\t' read -r idx fid; do
+awk -F'\t' -v s="$SET" -v sp="$SPLIT" '$1==sp && $2==s {print $3"\t"$4}' "$IDX" | while IFS=$'\t' read -r idx fid; do
   dir="$D/${SET}_$(printf %04d "$idx")"
   [ -d "$dir" ] || printf '%s\t%s\n' "$idx" "$fid"
 done | head -n "$WANT" > "$queue"
 total=$(wc -l < "$queue")
-echo "[$(date +%H:%M)] queued $total shards of set $SET across $NPROC workers" | tee -a "$LOG"
+echo "[$(date +%H:%M)] queued $total $SPLIT shards of set $SET -> $DEST across $NPROC workers" | tee -a "$LOG"
 
 fetch_one() {
   local idx="$1" fid="$2"

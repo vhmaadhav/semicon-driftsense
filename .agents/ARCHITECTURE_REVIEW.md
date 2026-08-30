@@ -53,6 +53,18 @@ one, inside the stage that is already 86% of the runtime.
 If we had spare budget it would still be worth testing. We have ~1.6 s, and
 three hypotheses to pay for.
 
+### 3. DKM-style dense confidence head — **measured 2026-08-30: +0.11 points**
+
+> **Update.** This was ranked best on the list. It has now been measured and the
+> cheap version is worth **+0.11 points out-of-sample** — inside the noise. A
+> logistic over all six features raises calibration AUC 0.9875 → 0.9913 and
+> *lowers* rejection F1 0.8664 → 0.8622; the two nearly cancel. See
+> `scripts/rejector_cv.py` and §6.1 of `PHASE2_STATE.md`. The reasoning below
+> was sound about *where* the headroom is; it was wrong that a linear reweighting
+> could reach it. What did move rejection was training — F1 0.8390 → 0.8779
+> across one run — so only the **trained presence head** version of this idea
+> retains any value, and it still costs a from-scratch retrain.
+
 ### 3. DKM-style dense confidence head — **the best idea on the list**
 
 This targets the one place with real, measured headroom: rejection is 12.13/15
@@ -139,9 +151,9 @@ ceiling) is already closed.
 
 ## What to actually do next, in order
 
-1. **Finish `fit_rejector.py`.** Highest measured headroom (rejection 12.13/15
-   plus the +4 bonus at F1 >= 0.90), no architecture change, no DQ risk, needs
-   ~70 min of CPU. Run it with the GPU idle.
+1. ~~**Finish `fit_rejector.py`.**~~ **Done 2026-08-30, and the answer is no:**
+   +0.11 points out-of-sample. Rejection headroom is real but not reachable by
+   reweighting the six signals we already compute. Closed.
 2. **Label-noise-weighted offset loss** on the next training round — cheap, and
    it is the one architectural suggestion backed by a measurement of ours.
 3. Only if 1 shows the signals carry more than `min(score, zncc)` extracts:

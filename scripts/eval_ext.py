@@ -101,6 +101,14 @@ def _worker(job):
         # winning pose hypothesis.
         "peak_ratio": float(res.get("peak_ratio", np.nan)),
         "pose_peak": float(res.get("pose_peak", np.nan)),
+        # Peak-shape statistics (Bolme et al., MOSSE, CVPR 2010). score and
+        # zncc are peak *heights* and peak_ratio is a margin over the runner-up;
+        # neither describes the surface the peak sits on, and a confident wrong
+        # lock-on is a tall peak on a busy surface. Recorded here so a rejector
+        # fitted on training shards can be scored on this set without a second
+        # inference pass -- without them the fit could never be validated.
+        "psr": float(res.get("psr", np.nan)),
+        "apce": float(res.get("apce", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
         "secs": dt,
     }
