@@ -51,7 +51,8 @@ LABEL_NOISE_SIGMA0 = 0.87
 
 def offset_loss(offset: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
                 found: torch.Tensor | None = None,
-                jitter: torch.Tensor | None = None) -> torch.Tensor:
+                jitter: torch.Tensor | None = None,
+                jitter_power: float = 1.0) -> torch.Tensor:
     """Smooth-L1 on the sub-cell offset, supervised only at the true cell.
 
     Absent pairs carry no true cell, so they are masked out entirely rather
@@ -76,22 +77,37 @@ def offset_loss(offset: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
         return F.smooth_l1_loss(pred, target, beta=0.1)
     per = F.smooth_l1_loss(pred, target, beta=0.1, reduction="none").mean(dim=1)
     w = found if found is not None else torch.ones_like(per)
-    if jitter is not None and bool((jitter > 0).any()):
+    if jitter is not None and jitter_power != 0.0 and bool((jitter > 0).any()):
         sig = LABEL_NOISE_GAIN * jitter
         nw = LABEL_NOISE_SIGMA0 ** 2 / (LABEL_NOISE_SIGMA0 ** 2 + sig ** 2)
+        # jitter_power selects the hypothesis being tested, because which one is
+        # true is an empirical question and both are defensible:
+        #   +1  the drift part of the offset target is noise, so spend less
+        #       capacity on it (inverse-variance weighting);
+        #   -1  the drift part is learnable structure -- measured: our offset
+        #       head already beats the best rigid ZNCC alignment by 36% on set B
+        #       precisely because it learns the label rather than the
+        #       correlation peak -- so spend *more* capacity where the <=1px tier
+        #       is being lost (88.9% <=1px in the lowest jitter quartile, 40.4%
+        #       in the highest);
+        #    0  off.
+        nw = nw ** float(jitter_power)
         # Pairs with no recorded jitter keep weight 1 rather than being damped
         # towards zero by a missing value.
         nw = torch.where(jitter > 0, nw, torch.ones_like(nw))
+        # A pathological jitter must not let one pair dominate the batch.
+        nw = nw.clamp(0.1, 10.0)
         nw = nw / nw.mean().clamp(min=1e-6)
         w = w * nw
     return (per * w).sum() / w.sum().clamp(min=1.0)
 
 
-def compute_loss(out: dict, batch: dict, offset_weight: float = 1.0) -> tuple:
+def compute_loss(out: dict, batch: dict, offset_weight: float = 1.0,
+                 jitter_power: float = 1.0) -> tuple:
     found = batch.get("found")
     lf = focal_loss(out["logit"], batch["heat"], batch["peak"], found)
     lo = offset_loss(out["offset"], batch["offset"], batch["peak"], found,
-                     batch.get("jitter"))
+                     batch.get("jitter"), jitter_power)
     return lf + offset_weight * lo, {"focal": float(lf.detach()), "offset": float(lo.detach())}
 
 

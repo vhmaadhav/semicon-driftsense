@@ -152,6 +152,11 @@ def parse_args():
                         "epoch boundary, so training can start before generation "
                         "has finished. Requires --samples-per-epoch, so the step "
                         "count per epoch stays fixed as the pool grows.")
+    p.add_argument("--jitter-power", type=float, default=1.0,
+                   help="exponent on the label-noise weight for the offset head: "
+                        "+1 down-weights high-drift pairs (their offset target is "
+                        "noise), -1 up-weights them (the drift part is learnable "
+                        "structure), 0 disables the weighting entirely")
     p.add_argument("--vram-fraction", type=float, default=0.92,
                    help="hard cap on VRAM as a fraction of the card (CUDA only). "
                         "Windows WDDM does not fail cleanly when VRAM runs out -- it "
@@ -306,7 +311,7 @@ def main():
             # the bf16 speedup is, and they keep it.
             if amp:
                 out = {k: v.float() for k, v in out.items()}
-            loss, parts = compute_loss(out, batch)
+            loss, parts = compute_loss(out, batch, jitter_power=args.jitter_power)
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
