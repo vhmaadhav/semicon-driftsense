@@ -29,12 +29,17 @@ mkdir -p "$D"
 
 [ -s "$IDX" ] || { echo "missing $IDX -- run scripts/index_drive.sh first"; exit 1; }
 
-# Queue the shards we do not already hold, newest ids last.
+# Queue the shards we do not already hold, newest ids last. Two independent
+# generation runs share each (split, set, index) on the Drive folder, so a
+# bare index is ambiguous -- set RUN_ID to a dataset-id substring (e.g.
+# a06d9df298761144a64c) to pin one run. Empty RUN_ID keeps the old behaviour.
 queue=$(mktemp)
-awk -F'\t' -v s="$SET" -v sp="$SPLIT" '$1==sp && $2==s {print $3"\t"$4}' "$IDX" | while IFS=$'\t' read -r idx fid; do
-  dir="$D/${SET}_$(printf %04d "$idx")"
-  [ -d "$dir" ] || printf '%s\t%s\n' "$idx" "$fid"
-done | head -n "$WANT" > "$queue"
+awk -F'\t' -v s="$SET" -v sp="$SPLIT" -v run="${RUN_ID:-}" \
+    '$1==sp && $2==s && (run=="" || $5 ~ run) {print $3"\t"$4}' "$IDX" | \
+  while IFS=$'\t' read -r idx fid; do
+    dir="$D/${SET}_$(printf %04d "$idx")"
+    [ -d "$dir" ] || printf '%s\t%s\n' "$idx" "$fid"
+  done | head -n "$WANT" > "$queue"
 total=$(wc -l < "$queue")
 echo "[$(date +%H:%M)] queued $total $SPLIT shards of set $SET -> $DEST across $NPROC workers" | tee -a "$LOG"
 
@@ -44,7 +49,8 @@ fetch_one() {
   local url="https://drive.usercontent.google.com/download?id=${fid}&export=download&confirm=t"
   curl -sL --retry 2 --max-time 900 "$url" -o "$tar" || { rm -f "$tar"; return 1; }
   # Google serves an HTML interstitial instead of the file when it feels like it.
-  if [ "$(stat -c%s "$tar" 2>/dev/null || echo 0)" -lt 100000 ]; then rm -f "$tar"; return 1; fi
+  # wc -c, not stat -c%s: BSD/macOS stat has no -c and read 0 for every tar.
+  if [ "$(wc -c < "$tar" 2>/dev/null || echo 0)" -lt 100000 ]; then rm -f "$tar"; return 1; fi
   mkdir -p "$dir"
   tar xf "$tar" -C "$dir" 2>/dev/null || { rm -rf "$dir" "$tar"; return 1; }
   rm -f "$tar"
@@ -59,8 +65,16 @@ fetch_one() {
     echo "[$(date +%H:%M)] ! ${SET}_$(printf %04d "$idx") truncated ($have/$want) - discarded" >> "$LOG"
   fi
 }
-export -f fetch_one; export D SET LOG
+export D SET LOG
 
-xargs -a "$queue" -P "$NPROC" -n 2 bash -c 'fetch_one "$0" "$1"'
+# Portable worker loop. The previous `xargs -a ... -P ...` never ran a single
+# download on macOS (BSD xargs rejects -a, exit code still 0) and
+# `export -f` + `bash -c` adds another GNU-only moving part. jobs -rp caps
+# concurrency on any POSIX-ish bash.
+while IFS=$'\t' read -r idx fid; do
+  while [ "$(jobs -rp | wc -l)" -ge "$NPROC" ]; do sleep 1; done
+  fetch_one "$idx" "$fid" &
+done < "$queue"
+wait
 rm -f "$queue"
 echo "[$(date +%H:%M)] DONE set $SET  pool=$(ls -d "$D"/*/ 2>/dev/null | wc -l) shards, $(cat "$D"/*/manifest.csv 2>/dev/null | grep -vc '^pair_id') pairs" | tee -a "$LOG"

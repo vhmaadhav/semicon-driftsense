@@ -269,7 +269,10 @@ def main():
     ap.add_argument("--tie-tol", type=float, default=0.04,
                     help="peaks within this relative margin of the best are "
                          "treated as tied and resolved toward the frame centre")
-    ap.add_argument("--threshold", type=float, default=0.25)
+    ap.add_argument("--threshold", type=float, default=0.2018,
+                    help="found operating point; aligned with register.py's "
+                         "DEFAULT_FOUND_THRESHOLD so a default run reads the shipped "
+                         "configuration instead of a stale 0.25")
     a = ap.parse_args()
 
     if a.rescore:
