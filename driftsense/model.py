@@ -159,7 +159,10 @@ class DriftSenseNet(nn.Module):
         # every pose hypothesis of a pair (locate_phase2 canonicalizes the
         # SEARCH, so the template tensor is byte-identical across attempts).
         # Single-slot, keyed on the input bytes + device; never served in
-        # training mode. See tests/test_search_feat_cache.py.
+        # training mode. use_template_cache=False restores the pre-E1
+        # behaviour (every hypothesis re-encodes) -- the A/B benchmark's
+        # "existing" baseline. See tests/test_search_feat_cache.py.
+        self.use_template_cache = True
         self._tf_cache = None
         self.corr_mix = nn.Sequential(
             nn.Conv2d(CORR_GROUPS, head, 1, bias=False),
@@ -207,13 +210,17 @@ class DriftSenseNet(nn.Module):
         never does."""
         if ref_feat is not None:
             tf = ref_feat
+        elif self.training or not self.use_template_cache:
+            # Pre-E1 behaviour: every call re-encodes, nothing is stored.
+            if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
+                reference = F.interpolate(
+                    reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
+                    mode="area")
+            tf = self.encoder(reference)
         else:
-            key = None
-            if not self.training:
-                key = (reference.detach().cpu().numpy().tobytes(),
-                       str(reference.device))
-            if key is not None and self._tf_cache is not None \
-                    and self._tf_cache[0] == key:
+            key = (reference.detach().cpu().numpy().tobytes(),
+                   str(reference.device))
+            if self._tf_cache is not None and self._tf_cache[0] == key:
                 tf = self._tf_cache[1]
             else:
                 if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
@@ -221,8 +228,7 @@ class DriftSenseNet(nn.Module):
                         reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
                         mode="area")
                 tf = self.encoder(reference)
-                if key is not None:
-                    self._tf_cache = (key, tf)
+                self._tf_cache = (key, tf)
 
         sf = self.encoder(search)
 

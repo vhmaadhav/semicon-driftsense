@@ -86,6 +86,30 @@ def test_repeated_locate_hits_the_template_cache():
     assert net.encoder.large == 3  # the search frame genuinely differs per call
 
 
+def test_cache_flag_off_performs_three_template_encodes():
+    """Codex round-3: the benchmark's 'existing' baseline must genuinely
+    disable cross-hypothesis reuse. With use_template_cache=False, three
+    locate() calls on an identical template must run the template encoder
+    three times -- the pre-E1 behaviour the A/B harness benchmarks."""
+    net = DriftSenseNet().eval()
+    net.use_template_cache = False
+    net.encoder = _CountingEncoder(net.encoder)
+    rng = np.random.default_rng(3)
+    reference = rng.integers(0, 255, (100, 100), dtype=np.uint8)
+    search = rng.integers(0, 255, (1000, 1000), dtype=np.uint8)
+
+    with torch.no_grad():
+        for _ in range(3):
+            matching.locate(net, reference, search, "cpu", refine=True)
+
+    assert net.encoder.small == 3
+    assert net.encoder.large == 3
+
+
+def test_cache_flag_default_on():
+    assert DriftSenseNet().use_template_cache is True
+
+
 def test_cache_respects_training_mode():
     net = DriftSenseNet().train()
     net.encoder = _CountingEncoder(net.encoder)

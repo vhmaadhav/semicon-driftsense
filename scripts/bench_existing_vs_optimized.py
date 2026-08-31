@@ -65,8 +65,12 @@ def main():
     times = {"existing": [], "optimized": []}
     for rep in range(a.reps):
         for mode in ("existing", "optimized"):
+            # existing: use_template_cache=False -> every pose hypothesis
+            # re-encodes the template (the pre-E1 behaviour). optimized: the
+            # cache serves hypotheses 2..k within the pair. The flag is the
+            # only difference; nothing is mutated per pair.
+            model.use_template_cache = (mode == "optimized")
             for ref, sea in pairs:
-                model._tf_cache = None  # existing: no cache reuse
                 t0 = time.perf_counter()
                 locate_phase2(model, ref, sea, device, refine=True, band=a.band)
                 dt = time.perf_counter() - t0

@@ -24,7 +24,7 @@ Baseline rows come from the current shipped configuration
 | 2a. soup e24+e30 (`weights/soup_e24_e30.pt`) | 73.60 | not run | ≈ −1.7 on the paired draw | **rejected** — worse; no gate run warranted |
 | 2b. soup e12+e24+e30 (`weights/soup_e12_e24_e30.pt`) | 73.29 | not run | ≈ −2.0 on the paired draw | **rejected** — worse |
 | 3. threshold 0.2018 → 0.1974 | (offline) | 75.52 vs 75.50 | +0.02 | **no change** — shipped operating point already optimal |
-| 4. E1 template-embedding cache | 75.29 (identical by design) | identical coords | 0 | **kept as free instrumentation** — clocks: p50 2.55s vs 2.46s existing (0.99x, a wash); the template branch costs 1–2 ms of a 2–4 s pair. Issue #7's "recomputed 3×" premise measured: real but worthless |
+| 4. E1 template-embedding cache | 75.29 (identical by design) | identical coords | 0 | **kept as free instrumentation** — corrected harness (flag-based cache-off baseline runs 3 template encodes): p50 2.53s vs 2.56s optimized (1.00x). The template branch costs 1–2 ms of a 2–4 s pair. Issue #7's "recomputed 3×" premise measured: real but worthless |
 | 5. **`band=False` (no-band)** | **75.70** | **76.23** | **+0.45 raw; paired loc Δ +0.167, CI [+0.014, +0.327], P(≤shipped)=1.7%; rescued 18 / broken 9** | **PROMOTED — new default** |
 
 ## Clocks (single process, 4 threads, CPU, interleaved A/B reps, n=20–30 pairs × 3)
@@ -33,7 +33,7 @@ Baseline rows come from the current shipped configuration
 |---|---:|---:|
 | shipped (band on) | 2.513 s | 3.014 s |
 | no-band (promoted) | 2.655 s | 3.218 s |
-| E1 cache on vs off | 2.546 s vs 2.464 s | — (0.99x, wash) |
+| E1 cache off vs on (flag-based, corrected harness) | 2.533 s vs 2.563 s | — (1.00x, wash) |
 
 Clock takeaway: the efficiency win of `band=False` is ~0 — `_band` on the
 half-res probe is cheap. Its value is the **+0.45 accuracy points**, which is
@@ -63,7 +63,7 @@ for +0.02 points. Shipped operating point confirmed; nothing to do.
 **4. E1 template-embedding cache** (`ref_feat` plumbing + single-slot cache
 in `DriftSenseNet.forward`, training-guarded): output-identical (7 tests,
 incl. a counting test proving the template encoder runs once for 3
-hypotheses). Measured clocks: a wash (0.99x) — the template branch is
+hypotheses). Measured clocks with the corrected flag-based harness (1.00x) — the template branch is
 1–2 ms of a 2–4 s pair because the template input is 100x100 while the
 search input is 1000x1000. The issue's premise ("recomputed identically 3x")
 was true but irrelevant to wall-clock. Kept: the plumbing is the hook for
