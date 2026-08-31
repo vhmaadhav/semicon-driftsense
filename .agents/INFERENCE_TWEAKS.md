@@ -1,0 +1,49 @@
+# Inference-level tweaks: side-by-side score log
+
+**Protocol:** every tweak is measured on the **same seeded 200-pair draw**
+(`eval_ext --sample 200 --seed 200`, shipped shards A/B/C) so the columns are
+directly comparable, and on the **full 2,250** for the promotion decision
+(paired bootstrap, gate Δ ≥ +0.35 vs the shipped decode). The 200-pair draw
+alone carries ±1.2 points of sampling noise — the full-set paired number is
+the decider; the 200-pair column is the quick read.
+
+Baseline rows come from the current shipped configuration
+(`driftsense.pt`, threshold 0.2018, `verification=zncc`, band on).
+
+| tweak | 200-pair subtotal (seed 200) | full 2,250 subtotal | paired Δ vs shipped | verdict |
+|---|---:|---:|---:|---|
+| shipped baseline | 75.29 | 75.78 | — | reference |
+| 1. `--verification consensus` | 75.26 | 75.89 | +0.11 raw; paired loc Δ +0.02, 95% CI [−0.08, +0.14]; breaks 5 / rescues 6 | **not promoted** — under the +0.35 gate; the proxy's "broken=0" property did not hold at scale |
+| 2a. soup e24+e30 (`weights/soup_e24_e30.pt`) | 73.60 | not run | ≈ −1.7 on the paired draw | **rejected** — worse; no gate run warranted |
+| 2b. soup e12+e24+e30 (`weights/soup_e12_e24_e30.pt`) | 73.29 | not run | ≈ −2.0 on the paired draw | **rejected** — worse |
+| 3. threshold 0.2018 → 0.1974 | (offline) | 75.52 vs 75.50 | +0.02 | **no change** — shipped operating point already optimal |
+
+## Notes per tweak
+
+**1. Consensus verification** (`register.py --verification consensus`):
+Every component non-inferior on the full set (loc B +0.2 pp, rejection F1
++0.43 pp, calibration −0.0003 AUC), total +0.106 — but the pre-registered
+gate is +0.35 and the paired CI spans zero. The 149-pair proxy's headline
+property (zero broken successes) inverted at scale: 5 broken vs 6 rescued.
+Left unshipped; issue #9's consensus A/B is answered: real but small.
+
+**2. Checkpoint soups:** issue #10's actual ingredients (p6_last / p8_last /
+p9_last) are not on this machine — only three same-run checkpoints from
+epochs 12 / 24 / 30. Trajectory averaging (SWA-style) was tried anyway and
+clearly hurts (−1.7 / −2.0): epochs 12 and 24 sit in different basins than
+the epoch-30 fine-tune, which is exactly the "different basins produce
+garbage" risk the averaging script warns about. The real soup experiment
+stays with the training host, where the named checkpoints live.
+
+**3. Threshold:** `optimize_threshold` picks 0.1974 over the shipped 0.2018
+for +0.02 points. Shipped operating point confirmed; nothing to do.
+
+## Status of the campaign
+
+- Quick levers (1–3) measured and closed: none clears the promotion gate.
+- Remaining inference-level lever with real ceiling: **#5 margin-gated
+  rescue pass** (109 Set B gross failures ≈ 1.79 loc + ~1.2 pose pts) —
+  implementation task, uses the `winner_margin` feature now in the result
+  contract.
+- Judged-points lever: **#7 runtime** (coarse sweep is 66.8% of pair time)
+  feeding the efficiency quartile (up to +5, judged).
