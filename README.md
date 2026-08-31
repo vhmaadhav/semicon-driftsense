@@ -327,8 +327,10 @@ it falls back to classical multi-scale ZNCC and still prints a coordinate, so
 the script always produces a scoreable answer.
 
 **Runtime** (0.46 M parameters, no GPU required; results identical on CPU and
-GPU): ~3.8 s per pair on CPU with the default 8-way TTA, or ~0.5 s with
-`--no-tta`. Verified end to end in a clean virtualenv built only from
+GPU): ~3.8 s per pair on CPU with full 8-way TTA, ~0.5 s with `--no-tta`. The
+shipped default is the **adaptive routing** described below, which takes the
+single-view fast path on the confident majority and pays for voting only on
+contested scenes. Verified end to end in a clean virtualenv built only from
 `requirements.txt`, invoked from a directory outside the repo.
 
 **Tie-breaking.** When several candidates score within 4 % of the best, the one

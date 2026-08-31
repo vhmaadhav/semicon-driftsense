@@ -51,7 +51,7 @@ def tier(value: float, tiers) -> float:
 
 def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
-    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol = job
+    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol, features = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -76,7 +76,13 @@ def _worker(job):
                         polish_scale=polish_scale, refit_xy=refit_xy,
                         coarse_scales=coarse, band=band,
                         verification=verification, denoise=denoise,
-                        tie_tol=tie_tol)
+                        tie_tol=tie_tol,
+                        # --features: compute the rank/band feature maps and
+                        # the winner margin WITHOUT changing the selector --
+                        # the hypothesis choice stays the shipped zncc winner,
+                        # so the recorded features describe exactly the decode
+                        # register.py ships (issue #6).
+                        return_hypotheses=features)
     dt = time.perf_counter() - t0
     return {
         "pair_id": row["pair_id"], "set": row["phase2_set"],
@@ -110,18 +116,31 @@ def _worker(job):
         "psr": float(res.get("psr", np.nan)),
         "apce": float(res.get("apce", np.nan)),
         # Rank/band peak-quality at the winner (issue #6): only present when
-        # --verification is not zncc (the features are computed then anyway).
-        # Recorded so rejector_cv.py can fit the present/absent decision on
-        # inference-time features without a second pass.
+        # the feature maps are computed (--features, or --verification is not
+        # zncc). Recorded so rejector_cv.py can fit the present/absent
+        # decision on inference-time features without a second pass.
         "rank": float(res.get("rank", np.nan)),
         "band": float(res.get("band", np.nan)),
+        # Winner's min(score, zncc) margin over the runner-up (issue #6);
+        # attached by locate_phase2 on every decode path.
+        "margin": float(res.get("winner_margin", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
         "secs": dt,
     }
 
 
+def sample_pairs(df, n: int, seed: int = 0):
+    """A deterministic, replacement-free draw of `n` pairs — the local
+    emulation of the organisers' 200-pair blind grade. A sample larger than
+    the frame returns the whole frame."""
+    if n >= len(df):
+        return df
+    return df.sample(n=n, random_state=seed)
+
+
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
-        polish_scale, refit_xy, stride, coarse, band, verification, denoise, tie_tol):
+        polish_scale, refit_xy, stride, coarse, band, verification, denoise,
+        tie_tol, features=False, sample=0, seed=0):
     import multiprocessing as mp
 
     tasks = []
@@ -133,8 +152,14 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
             man = man.head(limit)
         for _, r in man.iterrows():
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
-                          polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol))
+                          polish_scale, refit_xy, coarse, band, verification,
+                          denoise, tie_tol, features))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
+    if sample:
+        rng = np.random.RandomState(seed)
+        idx = rng.choice(len(tasks), size=min(sample, len(tasks)), replace=False)
+        tasks = [tasks[i] for i in sorted(idx)]
+        print(f"  sampled {len(tasks)} pairs (seed {seed}) for the 200-pair grade emulation", flush=True)
 
     out, t0 = [], time.perf_counter()
     with mp.Pool(jobs) as pool:
@@ -266,8 +291,17 @@ def main():
     ap.add_argument("--no-polish-scale", action="store_true")
     ap.add_argument("--refit-xy", action="store_true")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth pair")
+    ap.add_argument("--sample", type=int, default=0,
+                    help="run inference on a deterministic random draw of this many "
+                         "pairs instead of the full set -- emulates the organisers' "
+                         "200-pair blind grade (use --sample 200)")
+    ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
     ap.add_argument("--no-band", action="store_true")
+    ap.add_argument("--features", action="store_true",
+                    help="record rank/band/winner-margin features WITHOUT changing "
+                         "the hypothesis selector (the decode stays the shipped zncc "
+                         "winner) -- the CSV rejector_cv.py fits on (issue #6)")
     ap.add_argument("--verification", default="zncc",
                     choices=["zncc", "consensus", "majority"],
                     help="hypothesis selector implemented in locate_phase2. rank/band/"
@@ -291,7 +325,8 @@ def main():
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
                  a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
-                 a.verification, a.denoise, a.tie_tol)
+                 a.verification, a.denoise, a.tie_tol, a.features,
+                 a.sample, a.seed)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

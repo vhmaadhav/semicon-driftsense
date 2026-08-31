@@ -470,6 +470,14 @@ def correct_gt(px: float, py: float, row_shift: np.ndarray, k: float) -> tuple[f
     return nb_x * c + c, nb_y * c + c
 
 
+def _write_png(path: str, img) -> None:
+    """cv2.imwrite swallows failures (permissions, disk full, bad path) and
+    returns False; an unchecked write leaves a manifest row pointing at a
+    file that does not exist. Raise instead so generation aborts loudly."""
+    if not cv2.imwrite(path, img):
+        raise RuntimeError(f"failed to write image: {path}")
+
+
 def build_one(job: tuple) -> list[dict]:
     """Render one fine canvas -> one search image + `crops` reference crops.
 
@@ -535,7 +543,7 @@ def build_one(job: tuple) -> list[dict]:
     # visibility constraint only applies when the instance is really there.
     crop_affine = affine if present else None
     search_rel = os.path.join("search", f"{idx:05d}.png")
-    cv2.imwrite(os.path.join(search_dir, f"{idx:05d}.png"), search_img)
+    _write_png(os.path.join(search_dir, f"{idx:05d}.png"), search_img)
 
     rows = []
     for c in range(crops):
@@ -597,7 +605,7 @@ def build_one(job: tuple) -> list[dict]:
 
         stem = f"{idx:05d}" if crops == 1 else f"{idx:05d}_{c}"
         ref_rel = os.path.join("reference", f"{stem}.png")
-        cv2.imwrite(os.path.join(ref_dir, f"{stem}.png"), reference_img)
+        _write_png(os.path.join(ref_dir, f"{stem}.png"), reference_img)
 
         row = {
             "id": stem,
@@ -646,11 +654,17 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
                 architectures: list[str], workers: int = 5,
                 crops_per_canvas: int = 1, progress_every: int = 25,
                 store_templates: bool = False, start_index: int = 0,
-                pose: "PoseParams | None" = None) -> int:
+                pose: "PoseParams | None" = None,
+                max_pairs: "int | None" = None) -> int:
     """Generate one split. Returns the number of (reference, search) pairs.
 
     Sample i is seeded from its own SeedSequence child, so a given (seed, i)
     always yields the same sample regardless of how many workers run.
+
+    `max_pairs` caps the split at exactly that many rows: the last canvas is
+    generated with a partial crop budget instead of overshooting the request
+    with a whole extra canvas of pairs (orphan-free exact counts, which the
+    ceil-based callers used to get wrong).
 
     `store_templates` writes 100x100 templates in place of 1000x1000
     references -- lossless for training, ~7x less disk per pair. Never use it
@@ -661,8 +675,29 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
     samples they would have been in one big run, and the manifest is opened for
     append. This is what lets a pool grow while the GPU trains on what is
     already there.
+
+    `workers=0` runs the canvas builder serially in-process -- slower, but
+    debuggable and usable where process pools are not.
     """
     import csv
+
+    # Exact pair counts under BOTH constraints: the caller's canvas count is
+    # authoritative for how much work runs, and `max_pairs` is a hard cap --
+    # never a target that spawns extra canvases. Each canvas takes
+    # min(crops_per_canvas, remaining), so the final canvas carries exactly
+    # the remainder (5 pairs at 8 crops/canvas = ONE canvas of 5, not one of
+    # 7) and a loose cap simply leaves the requested split intact.
+    crop_budgets = []
+    remaining = max_pairs
+    for _ in range(num_canvases):
+        if remaining is not None and remaining <= 0:
+            break
+        budget = crops_per_canvas if remaining is None else min(crops_per_canvas, remaining)
+        crop_budgets.append(budget)
+        if remaining is not None:
+            remaining -= budget
+    crop_budgets = [c for c in crop_budgets if c > 0]
+    num_canvases = len(crop_budgets)
 
     ref_dir = os.path.join(split_dir, "reference")
     search_dir = os.path.join(split_dir, "search")
@@ -674,8 +709,8 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
     children = np.random.SeedSequence(seed).spawn(start_index + num_canvases)
     jobs = [
         (i, int(children[i].generate_state(1, dtype=np.uint64)[0]), architectures,
-         noise, (ref_dir, search_dir), crops_per_canvas, store_templates,
-         pose)
+         noise, (ref_dir, search_dir), crop_budgets[i - start_index],
+         store_templates, pose)
         for i in range(start_index, start_index + num_canvases)
     ]
 
@@ -686,14 +721,23 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
         writer = csv.DictWriter(f, fieldnames=BASE_FIELDS + PARAM_FIELDS, extrasaction="ignore")
         if not append:
             writer.writeheader()
-        with ProcessPoolExecutor(max_workers=workers) as ex:
-            for rows in ex.map(build_one, jobs, chunksize=4):
+        if workers == 0:
+            results = map(build_one, jobs)
+            ex = None
+        else:
+            ex = ProcessPoolExecutor(max_workers=workers)
+            results = ex.map(build_one, jobs, chunksize=4)
+        try:
+            for rows in results:
                 writer.writerows(rows)
                 done += 1
                 pairs += len(rows)
                 if progress_every and (done % progress_every == 0 or done == num_canvases):
                     print(f"  [{done}/{num_canvases} canvases, {pairs} pairs]", flush=True)
                     f.flush()
+        finally:
+            if ex is not None:
+                ex.shutdown()
     return pairs
 
 

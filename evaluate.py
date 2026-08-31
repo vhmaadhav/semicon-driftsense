@@ -50,7 +50,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from driftsense.dataset import load_manifest  # noqa: E402
-from driftsense.matching import locate, locate_tta, zncc_only  # noqa: E402
+from driftsense import policy as policy_mod  # noqa: E402
+from driftsense.matching import zncc_only  # noqa: E402
 from driftsense.model import DriftSenseNet  # noqa: E402
 
 TOLERANCES = (1.0, 2.0, 5.0, 10.0)
@@ -91,13 +92,25 @@ def run_split(split_dir: str, model, device, limit=None, do_baseline=True, tta=T
     d_model = {f: [] for f in frames}
     d_zncc = {f: [] for f in frames}
     scores = []
+    routes = {}
 
     for n, r in enumerate(rows):
         ref = cv2.imread(os.path.join(split_dir, r["reference_path"]), cv2.IMREAD_GRAYSCALE)
         sea = cv2.imread(os.path.join(split_dir, r["search_path"]), cv2.IMREAD_GRAYSCALE)
+        if ref is None:
+            raise ValueError(f"unreadable reference image for id={r['id']}: "
+                             f"{r['reference_path']} in {split_dir}")
+        if sea is None:
+            raise ValueError(f"unreadable search image for id={r['id']}: "
+                             f"{r['search_path']} in {split_dir}")
 
-        res = (locate_tta(model, ref, sea, device, refine=True) if tta
-               else locate(model, ref, sea, device, refine=True))
+        # The shipped decode, exactly as infer.py runs it (audit C-01):
+        # pose estimation + adaptive routing included. Called through the
+        # policy module so this can never silently drift back to a private
+        # locate/locate_tta shortcut.
+        res = policy_mod.predict_policy(model, ref, sea, device, tta=tta)
+        routed = res.get("routed", "single")
+        routes[routed] = routes.get(routed, 0) + 1
         scores.append(res["score"])
         z = zncc_only(ref, sea) if do_baseline else None
 
@@ -111,9 +124,10 @@ def run_split(split_dir: str, model, device, limit=None, do_baseline=True, tta=T
         if (n + 1) % 50 == 0:
             print(f"    {n + 1}/{len(rows)}", flush=True)
 
-    method = "siamese+tta8+zncc" if tta else "siamese+zncc"
+    method = ("siamese+routed-policy" if tta else "siamese+single-view")
     result = {"split": os.path.basename(split_dir.rstrip("/")),
               "gt_frames": list(frames),
+              "routes": routes,
               "scores": [float(s) for s in scores]}
 
     for f in frames:
@@ -158,7 +172,7 @@ def main():
 
     frames = ("corrected", "upstream") if args.gt_frame == "both" else (args.gt_frame,)
 
-    ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
+    ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
     model = DriftSenseNet()
     model.load_state_dict(ckpt.get("model", ckpt))
     model.to(device).eval()
@@ -167,7 +181,7 @@ def main():
     print(f"weights: {args.weights}  (trained epochs: {ckpt.get('epoch', '?')})")
     print(f"sha256 : {digest}")
     print(f"device : {device}")
-    print(f"decode : {'TTA x8' if not args.no_tta else 'single view'} + ZNCC refine")
+    print(f"decode : {'shipped adaptive policy (pose search + routed TTA)' if not args.no_tta else 'single view'} + ZNCC refine")
     print(f"gt     : {', '.join(frames)}\n")
 
     os.makedirs(args.out, exist_ok=True)
@@ -192,7 +206,8 @@ def main():
             "weights": args.weights,
             "weights_sha256": digest,
             "trained_epochs": ckpt.get("epoch"),
-            "decode": "tta8+zncc-refine" if not args.no_tta else "single-view+zncc-refine",
+            "decode": ("adaptive-policy(tta routing)" if not args.no_tta
+                       else "single-view+zncc-refine"),
             "gt_frames": list(frames),
             "device": str(device),
             "splits": list(args.splits),
