@@ -129,9 +129,18 @@ def _worker(job):
     }
 
 
+def sample_pairs(df, n: int, seed: int = 0):
+    """A deterministic, replacement-free draw of `n` pairs — the local
+    emulation of the organisers' 200-pair blind grade. A sample larger than
+    the frame returns the whole frame."""
+    if n >= len(df):
+        return df
+    return df.sample(n=n, random_state=seed)
+
+
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         polish_scale, refit_xy, stride, coarse, band, verification, denoise,
-        tie_tol, features=False):
+        tie_tol, features=False, sample=0, seed=0):
     import multiprocessing as mp
 
     tasks = []
@@ -146,6 +155,11 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
                           polish_scale, refit_xy, coarse, band, verification,
                           denoise, tie_tol, features))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
+    if sample:
+        rng = np.random.RandomState(seed)
+        idx = rng.choice(len(tasks), size=min(sample, len(tasks)), replace=False)
+        tasks = [tasks[i] for i in sorted(idx)]
+        print(f"  sampled {len(tasks)} pairs (seed {seed}) for the 200-pair grade emulation", flush=True)
 
     out, t0 = [], time.perf_counter()
     with mp.Pool(jobs) as pool:
@@ -277,6 +291,11 @@ def main():
     ap.add_argument("--no-polish-scale", action="store_true")
     ap.add_argument("--refit-xy", action="store_true")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth pair")
+    ap.add_argument("--sample", type=int, default=0,
+                    help="run inference on a deterministic random draw of this many "
+                         "pairs instead of the full set -- emulates the organisers' "
+                         "200-pair blind grade (use --sample 200)")
+    ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
     ap.add_argument("--no-band", action="store_true")
     ap.add_argument("--features", action="store_true",
@@ -306,7 +325,8 @@ def main():
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
                  a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
-                 a.verification, a.denoise, a.tie_tol, a.features)
+                 a.verification, a.denoise, a.tie_tol, a.features,
+                 a.sample, a.seed)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")
