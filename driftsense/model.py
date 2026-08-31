@@ -164,6 +164,13 @@ class DriftSenseNet(nn.Module):
         # "existing" baseline. See tests/test_search_feat_cache.py.
         self.use_template_cache = True
         self._tf_cache = None
+        # Issue #21: the cache key covers the input bytes, not the parameter
+        # state -- any weight change must invalidate it. load_state_dict is
+        # the realistic mid-session mutation (e.g. two eval passes on one
+        # model instance); optimizer steps mutate in training mode, where the
+        # cache is never populated anyway.
+        self.register_load_state_dict_post_hook(
+            lambda module, incompatible_keys: setattr(module, "_tf_cache", None))
         self.corr_mix = nn.Sequential(
             nn.Conv2d(CORR_GROUPS, head, 1, bias=False),
             nn.BatchNorm2d(head),

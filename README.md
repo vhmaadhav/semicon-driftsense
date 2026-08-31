@@ -61,22 +61,28 @@ not, and both cost points:
 
 | Component | Score | Detail |
 | --------- | ----- | ------ |
-| Localisation | **0.825** | set A 0.942 (95.3% ≤5px, 90.1% ≤1px), set B 0.730 (81.4% ≤5px); weighted 0.45·A + 0.55·B |
-| Pose — scale | **0.903** | median relative error 0.41% |
-| Pose — rotation | **0.905** | median error 0.103° |
-| Rejection | **F1 0.808** | reject-as-positive; 0.946 under the lenient convention |
-| Calibration | **AUC 0.978** | `min(score, zncc)` against per-pair correctness |
-| Runtime | **3.35 s** median | p90 4.16 s, max 4.42 s, 4 threads, idle machine |
+| Localisation | **0.8679** | set A 0.9705 (98.6% ≤5px, 92.5% ≤1px), set B 0.7840 (89.3% ≤5px); weighted 0.45·A + 0.55·B |
+| Pose — scale | **0.8978** | median relative error 0.42% |
+| Pose — rotation | **0.9038** | median error 0.102° |
+| Rejection | **F1 0.8878** | reject-as-positive; 0.9673 under the lenient convention |
+| Calibration | **AUC 0.9872** | `min(score, zncc)` against per-pair correctness |
+| Runtime | **~2.5 s** median | p90 ~3.0 s, single process 4 threads, idle CPU (`profile_pair.py`, Set A); machine- and config-dependent — see `.agents/INFERENCE_TWEAKS.md` |
 | Set D (bonus) | **0.938** | 94.8% ≤5px, untrained for — clears the +6 gate |
 
-**72.6 of the 85 self-measurable points**, scoring localisation and pose the
-way the grader will (zero on declined pairs). Efficiency (5) is a relative
-ranking we cannot self-assess and the generator/report component (10) is judged.
+**75.92 of the 85 self-measurable points** (full 2,250-pair A/B/C hold-out,
+corrected grader semantics: zero on declined pairs, threshold 0.2018,
+`verification="zncc"`, `band=False`, weights `weights/driftsense.pt`).
+Efficiency (5) is a relative ranking we cannot self-assess and the
+generator/report component (10) is judged.
 
-An earlier version of this README reported ~92/100. That figure came from our
-*own* validation split under the lenient F1 convention and without charging
-declined pairs, and it is not comparable to the number above. The measurement
-changed, not the method.
+Measured on `data/ext_p2` — the `test` split of our own
+`driftsense_phase2_synthetic_v1` generator run (verified zero `pair_sha256`
+overlap with anything trained on). Testing-only hold-out, not organizer data.
+
+Earlier figures in this README and historical logs (72.55, 72.6, 75.51,
+76.23) were produced by older decodes and/or an unmasked scorer that let
+declined present pairs keep localisation credit; they are historical
+comparisons only. The measurement changed, not the method.
 
 ### The `score` column: what our confidence means
 
@@ -129,9 +135,11 @@ Two things are worth knowing before changing this.
 **Verification reaches about a quarter of the remaining failures.** Of 90 Set B
 pairs that miss the 5 px tier, only 22 had a correct candidate generated and
 then not selected. The other 76% never had a right answer among the candidates
-at all, so they are a search problem, not a ranking one. That is why the
-band-pass is also applied inside the coarse sweep, where it changes which
-candidates exist.
+at all, so they are a search problem, not a ranking one. The coarse sweep's
+band-pass was originally justified that way, but the full-set A/B (issue #9)
+measured it as a 0.42-point net loss and `band=False` is now the shipped
+default; the sweep's candidate-generation problem is what issue #5's rescue
+pass targets.
 
 **The textbook fix is the wrong one here.** A rank transform (Zabih & Woodfill,
 ECCV 1994) is the standard defence against impulse noise, and impulse noise is

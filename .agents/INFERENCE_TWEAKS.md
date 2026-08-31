@@ -1,5 +1,12 @@
 # Inference-level tweaks: side-by-side score log
 
+**IMPORTANT (2026-08-31, issue #22 P0):** the absolute subtotals below were
+produced by the pre-fix scorer that let declined present pairs keep
+localisation/pose credit. Corrected re-score of the same CSVs:
+band-on 75.78 → **75.50**, no-band 76.23 → **75.92**. The *paired deltas*
+(+0.42 for the band flip) remain valid — both configs were scored under the
+same inflated semantics. Rows are kept for history with that caveat.
+
 **Protocol:** every tweak is measured on the **same seeded 200-pair draw**
 (`eval_ext --sample 200 --seed 200`, shipped shards A/B/C) so the columns are
 directly comparable, and on the **full 2,250** for the promotion decision

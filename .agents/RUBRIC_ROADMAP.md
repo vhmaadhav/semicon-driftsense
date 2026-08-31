@@ -1,8 +1,9 @@
 # Rubric roadmap: future inference-level and model-weights levers
 
-**Date:** 2026-08-31 · **Baseline:** 76.23 / 85 measurable (no-band decode, full
-2,250) · **200-pair grade draws:** 75.8 ± 1.2 (own-generator test split, never trained on) · **Efficiency:** 5 judged pts ·
-**Generator/report:** 10 judged pts · **Ceiling with all components:** 85 + 5 = 90.
+**Date:** 2026-08-31 · **Baseline:** 75.92 / 85 measurable (no-band decode, full
+2,250, corrected grader semantics per issue #22 P0; the earlier 76.23 quote used
+an unmasked scorer) · **200-pair grade draws:** 75.8 ± 1.2 (own-generator test split, never trained on) · **Efficiency:** 5 judged pts ·
+**Generator/report:** 10 judged pts · **Base ceiling with all components:** 85 measurable + 5 efficiency + 10 generator/report = **100**.
 
 ## Compute protocol (how we work from here)
 
@@ -23,7 +24,7 @@ accuracy from a 200-pair draw alone (σ = 1.2).
 | Pose scale + rotation | 20 | 17.96 | +1.2 (same failures carry pose) |
 | Rejection | 15 | 13.32 (F1 0.888) | +4 bonus at F1 ≥ 0.90 — **training path only** (measured: post-hoc ceiling 0.885) |
 | Calibration | 10 | 9.87 (AUC 0.987) | ~0.1 — saturated |
-| Efficiency (judged) | 5 | untouched | up to +5 via ≥1.5× runtime |
+| Efficiency (judged) | 5 | untouched | up to +5 via quartile-ranked efficiency (≥1.5× median runtime is our internal target, not a scoring threshold) |
 | Generator/report (judged) | 10 | untouched | docs/citations/failure-analysis quality |
 
 ## Inference-level future work (no training)
@@ -68,10 +69,14 @@ accuracy from a 200-pair draw alone (σ = 1.2).
    quantify the residual. Correcting the vendored generator and retraining
    attacks the label-noise floor that caps Set B sub-pixel accuracy
    (measured: sub-pixel precision is label-bounded).
-4. **Band-aware fine-tune:** the network was trained with inputs that the
-   (now removed) coarse band-pass no longer pre-filters — a 2–3 epoch
-   fine-tune on the GPU host with the promoted decode in the loop may recover
-   additional Set B credit. Cheap on GPU; gate as always.
+4. **Decode-in-the-loop fine-tune:** the promoted `band=False` changed only
+   the classical coarse-sweep probe (the network input is untouched — the
+   earlier draft's "input distribution shift" rationale was wrong), so there
+   is no distribution-shift argument for retraining. The remaining valid
+   hypothesis is co-adaptation: a short 2–3 epoch fine-tune with the shipped
+   decode in the loop could still recover Set B credit if the removed
+   band-pass had shaped which hypotheses the selector settles on. Speculative;
+   cheap on GPU; gate as always.
 5. **Calibration head:** fit per-set temperature scaling on held-out shards
    (GPU training, trivial compute) — protects the 10 calibration points if
    the 0.90 F1 push shifts the score distribution.

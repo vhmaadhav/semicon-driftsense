@@ -13,6 +13,6 @@ tail -1 .agents/train_p4.log 2>/dev/null | grep -E "^  e" | sed 's/^/  /'
 echo
 echo "HARDWARE:  gpu $(nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader 2>/dev/null)   cpu $(sensors 2>/dev/null | awk '/Package id 0/{print $4}')"
 echo
-echo "SCORE (full 2500-pair external set, honest):"
-echo "  shipped              72.55 / 95   -> ~88-90 of 100"
-echo "  SFT ckpt (8 epochs)  72.67 / 95   (Set B +2.1pp, rejection needs retuned threshold)"
+echo "SCORE (full 2,250-pair A/B/C hold-out, corrected grader semantics):"
+echo "  shipped (band=False)  75.92 / 85   (PR #18 campaign; see .agents/INFERENCE_TWEAKS.md)"
+echo "  historical: 72.55/95 (pre-Phase-2 readout), 76.23/85 (pre-#22 unmasked scorer)"
