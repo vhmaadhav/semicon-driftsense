@@ -297,7 +297,11 @@ def main():
                          "200-pair blind grade (use --sample 200)")
     ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
-    ap.add_argument("--no-band", action="store_true")
+    ap.add_argument("--no-band", action="store_true",
+                    help="accepted for backwards compatibility; band is OFF by "
+                         "default since the measured A/B (issue #9)")
+    ap.add_argument("--band", action="store_true",
+                    help="opt back into band-passing the coarse sweep")
     ap.add_argument("--features", action="store_true",
                     help="record rank/band/winner-margin features WITHOUT changing "
                          "the hypothesis selector (the decode stays the shipped zncc "
@@ -324,7 +328,7 @@ def main():
     else:
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
-                 a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
+                 a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed)
         if a.out:

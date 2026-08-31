@@ -155,6 +155,12 @@ class DriftSenseNet(nn.Module):
         super().__init__()
         self.encoder = Encoder(width)
         self.context = ContextBranch(width, ctx)
+        # E1 efficiency cache: the template-branch embedding is identical for
+        # every pose hypothesis of a pair (locate_phase2 canonicalizes the
+        # SEARCH, so the template tensor is byte-identical across attempts).
+        # Single-slot, keyed on the input bytes + device; never served in
+        # training mode. See tests/test_search_feat_cache.py.
+        self._tf_cache = None
         self.corr_mix = nn.Sequential(
             nn.Conv2d(CORR_GROUPS, head, 1, bias=False),
             nn.BatchNorm2d(head),
@@ -186,19 +192,38 @@ class DriftSenseNet(nn.Module):
         nn.init.constant_(self.logit.bias, -4.0)
         nn.init.constant_(self.offset.bias, 0.0)
 
-    def forward(self, reference: torch.Tensor, search: torch.Tensor) -> dict:
+    def forward(self, reference: torch.Tensor, search: torch.Tensor,
+                ref_feat: "torch.Tensor | None" = None) -> dict:
         """reference: (B,1,1000,1000) or a pre-downsampled (B,1,100,100)
         template. search: (B,1,H,W) with H,W multiples of the stride.
 
         Any reference that is not exactly TEMPLATE_SIZE square -- including a
         non-square one that happens to be TEMPLATE_SIZE *wide* -- is area-
-        resized to the template size first, so both branches see one shape."""
-        if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
-            reference = F.interpolate(
-                reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
-                mode="area")
+        resized to the template size first, so both branches see one shape.
 
-        tf = self.encoder(reference)
+        ref_feat: a precomputed template-branch embedding, or None to encode
+        here. Inference also consults a single-slot cache keyed on the input
+        bytes (identical templates across pose hypotheses hit it); training
+        never does."""
+        if ref_feat is not None:
+            tf = ref_feat
+        else:
+            key = None
+            if not self.training:
+                key = (reference.detach().cpu().numpy().tobytes(),
+                       str(reference.device))
+            if key is not None and self._tf_cache is not None \
+                    and self._tf_cache[0] == key:
+                tf = self._tf_cache[1]
+            else:
+                if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
+                    reference = F.interpolate(
+                        reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
+                        mode="area")
+                tf = self.encoder(reference)
+                if key is not None:
+                    self._tf_cache = (key, tf)
+
         sf = self.encoder(search)
 
         # L2-normalise so the match score reflects pattern agreement rather
