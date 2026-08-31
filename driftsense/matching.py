@@ -704,6 +704,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
                   band: bool = True, return_hypotheses: bool = False,
+                  early_exit_zncc: float | None = None,
+                  rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
@@ -828,8 +830,79 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             r = attempt(m, rot)
             r["pose_peak"] = float(coarse_peak)
             candidates.append(r)
+            # Early exit. `pose_candidates` returns hypotheses already ranked by
+            # coarse peak and `choose` takes the highest native ZNCC, so once a
+            # candidate verifies strongly enough there is nothing for the rest to
+            # win. The network is ~86% of a pair and is paid once per hypothesis,
+            # so stopping here is close to a 3x saving on the pairs that take it.
+            # Off by default: this trades a small chance of missing a better
+            # hypothesis for runtime, and the threshold has to be earned on data.
+            if (early_exit_zncc is not None
+                    and len(candidates) < len(cands)
+                    and r.get("zncc", -np.inf) >= early_exit_zncc):
+                break
         best = choose(candidates)
-        best["n_hypotheses"] = len(cands)
+
+        # How decisively the winner won, on the statistic `choose` ranks by.
+        # Recorded always: it is the gate the rescue pass fires on, and it is a
+        # useful diagnostic on its own.
+        def _v(c):
+            return float(c.get("zncc", c.get("score", -np.inf)))
+        ordered = sorted((_v(c) for c in candidates), reverse=True)
+        best["winner_margin"] = float(ordered[0] - ordered[1]) if len(ordered) > 1 else float("inf")
+
+        # --- rescue pass (issue #5) ---------------------------------------
+        # The coarse sweep is discrete, so when two hypotheses finish close
+        # together the true pose is often *between* them rather than at either.
+        # The oracle says 58% of the remaining set B gap is pose search and the
+        # failures are wrong-scale lock-ons (median 6.65% scale error against
+        # 0.60% on successes), while widening the sweep globally is
+        # monotonically worse -- more candidates means more decoys on the ~87%
+        # already correct. Firing only on a contested decision keeps the extra
+        # candidates away from the pairs that do not need them.
+        #
+        # Adopted only if it wins on native ZNCC by a margin, so a rescue that
+        # merely ties cannot displace a good answer.
+        if (rescue_margin is not None and len(candidates) > 1
+                and best["winner_margin"] < rescue_margin):
+            top = sorted(candidates, key=_v, reverse=True)[:2]
+            extra = []
+            for a, b in ((top[0], top[1]),):
+                extra.append((0.5 * (a["scale"] + b["scale"]),
+                              0.5 * (a["theta"] + b["theta"])))
+            # Half-steps either side of the winner, on the axis the two differ
+            # in most, so the grid refines the contested dimension.
+            ds = abs(top[0]["scale"] - top[1]["scale"]) or 0.05
+            dr = abs(top[0]["theta"] - top[1]["theta"]) or 0.5
+            extra += [(top[0]["scale"] + 0.5 * ds, top[0]["theta"]),
+                      (top[0]["scale"] - 0.5 * ds, top[0]["theta"]),
+                      (top[0]["scale"], top[0]["theta"] + 0.5 * dr),
+                      (top[0]["scale"], top[0]["theta"] - 0.5 * dr)]
+            lo_s, hi_s = PHASE2_SCALE_BOUNDS
+            lo_r, hi_r = PHASE2_ROTATION_BOUNDS
+            rescued = []
+            for m, rot in extra:
+                if not (lo_s <= m <= hi_s and lo_r <= rot <= hi_r):
+                    continue
+                r = attempt(float(m), float(rot))
+                r["pose_peak"] = float("nan")
+                rescued.append(r)
+            if rescued:
+                incumbent = _v(best)
+                challenger = max(rescued, key=_v)
+                if _v(challenger) > incumbent + rescue_delta:
+                    # Carry the diagnostics forward: the challenger is a fresh
+                    # attempt() dict, so without this the margin that *caused*
+                    # the rescue is lost exactly on the pairs it fired for --
+                    # which are the only ones worth analysing afterwards.
+                    margin = best["winner_margin"]
+                    best = challenger
+                    best["winner_margin"] = margin
+                    best["rescued"] = True
+                candidates.extend(rescued)
+
+        best["n_hypotheses"] = len(candidates)
+        best["n_hypotheses_offered"] = len(cands)
 
     if refine and polish:
         pm, pr, _ = polish_pose(reference, search, best["x"], best["y"],

@@ -51,7 +51,9 @@ def tier(value: float, tiers) -> float:
 
 def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
-    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol = job
+    (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
+     coarse, band, verification, denoise, tie_tol, early_exit,
+     rescue_margin, rescue_delta) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -76,7 +78,8 @@ def _worker(job):
                         polish_scale=polish_scale, refit_xy=refit_xy,
                         coarse_scales=coarse, band=band,
                         verification=verification, denoise=denoise,
-                        tie_tol=tie_tol)
+                        tie_tol=tie_tol, early_exit_zncc=early_exit,
+                        rescue_margin=rescue_margin, rescue_delta=rescue_delta)
     dt = time.perf_counter() - t0
     return {
         "pair_id": row["pair_id"], "set": row["phase2_set"],
@@ -110,12 +113,16 @@ def _worker(job):
         "psr": float(res.get("psr", np.nan)),
         "apce": float(res.get("apce", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
+        "n_hyp_offered": int(res.get("n_hypotheses_offered", 0)),
+        "winner_margin": float(res.get("winner_margin", np.nan)),
+        "rescued": int(bool(res.get("rescued", False))),
         "secs": dt,
     }
 
 
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
-        polish_scale, refit_xy, stride, coarse, band, verification, denoise, tie_tol):
+        polish_scale, refit_xy, stride, coarse, band, verification, denoise, tie_tol,
+        early_exit, rescue_margin, rescue_delta):
     import multiprocessing as mp
 
     tasks = []
@@ -127,7 +134,8 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
             man = man.head(limit)
         for _, r in man.iterrows():
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
-                          polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol))
+                          polish_scale, refit_xy, coarse, band, verification, denoise,
+                          tie_tol, early_exit, rescue_margin, rescue_delta))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
 
     out, t0 = [], time.perf_counter()
@@ -269,6 +277,17 @@ def main():
     ap.add_argument("--tie-tol", type=float, default=0.04,
                     help="peaks within this relative margin of the best are "
                          "treated as tied and resolved toward the frame centre")
+    ap.add_argument("--early-exit", type=float, default=None,
+                    help="stop evaluating pose hypotheses once one verifies at or above "
+                         "this native ZNCC; the network is ~86%% of a pair and is paid "
+                         "once per hypothesis")
+    ap.add_argument("--rescue-margin", type=float, default=None,
+                    help="fire a second, denser pose search when the winning "
+                         "hypothesis beats the runner-up by less than this on "
+                         "native ZNCC (issue #5)")
+    ap.add_argument("--rescue-delta", type=float, default=0.0,
+                    help="a rescued candidate must beat the incumbent by this "
+                         "much to be adopted")
     ap.add_argument("--threshold", type=float, default=0.25)
     a = ap.parse_args()
 
@@ -278,7 +297,8 @@ def main():
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
                  a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
-                 a.verification, a.denoise, a.tie_tol)
+                 a.verification, a.denoise, a.tie_tol, a.early_exit,
+                 a.rescue_margin, a.rescue_delta)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")
