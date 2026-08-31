@@ -330,27 +330,32 @@ def _refine_pose_local(reference, search, f0: float, r0: float,
     return float(f), float(r), float(peak)
 
 
-def winner_margin(candidates: list) -> float:
-    """min(score, zncc) margin between the winner and the best runner-up.
+def winner_margin(candidates: list, winner: dict) -> float:
+    """The SELECTED winner's min(score, zncc) margin over the best runner-up.
 
     A present/absent uncertainty feature (issue #6): an absent pair can only
     produce low, closely-spaced responses, so a small margin is evidence the
-    'match' is not a real instance. A missing score is skipped (the remaining
-    values are the evidence); fewer than two comparable candidates yields NaN
-    rather than a fake margin.
+    'match' is not a real instance. `winner` must be the candidate the decode
+    actually returned (choose() selects by max zncc on the shipped path, which
+    need not be the min-metric leader -- the margin can legitimately be
+    negative, and that disagreement is itself signal). A missing score is
+    skipped (the remaining values are the evidence); a winner or runner-up
+    with no finite evidence, or fewer than two candidates, yields NaN rather
+    than a fake or infinite margin.
     """
-    if not candidates or len(candidates) < 2:
-        return float("nan")
-
     def strength(c: dict) -> float:
         vals = [float(c[k]) for k in ("score", "zncc")
                 if c.get(k) is not None and np.isfinite(c[k])]
         return min(vals) if vals else -np.inf
 
-    ordered = sorted((strength(c) for c in candidates), reverse=True)
-    if ordered[0] == -np.inf:
+    if winner is None or not candidates or len(candidates) < 2:
         return float("nan")
-    return float(ordered[0] - ordered[1])
+    w = strength(winner)
+    others = [strength(c) for c in candidates if c is not winner]
+    best_other = max(others) if others else -np.inf
+    if w == -np.inf or best_other == -np.inf:
+        return float("nan")
+    return float(w - best_other)
 
 
 def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
@@ -853,11 +858,11 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             candidates.append(r)
         best = choose(candidates)
         best["n_hypotheses"] = len(cands)
-    # The winner's min(score, zncc) margin over the best runner-up: an
-    # inference-time uncertainty feature for the present/absent rejector
+    # The SELECTED winner's min(score, zncc) margin over the best runner-up:
+    # an inference-time uncertainty feature for the present/absent rejector
     # (issue #6). Needs only the candidate list the decode already built, so
     # it is recorded on every path -- including the shipped default-zncc one.
-    best["winner_margin"] = winner_margin(candidates)
+    best["winner_margin"] = winner_margin(candidates, best)
 
     if refine and polish:
         pm, pr, _ = polish_pose(reference, search, best["x"], best["y"],
