@@ -1,7 +1,7 @@
 # Rubric roadmap: future inference-level and model-weights levers
 
 **Date:** 2026-08-31 · **Baseline:** 76.23 / 85 measurable (no-band decode, full
-2,250) · **200-pair grade draws:** 75.8 ± 1.2 · **Efficiency:** 5 judged pts ·
+2,250) · **200-pair grade draws:** 75.8 ± 1.2 (own-generator test split, never trained on) · **Efficiency:** 5 judged pts ·
 **Generator/report:** 10 judged pts · **Ceiling with all components:** 85 + 5 = 90.
 
 ## Compute protocol (how we work from here)

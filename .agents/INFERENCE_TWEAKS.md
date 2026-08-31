@@ -7,6 +7,13 @@ directly comparable, and on the **full 2,250** for the promotion decision
 alone carries ±1.2 points of sampling noise — the full-set paired number is
 the decider; the 200-pair column is the quick read.
 
+**Data provenance:** every score below is measured on `data/ext_p2` — the
+`test` split of **our own** `driftsense_phase2_synthetic_v1` generator run
+(byte-compatible shards, verified zero `pair_sha256` overlap with anything
+trained on). It is testing-only hold-out data, not organizer data; the
+organizers' 200 blind pairs are unreleased. "200-pair grade" means the
+scoring *convention*, applied to our own held-out split.
+
 Baseline rows come from the current shipped configuration
 (`driftsense.pt`, threshold 0.2018, `verification=zncc`, band on).
 
