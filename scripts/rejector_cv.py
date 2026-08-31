@@ -37,10 +37,26 @@ ALL = ["score", "zncc", "peak_ratio", "pose_peak", "psr", "apce"]
 EXTENDED = ALL + ["rank", "band", "margin"]
 
 
-def available(d, feats):
-    """The requested features this DataFrame actually carries."""
-    missing = [f for f in feats if f not in d.columns]
-    return [f for f in feats if f in d.columns], missing
+def available(d, feats, min_finite: float = 0.5):
+    """Features this DataFrame can actually be fitted on.
+
+    Existence of the column is not enough: eval_ext always emits rank/band,
+    but on a run without --features those columns are all-NaN, and fitting on
+    nan_to_num'd zeros would print plausible-looking extended-trial results
+    from data that was never computed. A feature is available only if the
+    column exists AND at least `min_finite` of its values are finite.
+    """
+    ok, missing = [], []
+    for f in feats:
+        if f not in d.columns:
+            missing.append(f)
+            continue
+        finite = np.isfinite(pd.to_numeric(d[f], errors="coerce").values).mean()
+        if finite >= min_finite:
+            ok.append(f)
+        else:
+            missing.append(f)
+    return ok, missing
 
 
 def cv(d, build, folds=4, seed=0):

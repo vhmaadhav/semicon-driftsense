@@ -40,7 +40,7 @@ Best extended fit: **+0.13 points vs the +0.35 promotion gate.** Same noise
 band as the earlier 6-feature refit (+0.11). The AUC↑/F1↓ cancellation the
 issue predicted reproduces: AUC rises (0.9878 → 0.9911) while F1 barely moves.
 
-## Result 2 — the oracle upper bound (the decisive number)
+## Result 2 — upper bound for this fit family (decisive for *this* family)
 
 Fitting the logistic **in-sample** on all 9 features (cheating freely) and
 sweeping every threshold:
@@ -50,10 +50,16 @@ sweeping every threshold:
 | shipped 6 features, in-sample oracle | 0.8827 |
 | all 9 features, in-sample oracle | **0.8850** |
 
-The bonus bar is **0.90**. Even a perfect threshold on a perfect post-hoc fit
-falls 1.5 F1 points short. No feature or threshold rule can cross it on this
-decode — the remaining errors are **confident wrong lock-ons** (Set B pairs
-that sit above the threshold at every operating point), not confidence errors.
+The bonus bar is **0.90**. **Scope of this bound:** it covers thresholding
+the fitted nine-feature *linear logistic* statistic — the rejector family
+issues #6/#9 actually specify, and the only one that ships at zero decode
+cost. It does **not** bound a nonlinear rejector (trees, kernels) or
+genuinely new features, which could in principle separate pairs a linear
+score cannot. What it does establish: within the measured family, even a
+perfect fit with perfect label knowledge falls 1.5 F1 points short — the
+remaining errors are **confident wrong lock-ons** (Set B pairs that sit
+above the threshold at every operating point), not confidence-ranking
+errors, so more thresholds or more same-type features cannot fix them.
 
 ## Separation sanity (why the features looked promising)
 
@@ -72,11 +78,16 @@ losing an equivalent mass of real pairs.
 
 ## Conclusion
 
-As issue #6 itself anticipated: the post-hoc rejection question is **closed
-for good**. The 0.90 bar is reachable only through the training path —
-issue #11 (Set C shard expansion + found-head retrain on the GPU/TPU-VM
-host), whose "training, not post-hoc" argument this experiment now measures
-directly.
+Within the specified family — rank/band/margin plus the shipped features,
+linear logistic, threshold rules — post-hoc rejection is **measured out**:
++0.13 rubric points against the +0.35 gate, and a family-scoped oracle
+ceiling of 0.8850 under the 0.90 bar. Whether a nonlinear post-hoc rejector
+on richer features could do better is untested and not bounded by this
+experiment; it would be a new investigation, not an extension of this one.
+The indicated route to the 0.90 bar remains the training path — issue #11
+(Set C shard expansion + found-head retrain on the GPU/TPU-VM host), whose
+"training, not post-hoc" argument this experiment now measures directly for
+the linear family.
 
 ## Reproduce
 
