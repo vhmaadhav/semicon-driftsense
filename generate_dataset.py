@@ -99,9 +99,12 @@ def parse_args():
         "fraction of pairs with no true instance. These ranges override the "
         "fixed --rotation-deg / --magnification values above.")
     ph2.add_argument("--phase2", action="store_true",
-                     help="shorthand for the disclosed Phase 2 operating point: "
+                     help="shorthand for a Phase-2-style stress mixture: "
                           "--magnification-range 8 12 --rotation-range -5 5 "
-                          "--absent-frac 0.2")
+                          "--absent-frac 0.2 (all effects sampled together). "
+                          "This is NOT an exact emulator of the organizers' "
+                          "separate A/B/C/D blind sets and does not reproduce "
+                          "Set D RGB")
     ph2.add_argument("--rotation-range", type=float, nargs=2, metavar=("LO", "HI"),
                      help="sample rotation uniformly in [LO, HI] degrees, "
                           "CCW positive (Phase 2 bound: -5 5)")

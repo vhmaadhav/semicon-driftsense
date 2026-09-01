@@ -82,8 +82,10 @@ def main():
                     help="hypothesis selector: zncc (default) | consensus | majority. "
                          "consensus overrides the native-ZNCC winner only when the rank "
                          "and band scores pick the same different hypothesis; it was "
-                         "measured +2/0 and +1/0 rescued/broken on the PR #3 proxy and "
-                         "must be re-measured on data/ext_p2 before becoming the default")
+                         "measured +2/0 and +1/0 rescued/broken on the PR #3 proxy; "
+                         "full 2,250-pair A/B (issue #9): +0.11 total, paired CI "
+                         "spans zero, 5 broken / 6 rescued -- real but under the "
+                         "promotion gate, so zncc stays the default")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch threads; 0 leaves the default")
     ap.add_argument("--quiet", action="store_true")

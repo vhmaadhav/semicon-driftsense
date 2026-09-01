@@ -1,4 +1,7 @@
-"""The single shipped inference policy.
+"""The shipped Phase 1 inference policy (reference + search at known 10x,
+zero rotation -- adaptive routing over dihedral TTA). The Phase 2 submission
+decode is register.py + locate_phase2 (pose search, hypothesis selection,
+threshold contract); see the Phase 2 section of README.md.
 
 C-01 of the static audit: evaluation and CLI inference were two different
 systems -- evaluate.py called locate/locate_tta directly, while infer.py ran

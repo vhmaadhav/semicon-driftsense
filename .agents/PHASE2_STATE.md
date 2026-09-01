@@ -1,7 +1,13 @@
-# Phase 2 — current state, and how to not waste a session
+# Phase 2 — state log, and how to not waste a session
 
-**Read this file first.** It is the single source of truth for where Phase 2
-stands. Last updated 2026-09-01. Deadline: **3 September 2026**, code frozen,
+**Status pointer (2026-08-31, updated 2026-09-01):** the authoritative current
+Phase 2 numbers are in `README.md` (Phase 2 results table) and
+`.agents/INFERENCE_TWEAKS.md` — **75.92 / 85** on the full 2,250 hold-out under
+corrected grader semantics (zero on declined pairs), `band=False` promoted,
+shipped threshold 0.18 (see driftsense/config.py). This file is a dated session
+log (2026-08-29) kept for its analysis and dead-ends; totals quoted inside
+(75.51 / 75.35 / 75.27) are historical and were produced by the pre-#22
+unmasked scorer. Deadline: **3 September 2026**, code frozen,
 no resubmission.
 
 **2026-09-01: the official Phase 2 task materials have been obtained and

@@ -64,7 +64,13 @@ previously unnamed target is the sweep itself (make_template + band per scale po
 * **Risk:** decoys — the same reason *global* widening measured monotonically worse;
   the margin gate + consensus acceptance is precisely what that experiment lacked.
 
-## 3. Idea B — rank/band as present/absent rejector features (rejection F1 → 0.90)
+## 3. Idea B — rank/band as present/absent rejector features (rejection F1 → 0.90) — MEASURED, CLOSED
+
+> **Verdict (2026-08-31, PR #17):** implemented and measured on the full 2,250 —
+> best extended fit +0.13 rubric points vs the +0.35 gate; the in-sample oracle on
+> all 9 features reaches F1 0.8850, under the 0.90 bar. The linear-logistic +
+> threshold family is exhausted (see `.agents/REJECTOR_FINDINGS.md`); the F1 target
+> requires the training path (#11). Details on issue #6 (closed).
 
 * **Targets:** F1 0.878 → 0.90 = +0.33 pts **and the +4 bonus**; the reject-option
   literature (Chow; arXiv 2101.12523) says only score *quality* moves F1.
@@ -109,5 +115,5 @@ previously unnamed target is the sweep itself (make_template + band per scale po
   `locate_phase2` (default `"zncc"` = bit-identical shipped behaviour). Measure
   `consensus` on the full 2,250 before enabling (PR #3's +0.31–0.37 was a 149-pair proxy).
 * `eval_ext.py` default threshold aligned to the shipped 0.2018.
-* `--no-band` A/B still open (band became the coarse-sweep default without a recorded
+* `--no-band` A/B DONE (2026-08-31, PR #18): no-band wins +0.42 corrected points; `band=False` promoted (was: band became the coarse-sweep default without a recorded
   full-set A/B).

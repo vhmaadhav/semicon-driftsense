@@ -206,6 +206,11 @@ def score(df, threshold, quiet=False):
         df.pred_found.values == 1, df.loc_credit.fillna(0.0).values, 0.0)
 
     gray = df[df["set"].isin(["A", "B", "C"])]
+
+    # ---- Localisation (40 pts), weighted 0.45 A + 0.55 B -------------------
+    # Masking note: pred_found masking of loc_credit is applied to the FULL df
+    # above (all sets, before this split) -- supersedes the gray-only mask from
+    # the #18 lineage and also covers the Set D bonus path (PR #25 review).
     present = gray[gray.gt_found == 1]
 
     parts, res = {}, {}
