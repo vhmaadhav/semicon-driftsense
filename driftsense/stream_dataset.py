@@ -31,6 +31,19 @@ from driftsense.generate import PRESETS, PoseSpec, make_pairs
 from driftsense.model import STRIDE, TEMPLATE_FEAT
 
 
+def worker_quota(length: int, nworkers: int, wid: int) -> int:
+    """One worker's share of a nominal epoch of `length` samples.
+
+    The remainder is spread one extra sample over the first workers so that
+    sum(worker_quota(length, n, wid) for wid in range(n)) == length exactly --
+    a plain floor division silently drops samples while __len__ keeps
+    promising them, which drifts scheduler and progress accounting.
+    """
+    nworkers = max(nworkers, 1)
+    base, rem = divmod(length, nworkers)
+    return base + (1 if wid < rem else 0)
+
+
 class StreamingDriftSense(IterableDataset):
     """Yields freshly generated training samples, forever.
 
@@ -91,8 +104,8 @@ class StreamingDriftSense(IterableDataset):
         base = np.random.SeedSequence([self.seed, self.epoch, wid, self._pass])
         rng = np.random.default_rng(base)
 
-        # Split the nominal epoch length across workers.
-        quota = self.length // max(nworkers, 1)
+        # Split the nominal epoch length across workers, remainder included.
+        quota = worker_quota(self.length, nworkers, wid)
         produced = 0
         while produced < quota:
             entropy = int(rng.integers(0, 2 ** 63 - 1))

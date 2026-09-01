@@ -1,0 +1,30 @@
+626 pairs over 4 shard(s), 3 workers
+  100/626  0.21s/pair wall  eta 1.8 min
+  200/626  0.19s/pair wall  eta 1.4 min
+  300/626  0.20s/pair wall  eta 1.1 min
+  400/626  0.20s/pair wall  eta 0.7 min
+  500/626  0.20s/pair wall  eta 0.4 min
+  600/626  0.21s/pair wall  eta 0.1 min
+wrote .agents/ee_0.75.csv
+
+==========================================================================
+EXTERNAL TEST SET — 626 pairs (A 167, B 292, C 167, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8613     34.45
+   set A (167 pairs)        0.9605  <=5px 97.6%  <=1px 89.8%
+                                         median 0.35px
+   set B (292 pairs)        0.7801  <=5px 87.7%  <=1px 54.5%
+                                         median 0.90px
+Pose — scale (10)             credit 0.8936  med 0.42%      8.94
+Pose — rotation (10)        credit 0.8714  med 0.111deg      8.71
+Rejection (15)              F1(reject) 0.8690 @fix 0.202     13.04
+                            correct-rej 146  lost-real 23  missed-abs 21
+                            [lenient F1(present) 0.9520]
+                            [best-possible F1(reject) 0.8728 @ 0.2133]
+Calibration (10)                            AUC 0.9829      9.83
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   74.97
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

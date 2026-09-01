@@ -200,8 +200,12 @@ class DriftSenseNet(nn.Module):
 
     def forward(self, reference: torch.Tensor, search: torch.Tensor) -> dict:
         """reference: (B,1,1000,1000) or a pre-downsampled (B,1,100,100)
-        template. search: (B,1,H,W) with H,W multiples of the stride."""
-        if reference.shape[-1] != TEMPLATE_SIZE:
+        template. search: (B,1,H,W) with H,W multiples of the stride.
+
+        Any reference that is not exactly TEMPLATE_SIZE square -- including a
+        non-square one that happens to be TEMPLATE_SIZE *wide* -- is area-
+        resized to the template size first, so both branches see one shape."""
+        if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
             reference = F.interpolate(
                 reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
                 mode="area")

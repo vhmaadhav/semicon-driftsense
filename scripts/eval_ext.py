@@ -52,8 +52,8 @@ def tier(value: float, tiers) -> float:
 def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
     (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
-     coarse, band, verification, denoise, tie_tol, early_exit,
-     rescue_margin, rescue_delta) = job
+     coarse, band, verification, denoise, tie_tol, features,
+     early_exit, rescue_margin, rescue_delta) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -79,7 +79,13 @@ def _worker(job):
                         coarse_scales=coarse, band=band,
                         verification=verification, denoise=denoise,
                         tie_tol=tie_tol, early_exit_zncc=early_exit,
-                        rescue_margin=rescue_margin, rescue_delta=rescue_delta)
+                        rescue_margin=rescue_margin, rescue_delta=rescue_delta,
+                        # --features: compute the rank/band feature maps and the
+                        # winner margin WITHOUT changing the selector -- the
+                        # hypothesis choice stays the shipped zncc winner, so the
+                        # recorded features describe exactly the decode
+                        # register.py ships (issue #6).
+                        return_hypotheses=features)
     dt = time.perf_counter() - t0
     return {
         "pair_id": row["pair_id"], "set": row["phase2_set"],
@@ -112,6 +118,15 @@ def _worker(job):
         # inference pass -- without them the fit could never be validated.
         "psr": float(res.get("psr", np.nan)),
         "apce": float(res.get("apce", np.nan)),
+        # Rank/band peak-quality at the winner (issue #6): only present when
+        # the feature maps are computed (--features, or --verification is not
+        # zncc). Recorded so rejector_cv.py can fit the present/absent
+        # decision on inference-time features without a second pass.
+        "rank": float(res.get("rank", np.nan)),
+        "band": float(res.get("band", np.nan)),
+        # Winner's min(score, zncc) margin over the runner-up (issue #6);
+        # attached by locate_phase2 on every decode path.
+        "margin": float(res.get("winner_margin", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
         "n_hyp_offered": int(res.get("n_hypotheses_offered", 0)),
         "winner_margin": float(res.get("winner_margin", np.nan)),
@@ -120,9 +135,19 @@ def _worker(job):
     }
 
 
+def sample_pairs(df, n: int, seed: int = 0):
+    """A deterministic, replacement-free draw of `n` pairs — the local
+    emulation of the organisers' 200-pair blind grade. A sample larger than
+    the frame returns the whole frame."""
+    if n >= len(df):
+        return df
+    return df.sample(n=n, random_state=seed)
+
+
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
-        polish_scale, refit_xy, stride, coarse, band, verification, denoise, tie_tol,
-        early_exit, rescue_margin, rescue_delta):
+        polish_scale, refit_xy, stride, coarse, band, verification, denoise,
+        tie_tol, features=False, sample=0, seed=0, early_exit=None,
+        rescue_margin=None, rescue_delta=0.0):
     import multiprocessing as mp
 
     tasks = []
@@ -134,9 +159,15 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
             man = man.head(limit)
         for _, r in man.iterrows():
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
-                          polish_scale, refit_xy, coarse, band, verification, denoise,
-                          tie_tol, early_exit, rescue_margin, rescue_delta))
+                          polish_scale, refit_xy, coarse, band, verification,
+                          denoise, tie_tol, features,
+                          early_exit, rescue_margin, rescue_delta))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
+    if sample:
+        rng = np.random.RandomState(seed)
+        idx = rng.choice(len(tasks), size=min(sample, len(tasks)), replace=False)
+        tasks = [tasks[i] for i in sorted(idx)]
+        print(f"  sampled {len(tasks)} pairs (seed {seed}) for the 200-pair grade emulation", flush=True)
 
     out, t0 = [], time.perf_counter()
     with mp.Pool(jobs) as pool:
@@ -268,27 +299,44 @@ def main():
     ap.add_argument("--no-polish-scale", action="store_true")
     ap.add_argument("--refit-xy", action="store_true")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth pair")
+    ap.add_argument("--sample", type=int, default=0,
+                    help="run inference on a deterministic random draw of this many "
+                         "pairs instead of the full set -- emulates the organisers' "
+                         "200-pair blind grade (use --sample 200)")
+    ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
     ap.add_argument("--no-band", action="store_true")
+    ap.add_argument("--features", action="store_true",
+                    help="record rank/band/winner-margin features WITHOUT changing "
+                         "the hypothesis selector (the decode stays the shipped zncc "
+                         "winner) -- the CSV rejector_cv.py fits on (issue #6)")
     ap.add_argument("--verification", default="zncc",
-                    help="zncc (default) | consensus | majority | rank | band | dog")
+                    choices=["zncc", "consensus", "majority"],
+                    help="hypothesis selector implemented in locate_phase2. rank/band/"
+                         "dog were measured as research scores and are NOT implemented "
+                         "as selectors; the earlier help text advertising them was "
+                         "stale and passing them aborted the run")
     ap.add_argument("--denoise", type=int, default=0,
                     help="median filter kernel applied to the search frame (0=off)")
     ap.add_argument("--tie-tol", type=float, default=0.04,
                     help="peaks within this relative margin of the best are "
                          "treated as tied and resolved toward the frame centre")
     ap.add_argument("--early-exit", type=float, default=None,
-                    help="stop evaluating pose hypotheses once one verifies at or above "
-                         "this native ZNCC; the network is ~86%% of a pair and is paid "
-                         "once per hypothesis")
+                    help="stop evaluating pose hypotheses once one verifies at or "
+                         "above this native ZNCC. Measured negative: it loses "
+                         "points at every setting tried, because the network is "
+                         "only 21%% of a pair (issue #7)")
     ap.add_argument("--rescue-margin", type=float, default=None,
-                    help="fire a second, denser pose search when the winning "
-                         "hypothesis beats the runner-up by less than this on "
-                         "native ZNCC (issue #5)")
+                    help="fire a second, denser pose search when the selected "
+                         "winner's margin over the runner-up is below this "
+                         "(issue #5). Measured negative on the full 2250")
     ap.add_argument("--rescue-delta", type=float, default=0.0,
                     help="a rescued candidate must beat the incumbent by this "
                          "much to be adopted")
-    ap.add_argument("--threshold", type=float, default=0.25)
+    ap.add_argument("--threshold", type=float, default=0.2018,
+                    help="found operating point; aligned with register.py's "
+                         "DEFAULT_FOUND_THRESHOLD so a default run reads the shipped "
+                         "configuration instead of a stale 0.25")
     a = ap.parse_args()
 
     if a.rescore:
@@ -297,7 +345,8 @@ def main():
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
                  a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
-                 a.verification, a.denoise, a.tie_tol, a.early_exit,
+                 a.verification, a.denoise, a.tie_tol, a.features,
+                 a.sample, a.seed, a.early_exit,
                  a.rescue_margin, a.rescue_delta)
         if a.out:
             df.to_csv(a.out, index=False)

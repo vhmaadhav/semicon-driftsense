@@ -1,0 +1,6 @@
+[05:40] === PHASE 1 (cpu/network): fetch full-reference test shards ===
+[05:40] === PHASE 2 (cpu): verify the fit set is disjoint from the evaluation set ===
+
+fit set: 0 pairs, 0 present, 0 absent
+[05:40] fit set unusable -- stopping
+[05:40] REJECTORDONE

@@ -42,3 +42,5 @@ weights/*_p2_history.json
 venv-hf/
 .hf_stage/
 .agents/hf_port_state.tsv
+# agent memory (local only)
+.dsh/

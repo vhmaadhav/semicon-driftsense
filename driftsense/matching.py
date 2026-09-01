@@ -330,6 +330,34 @@ def _refine_pose_local(reference, search, f0: float, r0: float,
     return float(f), float(r), float(peak)
 
 
+def winner_margin(candidates: list, winner: dict) -> float:
+    """The SELECTED winner's min(score, zncc) margin over the best runner-up.
+
+    A present/absent uncertainty feature (issue #6): an absent pair can only
+    produce low, closely-spaced responses, so a small margin is evidence the
+    'match' is not a real instance. `winner` must be the candidate the decode
+    actually returned (choose() selects by max zncc on the shipped path, which
+    need not be the min-metric leader -- the margin can legitimately be
+    negative, and that disagreement is itself signal). A missing score is
+    skipped (the remaining values are the evidence); a winner or runner-up
+    with no finite evidence, or fewer than two candidates, yields NaN rather
+    than a fake or infinite margin.
+    """
+    def strength(c: dict) -> float:
+        vals = [float(c[k]) for k in ("score", "zncc")
+                if c.get(k) is not None and np.isfinite(c[k])]
+        return min(vals) if vals else -np.inf
+
+    if winner is None or not candidates or len(candidates) < 2:
+        return float("nan")
+    w = strength(winner)
+    others = [strength(c) for c in candidates if c is not winner]
+    best_other = max(others) if others else -np.inf
+    if w == -np.inf or best_other == -np.inf:
+        return float("nan")
+    return float(w - best_other)
+
+
 def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
@@ -843,66 +871,54 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                 break
         best = choose(candidates)
 
-        # How decisively the winner won, on the statistic `choose` ranks by.
-        # Recorded always: it is the gate the rescue pass fires on, and it is a
-        # useful diagnostic on its own.
-        def _v(c):
-            return float(c.get("zncc", c.get("score", -np.inf)))
-        ordered = sorted((_v(c) for c in candidates), reverse=True)
-        best["winner_margin"] = float(ordered[0] - ordered[1]) if len(ordered) > 1 else float("inf")
-
-        # --- rescue pass (issue #5) ---------------------------------------
+        # --- rescue pass (issue #5), off by default -----------------------
         # The coarse sweep is discrete, so when two hypotheses finish close
         # together the true pose is often *between* them rather than at either.
-        # The oracle says 58% of the remaining set B gap is pose search and the
-        # failures are wrong-scale lock-ons (median 6.65% scale error against
-        # 0.60% on successes), while widening the sweep globally is
+        # The oracle puts 58% of the remaining set B gap on the pose search and
+        # the failures are wrong-scale lock-ons (median 6.65% scale error
+        # against 0.60% on successes), while widening the sweep globally is
         # monotonically worse -- more candidates means more decoys on the ~87%
-        # already correct. Firing only on a contested decision keeps the extra
+        # already correct. Gating on a contested decision keeps the extra
         # candidates away from the pairs that do not need them.
         #
-        # Adopted only if it wins on native ZNCC by a margin, so a rescue that
-        # merely ties cannot displace a good answer.
-        if (rescue_margin is not None and len(candidates) > 1
-                and best["winner_margin"] < rescue_margin):
-            top = sorted(candidates, key=_v, reverse=True)[:2]
-            extra = []
-            for a, b in ((top[0], top[1]),):
-                extra.append((0.5 * (a["scale"] + b["scale"]),
-                              0.5 * (a["theta"] + b["theta"])))
-            # Half-steps either side of the winner, on the axis the two differ
-            # in most, so the grid refines the contested dimension.
-            ds = abs(top[0]["scale"] - top[1]["scale"]) or 0.05
-            dr = abs(top[0]["theta"] - top[1]["theta"]) or 0.5
-            extra += [(top[0]["scale"] + 0.5 * ds, top[0]["theta"]),
-                      (top[0]["scale"] - 0.5 * ds, top[0]["theta"]),
-                      (top[0]["scale"], top[0]["theta"] + 0.5 * dr),
-                      (top[0]["scale"], top[0]["theta"] - 0.5 * dr)]
-            lo_s, hi_s = PHASE2_SCALE_BOUNDS
-            lo_r, hi_r = PHASE2_ROTATION_BOUNDS
-            rescued = []
-            for m, rot in extra:
-                if not (lo_s <= m <= hi_s and lo_r <= rot <= hi_r):
-                    continue
-                r = attempt(float(m), float(rot))
-                r["pose_peak"] = float("nan")
-                rescued.append(r)
-            if rescued:
-                incumbent = _v(best)
-                challenger = max(rescued, key=_v)
-                if _v(challenger) > incumbent + rescue_delta:
-                    # Carry the diagnostics forward: the challenger is a fresh
-                    # attempt() dict, so without this the margin that *caused*
-                    # the rescue is lost exactly on the pairs it fired for --
-                    # which are the only ones worth analysing afterwards.
-                    margin = best["winner_margin"]
-                    best = challenger
-                    best["winner_margin"] = margin
-                    best["rescued"] = True
-                candidates.extend(rescued)
-
-        best["n_hypotheses"] = len(candidates)
-        best["n_hypotheses_offered"] = len(cands)
+        # Measured negative across five settings on the full 2250 (paired delta
+        # -0.022 to -0.069, none near the +0.35 gate). Kept because it is cheap
+        # to re-test on new weights, not because it currently pays.
+        if rescue_margin is not None and len(candidates) > 1:
+            gate = winner_margin(candidates, best)
+            if np.isfinite(gate) and gate < rescue_margin:
+                def _v(c):
+                    return float(c.get("zncc", c.get("score", -np.inf)))
+                top = sorted(candidates, key=_v, reverse=True)[:2]
+                ds = abs(top[0]["scale"] - top[1]["scale"]) or 0.05
+                dr = abs(top[0]["theta"] - top[1]["theta"]) or 0.5
+                extra = [(0.5 * (top[0]["scale"] + top[1]["scale"]),
+                          0.5 * (top[0]["theta"] + top[1]["theta"])),
+                         (top[0]["scale"] + 0.5 * ds, top[0]["theta"]),
+                         (top[0]["scale"] - 0.5 * ds, top[0]["theta"]),
+                         (top[0]["scale"], top[0]["theta"] + 0.5 * dr),
+                         (top[0]["scale"], top[0]["theta"] - 0.5 * dr)]
+                lo_s, hi_s = PHASE2_SCALE_BOUNDS
+                lo_r, hi_r = PHASE2_ROTATION_BOUNDS
+                rescued = []
+                for mm, rr in extra:
+                    if not (lo_s <= mm <= hi_s and lo_r <= rr <= hi_r):
+                        continue
+                    c = attempt(float(mm), float(rr))
+                    c["pose_peak"] = float("nan")
+                    rescued.append(c)
+                if rescued:
+                    challenger = max(rescued, key=_v)
+                    if _v(challenger) > _v(best) + rescue_delta:
+                        best = challenger
+                        best["rescued"] = True
+                    candidates.extend(rescued)
+        best["n_hypotheses"] = len(cands)
+    # The SELECTED winner's min(score, zncc) margin over the best runner-up:
+    # an inference-time uncertainty feature for the present/absent rejector
+    # (issue #6). Needs only the candidate list the decode already built, so
+    # it is recorded on every path -- including the shipped default-zncc one.
+    best["winner_margin"] = winner_margin(candidates, best)
 
     if refine and polish:
         pm, pr, _ = polish_pose(reference, search, best["x"], best["y"],
@@ -981,10 +997,13 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         } for r in candidates]
         best["secs_verification"] = float(verification_secs)
     else:
-        # Optional selectors change only the chosen hypothesis, not the result
-        # dictionary contract consumed by register.py and downstream callers.
-        for key in ("rank", "band", "dog"):
-            best.pop(key, None)
+        # Optional selectors change only the chosen hypothesis. Keep the
+        # WINNER's rank/band (drop dog — only computed under return_hypotheses):
+        # eval_ext records them, which is what lets rejector_cv.py fit the
+        # present/absent rejector on features that exist at inference time
+        # (issue #6). The default zncc path never computes them, so the result
+        # contract register.py consumes is unchanged there.
+        best.pop("dog", None)
     return best
 
 

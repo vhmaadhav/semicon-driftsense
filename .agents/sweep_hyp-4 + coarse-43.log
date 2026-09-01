@@ -1,0 +1,26 @@
+292 pairs over 2 shard(s), 3 workers
+  100/292  0.35s/pair wall  eta 1.1 min
+  200/292  0.33s/pair wall  eta 0.5 min
+wrote .agents/sweep_hyp-4 + coarse-43.csv
+
+==========================================================================
+EXTERNAL TEST SET — 292 pairs (A 0, B 292, C 0, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                           credit nan       nan
+   set A (0 pairs)          nan  <=5px nan%  <=1px nan%
+                                          median nanpx
+   set B (292 pairs)        0.7719  <=5px 87.0%  <=1px 54.8%
+                                         median 0.89px
+Pose — scale (10)             credit 0.8362  med 0.54%      8.36
+Pose — rotation (10)        credit 0.8217  med 0.145deg      8.22
+Rejection (15)              F1(reject) 0.0000 @fix 0.191      0.00
+                            correct-rej 0  lost-real 18  missed-abs 0
+                            [lenient F1(present) 0.9682]
+                            [best-possible F1(reject) 0.0000 @ 0.9394]
+Calibration (10)                            AUC 0.8933      8.93
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                     nan
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

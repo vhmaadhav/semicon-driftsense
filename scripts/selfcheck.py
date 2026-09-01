@@ -90,7 +90,7 @@ def check_weights() -> None:
                          else f"... (expected {EXPECTED_SHA256[:24]}...)"))
     try:
         import torch
-        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        ckpt = torch.load(path, map_location="cpu", weights_only=True)
         check(ckpt.get("epoch") == EXPECTED_EPOCHS, "checkpoint identity",
               f"{ckpt.get('epoch')} trained epochs (expected {EXPECTED_EPOCHS})")
     except Exception as e:

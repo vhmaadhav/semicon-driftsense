@@ -127,7 +127,13 @@ def test_majority_and_consensus_only_change_the_selected_hypothesis(monkeypatch)
     majority = matching.locate_phase2(None, reference, search, None, polish=False,
                                       verification="majority")
     assert majority["scale"] == 9.0
-    assert not ({"rank", "band", "dog"} & set(majority))
+    # Contract since issue #6: dog stays instrumentation-only, but the WINNER's
+    # rank/band are deliberately recorded under non-zncc selectors so the
+    # present/absent rejector can fit on inference-time features. The default
+    # zncc path computes neither (test_verification_disabled... covers it), so
+    # the register.py consumer view is unchanged where it matters.
+    assert "dog" not in majority
+    assert {"rank", "band"} <= set(majority)
     _stub_phase2(monkeypatch)
     consensus = matching.locate_phase2(None, reference, search, None, polish=False,
                                        verification="consensus")

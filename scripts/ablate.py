@@ -61,7 +61,7 @@ def main():
 
     device = torch.device("mps" if torch.backends.mps.is_available()
                           else ("cuda" if torch.cuda.is_available() else "cpu"))
-    ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
+    ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
     model = net_from_checkpoint(ckpt)
     model.load_state_dict(ckpt.get("model", ckpt))
     model.to(device).eval()

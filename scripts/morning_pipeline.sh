@@ -65,8 +65,34 @@ say "selected weights/$WIN.pt (threshold $THR)"
 # sample severity 1 only -- that aliasing invalidated two earlier sweeps.
 say "=== PHASE B (gpu): extract rejector features from 28 B + 28 C train shards ==="
 SHARDS="$(ls -d data/ext_train/B_*/ | head -28) $(ls -d data/ext_train/C_*/)"
+# Guard (2026-08-30 review, P1): train-format shards carry reference_px=100
+# pre-cropped templates, which locate_phase2 cannot consume — features from them
+# are noise and any rejector fit on them would be invalid. Fail loudly here
+# instead of writing a bogus weights/rejector.json. The valid fit path is
+# scripts/rejector_cv.py (fits inside data/ext_p2, 1000 px references); to
+# extract features from training-format data instead, fetch test-split shards
+# (SPLIT=test DEST=... fetch_shards.sh, RUN_ID=a06d9df298761144a64c).
+python3 - $SHARDS <<'PY'
+import csv, sys
+bad = []
+for d in sys.argv[1:]:
+    try:
+        with open(d + "/manifest.csv", newline="") as f:
+            px = next(csv.DictReader(f)).get("reference_px", "")
+    except Exception:
+        px = ""
+    if px != "1000":
+        bad.append((d, px))
+for d, px in bad:
+    print(f"  !! ABORT: {d} has reference_px={px or 'no-column'} (need 1000).")
+if bad:
+    print("  !! Train-format shards cannot feed locate_phase2. Use scripts/rejector_cv.py,")
+    print("  !! or point PHASE B at test-split shards fetched with SPLIT=test.")
+    sys.exit(1)
+PY
+[ $? -eq 0 ] || exit 1
 ./venv-train/bin/python scripts/eval_ext.py $SHARDS \
-   --weights "weights/$WIN.pt" --jobs 3 --threads 2 --stride 5 --threshold 0.115 \
+   --weights "weights/$WIN.pt" --jobs 3 --threads 2 --stride 5 --threshold "$THR" \
    --out .agents/rejector_train.csv > .agents/extract_rejector.log 2>&1 \
    || say "  ! extraction failed (see .agents/extract_rejector.log)"
 say "extracted $(( $(wc -l < .agents/rejector_train.csv) - 1 )) pairs"

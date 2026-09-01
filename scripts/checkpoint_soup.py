@@ -31,7 +31,7 @@ def main():
 
     states, base = [], None
     for m in a.members:
-        ck = torch.load(m, map_location="cpu", weights_only=False)
+        ck = torch.load(m, map_location="cpu", weights_only=True)
         sd = ck["model"]
         if base is None:
             base = ck

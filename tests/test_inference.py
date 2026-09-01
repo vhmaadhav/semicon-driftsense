@@ -25,7 +25,7 @@ INFER = os.path.join(REPO_ROOT, "infer.py")
 
 @pytest.fixture(scope="module")
 def model():
-    ckpt = torch.load(WEIGHTS, map_location="cpu", weights_only=False)
+    ckpt = torch.load(WEIGHTS, map_location="cpu", weights_only=True)
     m = net_from_checkpoint(ckpt)
     m.load_state_dict(ckpt.get("model", ckpt))
     return m.eval()

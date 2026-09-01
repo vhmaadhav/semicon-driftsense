@@ -71,6 +71,12 @@ def main():
     ap.add_argument("--weights", default=I.DEFAULT_WEIGHTS)
     ap.add_argument("--threshold", type=float, default=DEFAULT_FOUND_THRESHOLD,
                     help="score at or above which a pair is reported found")
+    ap.add_argument("--verification", default="zncc",
+                    help="hypothesis selector: zncc (default) | consensus | majority. "
+                         "consensus overrides the native-ZNCC winner only when the rank "
+                         "and band scores pick the same different hypothesis; it was "
+                         "measured +2/0 and +1/0 rescued/broken on the PR #3 proxy and "
+                         "must be re-measured on data/ext_p2 before becoming the default")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch threads; 0 leaves the default")
     ap.add_argument("--quiet", action="store_true")
@@ -117,13 +123,14 @@ def main():
                     res.setdefault("scale", 10.0)
                     res.setdefault("theta", 0.0)
                 else:
-                    # band=False: the difference-of-Gaussians pre-filter on the
-                    # coarse sweep costs points on both architectures. Measured
-                    # independently here at +0.439 (P 99.8%) on the 0.456M model
-                    # and +0.509 (P 94.2%) on the shipped 1.02M one. PR #18
-                    # reached the same conclusion separately.
+                    # band=False: the difference-of-Gaussians pre-filter on
+                    # the coarse sweep costs points on both architectures.
+                    # Measured independently here at +0.439 (95% CI
+                    # [+0.132, +0.767], P 99.8%) on the 0.456M model and +0.509
+                    # (P 94.2%) on the shipped 1.02M one; PR #18 reached the
+                    # same conclusion separately.
                     res = locate_phase2(model, ref, sea, device, refine=True,
-                                        band=False)
+                                        verification=a.verification, band=False)
                 # min(network score, full-resolution ZNCC); see locate_phase2.
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= a.threshold)

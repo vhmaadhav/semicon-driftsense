@@ -1,0 +1,33 @@
+device: cuda   amp: bf16
+train pairs: 84500 from 169 split(s)   crop: 512
+val scenes: 200
+sampling 20000 of 84500 pairs per epoch (9.5 passes over the pool)
+parameters: 0.46M
+fine-tuning from weights/driftsense_p4_last.pt: weights only (fresh optimizer, fresh one-cycle at max_lr 0.00015, epoch counter from 0)
+resumed from weights/driftsense_p4_last.pt (epoch 0, best 0.442px)
+  e0 [50/1250] loss 0.400 focal 0.297 off 0.1025 | batch median err 1.8px | 47.9 img/s | lr 6.02e-06
+  e0 [100/1250] loss 0.393 focal 0.289 off 0.1036 | batch median err 1.3px | 59.0 img/s | lr 6.06e-06
+  e0 [150/1250] loss 0.413 focal 0.303 off 0.1096 | batch median err 1.1px | 63.9 img/s | lr 6.14e-06
+  e0 [200/1250] loss 0.422 focal 0.313 off 0.1091 | batch median err 1.9px | 66.6 img/s | lr 6.25e-06
+  e0 [250/1250] loss 0.421 focal 0.312 off 0.1094 | batch median err 2.0px | 68.4 img/s | lr 6.39e-06
+  e0 [300/1250] loss 0.415 focal 0.307 off 0.1085 | batch median err 1.8px | 69.6 img/s | lr 6.57e-06
+  e0 [350/1250] loss 0.413 focal 0.305 off 0.1078 | batch median err 1.1px | 70.5 img/s | lr 6.77e-06
+  e0 [400/1250] loss 0.412 focal 0.305 off 0.1078 | batch median err 1.2px | 71.2 img/s | lr 7.01e-06
+  e0 [450/1250] loss 0.418 focal 0.309 off 0.1089 | batch median err 2.0px | 71.8 img/s | lr 7.28e-06
+  e0 [500/1250] loss 0.419 focal 0.310 off 0.1092 | batch median err 1.7px | 72.2 img/s | lr 7.57e-06
+  e0 [550/1250] loss 0.422 focal 0.313 off 0.1093 | batch median err 1.8px | 72.6 img/s | lr 7.90e-06
+  e0 [600/1250] loss 0.426 focal 0.317 off 0.1092 | batch median err 1.5px | 72.9 img/s | lr 8.26e-06
+  e0 [650/1250] loss 0.425 focal 0.316 off 0.1092 | batch median err 1.7px | 73.2 img/s | lr 8.65e-06
+  e0 [700/1250] loss 0.427 focal 0.318 off 0.1090 | batch median err 1.3px | 73.4 img/s | lr 9.07e-06
+  e0 [750/1250] loss 0.426 focal 0.317 off 0.1096 | batch median err 1.6px | 67.8 img/s | lr 9.52e-06
+  e0 [800/1250] loss 0.425 focal 0.315 off 0.1095 | batch median err 1.2px | 68.3 img/s | lr 1.00e-05
+  e0 [850/1250] loss 0.424 focal 0.315 off 0.1090 | batch median err 1.5px | 64.2 img/s | lr 1.05e-05
+  e0 [900/1250] loss 0.422 focal 0.313 off 0.1090 | batch median err 1.3px | 64.8 img/s | lr 1.11e-05
+  e0 [950/1250] loss 0.421 focal 0.312 off 0.1094 | batch median err 1.4px | 61.6 img/s | lr 1.16e-05
+  e0 [1000/1250] loss 0.422 focal 0.312 off 0.1099 | batch median err 1.4px | 62.2 img/s | lr 1.22e-05
+  e0 [1050/1250] loss 0.422 focal 0.312 off 0.1095 | batch median err 1.9px | 59.7 img/s | lr 1.29e-05
+  e0 [1100/1250] loss 0.421 focal 0.312 off 0.1095 | batch median err 1.6px | 60.3 img/s | lr 1.35e-05
+  e0 [1150/1250] loss 0.422 focal 0.313 off 0.1093 | batch median err 1.3px | 58.2 img/s | lr 1.42e-05
+  e0 [1200/1250] loss 0.421 focal 0.311 off 0.1096 | batch median err 1.5px | 55.4 img/s | lr 1.49e-05
+  e0 [1250/1250] loss 0.421 focal 0.312 off 0.1097 | batch median err 2.0px | 53.0 img/s | lr 1.56e-05
+SFT3DONE
