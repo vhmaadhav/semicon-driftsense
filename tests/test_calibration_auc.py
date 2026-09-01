@@ -34,7 +34,9 @@ enough that every AUC is computed by hand in the docstrings:
           + 0.5 * P(score_correct == score_incorrect)
           (rank-bisector / Mann-Whitney formulation, ties count half)
 
-Threshold used throughout: 0.2018 (the shipped operating point).
+Threshold used throughout: the shipped operating point, imported from
+driftsense.config (the ONE shared definition register.py and eval_ext.py both
+consume -- see tests/test_submission_parity.py).
 """
 
 import importlib.util
@@ -48,7 +50,7 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-THRESHOLD = 0.2018
+from driftsense.config import SHIPPED_THRESHOLD as THRESHOLD
 
 
 def _load():

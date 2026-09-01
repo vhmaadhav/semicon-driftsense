@@ -38,15 +38,15 @@ sys.path.insert(0, HERE)
 import infer as I  # noqa: E402
 from driftsense.matching import locate_phase2  # noqa: E402
 
-# Chosen on our own validation split by sweeping the operating point, not on
-# anything organizer-supplied. Kept as a named constant so the value that was
-# calibrated is the value that ships.
-# Chosen on the external validation set by sweeping the operating point
-# against the *total* rubric, not against rejection F1 alone -- declining a
-# present pair forfeits its localisation (40 pts) and pose (20 pts) credit as
-# well as hurting F1, so an F1-optimal threshold sits too high. Held-out and
-# in-sample agreed to 0.00 points at this value.
-DEFAULT_FOUND_THRESHOLD = 0.18
+# The shipped Phase 2 operating point lives in driftsense.config (the ONE
+# definition of the shipped decode config, so eval_ext.py and the parity tests
+# consume the same value register.py does). Re-exported under the historical
+# name for backwards compatibility -- every caller in this repo imports it
+# from here.
+from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
+from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402,F401
+
+DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
 OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
 
@@ -135,9 +135,12 @@ def main():
                     # Measured independently here at +0.439 (95% CI
                     # [+0.132, +0.767], P 99.8%) on the 0.456M model and +0.509
                     # (P 94.2%) on the shipped 1.02M one; PR #18 reached the
-                    # same conclusion separately.
+                    # same conclusion separately. The value is the shipped
+                    # decode config (driftsense.config), shared with
+                    # eval_ext.py so the evaluator decodes identically.
                     res = locate_phase2(model, ref, sea, device, refine=True,
-                                        verification=a.verification, band=False)
+                                        verification=a.verification,
+                                        band=SHIPPED_BAND)
                 # min(network score, full-resolution ZNCC); see locate_phase2.
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= a.threshold)

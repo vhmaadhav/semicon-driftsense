@@ -150,7 +150,12 @@ driftsense/presets.py import src.* from REPO_ROOT/generator), so a ZIP
 omitting generator/ fails the smoke test -- ship it; (b) offline-runtime
 evidence is limited to the --help smoke tests; no network-isolated execution
 test is claimed. ACTION before shipping: run the artifact audit on the final
-ZIP with ./venv313/bin/python and confirm 0 FAILED.
+ZIP with ./venv313/bin/python and confirm 0 FAILED -- and 0 SKIPPED: in
+artifact mode any SKIPPED required check (weights load, --help smoke tests
+when no torch+cv2 interpreter is available) forces a non-zero exit and the
+summary line reads 'PASS WITH N SKIPPED -- UNVERIFIED' rather than a bare
+PASS, because a skipped check is not artifact-level evidence; --preflight
+runs keep exit 0 on skips but still print the skip count.
 
 ### G7. gt_scale semantics — RESOLVED: tests/test_scale_semantics.py pins z-semantics (doc + decode path)
 Official: slide 5 scale 'nominally in [8, 12]' (= z); DOCX 2.3 fixes the

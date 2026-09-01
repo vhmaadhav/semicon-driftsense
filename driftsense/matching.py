@@ -731,7 +731,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
-                  band: bool = True, return_hypotheses: bool = False,
+                  band: bool = False, return_hypotheses: bool = False,
                   early_exit_zncc: float | None = None,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0, **kw) -> dict:
@@ -752,6 +752,10 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
       one on a half-resolution probe -- that was every measured localisation
       failure -- but at full resolution the wrong basin correlates near zero
       while the right one is around 0.9, so the decision becomes easy.
+
+    band defaults to False: it mirrors the shipped decode (register.py passes
+    band=False; the DoG pre-filter measured negative in #18/#24). Pass
+    band=True only for A/B measurement.
     """
     verification = str(verification).lower()
     valid_verification = {"zncc", "majority", "consensus"}

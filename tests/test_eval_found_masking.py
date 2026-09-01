@@ -16,7 +16,9 @@ the implementation):
   Localisation: 0.45 * mean(credit A) + 0.55 * mean(credit B), x40 points
   Pose:         mean tier over present pairs with credit > 0, 10 pts each
 
-Threshold used throughout: 0.2018 (the shipped operating point).
+Threshold used throughout: the shipped operating point, imported from
+driftsense.config (the ONE shared definition register.py and eval_ext.py both
+consume -- see tests/test_submission_parity.py).
 """
 
 import importlib.util
@@ -30,7 +32,7 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-THRESHOLD = 0.2018
+from driftsense.config import SHIPPED_THRESHOLD as THRESHOLD
 
 
 def _load():
@@ -50,8 +52,12 @@ def _pair(set_, gt_found, score, x, y, gt_x, gt_y, scale, theta,
     }
 
 
+def _mk_df(rows):
+    return pd.DataFrame(rows)
+
+
 def _score(mod, rows):
-    df = pd.DataFrame(rows)
+    df = _mk_df(rows)
     res, _ = mod.score(df, THRESHOLD, quiet=True)
     return res
 
@@ -123,6 +129,47 @@ def test_accepted_absent_hurts_rejection_only():
     assert res["rotation"][1] == pytest.approx(8.0, abs=1e-9)
     assert res["rejection"][0] == 0.0
     assert res["rejection"][1] == 0.0
+
+
+def test_declined_present_set_d_earns_zero_bonus_credit():
+    """Set D regression (PR #24/#25 review): the bonus path must read the
+    SAME submission-masked credit as A/B/C.
+
+    A declined PRESENT-D pair with perfect raw coordinates (err 0px -> raw
+    geometric credit 1.0) must earn 0 D credit, because register.py submits
+    found=0 with zeroed pose/location for it -- the credit was never
+    submittable. The pre-fix scorer read unmasked df.loc_credit here and
+    awarded the full 1.0 (the Set D hole in the #22 P0 mask).
+
+    The mask is applied to the FULL df before the gray/D split, so this
+    fixture exercises exactly the path the printed bonus block uses.
+    """
+    mod = _load()
+    res, df = mod.score(_mk_df([
+        _pair("D", 1, 0.10, 500.0, 300.0, 500.0, 300.0, 1.000, 0.00, 1.0, 0.0),
+    ]), THRESHOLD, quiet=True)
+    d = df[df["set"] == "D"]
+    dp = d[d.gt_found == 1]
+    dc = dp.loc_credit.mean()
+    assert dp.pred_found.iloc[0] == 0          # declined at the shipped threshold
+    assert dp.loc_credit.iloc[0] == 0.0        # masked, not the raw 1.0
+    assert dc == 0.0                           # D bonus credit is zero
+    # And the raw geometric credit really was perfect -- the zero comes from
+    # the mask, not from a bad fixture.
+    assert float(dp.err.iloc[0]) == 0.0
+
+
+def test_accepted_present_set_d_keeps_its_credit():
+    """Control for the D mask: a PRESENT-D pair SAID found with a perfect
+    hit keeps its raw credit through the same masked path."""
+    mod = _load()
+    res, df = mod.score(_mk_df([
+        _pair("D", 1, 0.90, 500.0, 300.0, 500.0, 300.0, 1.000, 0.00, 1.0, 0.0),
+    ]), THRESHOLD, quiet=True)
+    d = df[df["set"] == "D"]
+    dp = d[d.gt_found == 1]
+    assert dp.pred_found.iloc[0] == 1
+    assert dp.loc_credit.iloc[0] == pytest.approx(1.0, abs=1e-9)
 
 
 def test_declined_absent_is_credited_in_rejection():

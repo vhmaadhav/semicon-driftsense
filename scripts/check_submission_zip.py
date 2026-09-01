@@ -25,8 +25,12 @@ Two modes:
     evidence that the artifact actually submitted is compliant. Always run
     the artifact audit on the final ZIP before uploading.
 
-Exits non-zero on any FAIL. SKIPped checks (e.g. torch unavailable for the
-load test) are reported and never counted as PASS.
+Exits non-zero on any FAIL. In artifact mode a SKIPped required check (e.g.
+torch unavailable for the load test) also forces a non-zero exit and the
+summary reads 'PASS WITH N SKIPPED -- UNVERIFIED', because a skipped check is
+not evidence of compliance. In --preflight mode skips keep the exit at zero
+but the summary still reports the skip count, and a preflight PASS is never
+artifact evidence.
 """
 
 from __future__ import annotations
@@ -345,7 +349,7 @@ def extract_zip(zip_path, dest):
         zf.extractall(dest)
 
 
-def run_audit(root, label):
+def run_audit(root, label, artifact_mode=False):
     del checks[:]
     audit_layout(root)
     audit_requirements(root)
@@ -361,12 +365,22 @@ def run_audit(root, label):
         print("[" + label + "] [" + mark + "] " + c["name"]
               + (("  (" + c["detail"] + ")") if c["detail"] else ""))
     print()
-    print(label + " SUBMISSION AUDIT: "
-          + ("PASS" if not failed else str(failed) + " FAILED")
-          + ((" (" + str(skipped) + " SKIPPED)") if skipped else "")
+    if failed:
+        verdict = str(failed) + " FAILED"
+    elif skipped and artifact_mode:
+        # A skipped REQUIRED check is not evidence of compliance: an
+        # artifact audit that could not run the weights load or the --help
+        # smoke tests must never print a bare PASS (PR #24/#25 review).
+        # Label the run explicitly unverified and exit non-zero.
+        verdict = "PASS WITH " + str(skipped) + " SKIPPED -- UNVERIFIED"
+    elif skipped:
+        verdict = "PASS (" + str(skipped) + " SKIPPED)"
+    else:
+        verdict = "PASS"
+    print(label + " SUBMISSION AUDIT: " + verdict
           + ("" if label == "PREFLIGHT"
              else "  [artifact-level audit of the extracted ZIP]"))
-    return 1 if failed else 0
+    return 1 if (failed or (artifact_mode and skipped)) else 0
 
 
 def main():
@@ -393,7 +407,7 @@ def main():
             except zipfile.BadZipFile as exc:
                 print("[" + label + "] [FAIL] ZIP is unreadable: " + str(exc))
                 return 1
-            return run_audit(tmp, label)
+            return run_audit(tmp, label, artifact_mode=True)
 
     print("note: no ZIP given -- running a PREFLIGHT of the repository tree; "
           "this is not an artifact audit. Pass the ZIP path to audit the "

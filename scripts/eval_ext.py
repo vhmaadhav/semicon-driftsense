@@ -34,6 +34,11 @@ import pandas as pd
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
+# The shipped Phase 2 operating point, read from the ONE shared definition
+# (driftsense.config) so a default run here decodes and gates exactly what
+# register.py ships -- pinned by tests/test_submission_parity.py.
+from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
+
 # Published Phase 2 credit tiers.
 LOC_TIERS = ((1.0, 1.00), (2.0, 0.80), (3.0, 0.60), (5.0, 0.40))
 SCALE_TIERS = ((0.01, 1.00), (0.02, 0.60), (0.05, 0.30))
@@ -188,17 +193,19 @@ def score(df, threshold, quiet=False):
     df["s_err"] = np.abs(df.scale - df.gt_scale) / df.gt_scale
     df["r_err"] = np.abs(df.theta - df.gt_rot)
 
-    gray = df[df["set"].isin(["A", "B", "C"])]
-
-    # ---- Localisation (40 pts), weighted 0.45 A + 0.55 B -------------------
+    # ---- Submission masking, applied to the FULL frame ----------------------
     # register.py writes zero pose/location fields for a declined answer, so
     # the grader credits a wrongly declined PRESENT pair with zero
     # localisation (and therefore zero pose). Mask by pred_found -- parity
-    # with optimize_threshold.points() (issue #22 P0). The mask must be
-    # applied before any subset is taken.
-    said_found = gray.score.values >= threshold
-    gray = gray.assign(
-        loc_credit=np.where(said_found, gray.loc_credit.fillna(0.0).values, 0.0))
+    # with optimize_threshold.points() (issue #22 P0). The mask is applied to
+    # every row (A/B/C *and* D) BEFORE any subset is taken, so the Set D bonus
+    # path cannot read credit a declined answer could never have earned
+    # (PR #24/#25 review): for a declined pair register.py submits x=y=0
+    # against a real target, so its geometric credit is not submittable.
+    df["loc_credit"] = np.where(
+        df.pred_found.values == 1, df.loc_credit.fillna(0.0).values, 0.0)
+
+    gray = df[df["set"].isin(["A", "B", "C"])]
     present = gray[gray.gt_found == 1]
 
     parts, res = {}, {}
@@ -319,6 +326,9 @@ def score(df, threshold, quiet=False):
     print(f"{'  + generator/report (10)':<28}{'judged, not self-assessable':>26}")
 
     if (df["set"] == "D").any():
+        # Set D reads the SAME submission-masked loc_credit as A/B/C: the
+        # mask was applied to the full frame above, so a declined present-D
+        # pair scores 0 credit here exactly as it would on the submitted CSV.
         d = df[df["set"] == "D"]
         dp = d[d.gt_found == 1]
         dc = dp.loc_credit.mean()
@@ -347,12 +357,20 @@ def main():
                          "200-pair blind grade (use --sample 200)")
     ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
-    ap.add_argument("--no-band", action="store_true")
+    ap.add_argument("--band", action="store_true",
+                    help="enable the difference-of-Gaussians band pre-filter "
+                         "on the coarse sweep. OFF by default: it mirrors the "
+                         "shipped decode (register.py passes band=False; "
+                         "measured negative in #18/#24) and is opt-in here for "
+                         "A/B use only")
+    ap.add_argument("--no-band", action="store_true",
+                    help="accepted as a no-op for backward compatibility; band "
+                         "is now opt-in via --band (shipped default is OFF)")
     ap.add_argument("--features", action="store_true",
                     help="record rank/band/winner-margin features WITHOUT changing "
                          "the hypothesis selector (the decode stays the shipped zncc "
                          "winner) -- the CSV rejector_cv.py fits on (issue #6)")
-    ap.add_argument("--verification", default="zncc",
+    ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
                     choices=["zncc", "consensus", "majority"],
                     help="hypothesis selector implemented in locate_phase2. rank/band/"
                          "dog were measured as research scores and are NOT implemented "
@@ -375,10 +393,10 @@ def main():
     ap.add_argument("--rescue-delta", type=float, default=0.0,
                     help="a rescued candidate must beat the incumbent by this "
                          "much to be adopted")
-    ap.add_argument("--threshold", type=float, default=0.2018,
-                    help="found operating point; aligned with register.py's "
-                         "DEFAULT_FOUND_THRESHOLD so a default run reads the shipped "
-                         "configuration instead of a stale 0.25")
+    ap.add_argument("--threshold", type=float, default=SHIPPED_THRESHOLD,
+                    help="found operating point; mirrors register.py's shipped "
+                         "DEFAULT_FOUND_THRESHOLD (driftsense.config) so a "
+                         "default run reads the shipped configuration")
     a = ap.parse_args()
 
     if a.rescore:
@@ -386,7 +404,7 @@ def main():
     else:
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
-                 a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
+                 a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed, a.early_exit,
                  a.rescue_margin, a.rescue_delta)
