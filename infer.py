@@ -1,32 +1,23 @@
 #!/usr/bin/env python3
-"""Drift-Sense localisation inference.
+"""Legacy Phase 1 single-pair compatibility CLI.
 
-Given a high-resolution Reference image (1 nm/px) and a low-resolution Search
-image (10 nm/px) of a repeating semiconductor layout, predict the centre
-(x, y) -- in Search-image pixels -- of the region where the Reference pattern
-appears. Where several regions match equally well, the one nearest the centre
-of the Search image is returned.
+Phase 2 is the canonical Drift-Sense interface and is run with::
+
+    python register.py --input pairs.csv --output predictions.csv
+
+This file remains only for Phase 1 compatibility and historical experiments.
+It accepts one fixed-pose Reference/Search pair and prints ``x,y``. Shared
+runtime helpers live in ``driftsense.runtime`` so the Phase 2 submission path
+does not depend on this legacy CLI.
 
 Usage
 -----
     python infer.py --reference path/to/reference.png --search path/to/search.png
-
-    # positional form works too
     python infer.py reference.png search.png
-
-    # structured output, and an optional heatmap dump
     python infer.py --reference r.png --search s.png --json
-    python infer.py --reference r.png --search s.png --save-heatmap heat.png
 
-Output
-------
-Prints one line to stdout: `x,y` with two decimals (e.g. `418.73,265.10`).
-With --json, prints a JSON object including the confidence score.
-
-Weights are loaded automatically from weights/driftsense.pt next to this
-script; override with --weights. If the weights or PyTorch are unavailable
-the script falls back to a classical multi-scale ZNCC matcher and still
-prints a coordinate (a warning goes to stderr, never to stdout).
+Weights load from ``weights/driftsense.pt``. If the learned model cannot load,
+the compatibility CLI falls back to classical multi-scale ZNCC.
 """
 
 from __future__ import annotations
@@ -42,110 +33,15 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-DEFAULT_WEIGHTS = os.path.join(HERE, "weights", "driftsense.pt")
-# The routing threshold lives in driftsense.policy (the single definition of
-# the shipped decode -- see audit C-01); re-exported for backwards
-# compatibility with scripts that import it from here.
+# Re-exported for compatibility with older scripts/tests that imported these
+# helpers from infer.py. New code should import driftsense.runtime directly.
+from driftsense.runtime import (  # noqa: E402,F401
+    DEFAULT_WEIGHTS,
+    load_model,
+    read_gray,
+    zncc_fallback,
+)
 from driftsense.policy import ROUTE_THRESHOLD  # noqa: E402,F401
-
-
-def zncc_fallback(reference: np.ndarray, search: np.ndarray) -> dict:
-    """Classical multi-scale ZNCC, dependency-free apart from OpenCV.
-
-    Only used when the learned model cannot be loaded. It is materially worse
-    on periodic layouts -- it latches onto the wrong repeat -- but it keeps
-    the script runnable in any environment.
-    """
-    from driftsense.matching import template_hypotheses
-    best = None
-    for scale in [f * m for f in template_hypotheses(reference)
-                  for m in (0.9, 0.95, 1.0, 1.05, 1.1)]:
-        tw = max(int(round(reference.shape[1] / scale)), 1)
-        th = max(int(round(reference.shape[0] / scale)), 1)
-        if tw >= search.shape[1] or th >= search.shape[0]:
-            continue
-        tmpl = cv2.resize(reference, (tw, th), interpolation=cv2.INTER_AREA)
-        res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
-        _, score, _, loc = cv2.minMaxLoc(res)
-        if best is None or score > best["score"]:
-            best = {"x": loc[0] + tw / 2.0, "y": loc[1] + th / 2.0,
-                    "score": float(score), "method": "zncc-fallback"}
-    if best is None:
-        return {"x": search.shape[1] / 2.0, "y": search.shape[0] / 2.0,
-                "score": 0.0, "method": "center-fallback"}
-    return best
-
-
-def load_model(weights_path: str):
-    """Return (model, device) or None if the learned path is unavailable."""
-    try:
-        import torch
-        from driftsense.model import DriftSenseNet
-    except Exception as e:  # torch missing / broken install
-        print(f"[warn] PyTorch unavailable ({e}); using ZNCC fallback", file=sys.stderr)
-        return None
-
-    if not os.path.exists(weights_path):
-        print(f"[warn] weights not found at {weights_path}; using ZNCC fallback",
-              file=sys.stderr)
-        return None
-
-    try:
-        ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
-        state = ckpt.get("model", ckpt)
-        # Checkpoints from a scaled run record their own width. Older ones do
-        # not, and must keep loading with the original defaults -- so the
-        # fallback here is the constructor's own signature, not a guess.
-        kw = ckpt.get("arch_kwargs") or {}
-        model = DriftSenseNet(**kw)
-        model.load_state_dict(state)
-        model.eval()
-    except Exception as e:
-        print(f"[warn] could not load weights ({e}); using ZNCC fallback", file=sys.stderr)
-        return None
-
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    model = model.to(device)
-
-    # CPU is the graded configuration (4 cores, no GPU, 5 s median), and there
-    # the network is 90.6% of pair time -- measured with scripts/profile_pair.py
-    # on the CPU-only venv. NCHW forces oneDNN to reorder activations on every
-    # convolution; channels_last lets it keep the blocked layout across the
-    # whole stack.
-    #
-    # Measured on 6 set B pairs, 4 threads, CPU-only torch 2.13:
-    # 4.612 -> 1.769 s/pair, a 2.61x speedup, with x/y/scale/theta/score
-    # bit-identical. It is a memory-layout choice, not an algorithm change:
-    # the convolutions compute the same values in a different traversal order.
-    #
-    # Guarded because the win is CPU-specific and the layout is only defined
-    # for 4-D weights; a failure here must not cost the run. Set
-    # DRIFTSENSE_CHANNELS_LAST=0 to fall back to NCHW on a platform where the
-    # oneDNN path misbehaves.
-    #
-    # NOT bit-identical: re-association in the blocked kernels moves x/y by up
-    # to 5.4e-06 px and score by 2.3e-06 (30 pairs across sets A/B/C). That is
-    # ~200,000x below the 1 px credit tier, but it is a numerical difference,
-    # not an exact one, and is stated as such.
-    if device.type == "cpu" and os.environ.get("DRIFTSENSE_CHANNELS_LAST", "1") != "0":
-        try:
-            model = model.to(memory_format=torch.channels_last)
-        except Exception as e:  # noqa: BLE001
-            print(f"[warn] channels_last unavailable ({e}); using default layout",
-                  file=sys.stderr)
-    return model, device
-
-
-def read_gray(path: str) -> np.ndarray:
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise SystemExit(f"error: could not read image '{path}'")
-    return img
 
 
 def predict(reference_path: str, search_path: str, weights_path: str = DEFAULT_WEIGHTS,
@@ -160,8 +56,7 @@ def predict(reference_path: str, search_path: str, weights_path: str = DEFAULT_W
 
     model, device = loaded
 
-    # One shared decode policy with evaluate.py (audit C-01): pose estimation
-    # and adaptive routing live in driftsense.policy, not here.
+    # Historical Phase 1 decode. Phase 2 uses register.py + locate_phase2.
     from driftsense.policy import predict_policy
     return predict_policy(model, reference, search, device, tta=tta,
                           want_heatmap=want_heatmap,
@@ -181,8 +76,7 @@ def parse_args():
                    help="optional path to write the response map (implies --no-tta, "
                         "since TTA aggregates over eight views)")
     p.add_argument("--no-tta", action="store_true",
-                   help="single view instead of 8-way dihedral voting: ~7x faster, "
-                        "0.3-1.6 points less accurate at the 5px tolerance")
+                   help="single view instead of 8-way dihedral voting")
     args = p.parse_args()
 
     ref, sea = args.reference, args.search
