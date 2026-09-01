@@ -257,20 +257,34 @@ def score(df, threshold, quiet=False):
     # see ORGANIZER_PHASE2_GROUND_TRUTH.md G5). Two defensible readings:
     #   present-only: correct = present pair localised within 5 px (the
     #     reading this evaluator scored with historically);
-    #   all-pairs: correct additionally credits a correct rejection of an
-    #     absent pair, so `found` quality feeds the AUC too.
+    #   submitted: the submitted output itself is correct -- for a present
+    #     pair that means we said found AND localised within 5 px, for an
+    #     absent pair that means we said NOT found. A declined present pair
+    #     forfeits its measurement and is NOT correct (issue #27;
+    #     ORGANIZER_PHASE2_GROUND_TRUTH.md G5).
     # The primary figure stays present-only (comparable with every number
-    # quoted before this change); the all-pairs variant is printed alongside.
+    # quoted before this change); the submitted-output variant is printed
+    # alongside. Note the old `correct_all` variant (issue #27) labelled
+    # every absent pair correct regardless of the submitted decision --
+    # it was NOT a correct-rejection AUC and is not preserved.
     correct = np.where(gray.gt_found == 1, (gray.err <= 5).fillna(False), False)
     a, b = gray.score.values[correct], gray.score.values[~correct]
     auc = float((a[:, None] > b[None, :]).mean() + 0.5 * (a[:, None] == b[None, :]).mean()) \
         if len(a) and len(b) else float("nan")
     res["calibration"] = (auc, 10 * auc)
-    correct_all = correct | (gray.gt_found == 0).values
-    a2, b2 = gray.score.values[correct_all], gray.score.values[~correct_all]
-    auc_all = float((a2[:, None] > b2[None, :]).mean() + 0.5 * (a2[:, None] == b2[None, :]).mean()) \
-        if len(a2) and len(b2) else float("nan")
-    res["calibration_all_pairs"] = (auc_all, 10 * auc_all)
+    # Submitted-output correctness (issue #27, G5): judge the decision
+    # register.py would actually emit. pred_found is the same threshold
+    # register.py applies, so a present pair whose score falls below it is
+    # submitted as found=0 (declined) and is not correct here.
+    pred_found = gray.score.values >= threshold
+    correct_submitted = (
+        ((gray.gt_found.values == 1) & pred_found & (gray.err.fillna(np.inf).values <= 5))
+        | ((gray.gt_found.values == 0) & ~pred_found)
+    )
+    a3, b3 = gray.score.values[correct_submitted], gray.score.values[~correct_submitted]
+    auc_submitted = float((a3[:, None] > b3[None, :]).mean() + 0.5 * (a3[:, None] == b3[None, :]).mean()) \
+        if len(a3) and len(b3) else float("nan")
+    res["calibration_submitted"] = (auc_submitted, 10 * auc_submitted)
 
     if quiet:
         return res, df
@@ -293,9 +307,13 @@ def score(df, threshold, quiet=False):
     print(f"{'':<28}{f'[lenient F1(present) {f1_lenient:.4f}]':>26}")
     print(f"{'':<28}{f'[best-possible F1(reject) {best[0]:.4f} @ {best[1]:.4f}]':>26}")
     print(f"{'Calibration (10)':<28}{f'AUC {auc:.4f}':>26}{10*auc:>10.2f}")
-    print(f"{'   [all-pairs AUC variant':<28}{f'{auc_all:.4f} -> {10*auc_all:.2f}]':>26}")
+    print(f"{'   [submitted AUC (issue #27)':<28}{f'{auc_submitted:.4f} -> {10*auc_submitted:.2f}]':>26}")
     print("-" * 74)
-    sub = sum(v[1] for v in res.values())
+    # The submitted AUC is a printed ALTERNATIVE to the primary calibration
+    # number, not an additive component -- summing both res entries would
+    # double-count the 10 calibration points (issue #27 side-fix; the same
+    # bug shipped with PR #25's calibration_all_pairs).
+    sub = sum(v[1] for k, v in res.items() if k != "calibration_submitted")
     print(f"{'SUBTOTAL (85 measurable)':<28}{'':>26}{sub:>10.2f}")
     print(f"{'  + efficiency (5)':<28}{'not measurable in parallel':>26}")
     print(f"{'  + generator/report (10)':<28}{'judged, not self-assessable':>26}")
