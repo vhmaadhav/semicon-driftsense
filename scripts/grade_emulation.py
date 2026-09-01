@@ -7,7 +7,8 @@ A=70, B=70, C=40 (set D=20 is excluded from the grayscale grade; the
 rejection F1 runs over exactly the 180 A/B/C pairs). This module reproduces
 that composition exactly and runs a stratified bootstrap over a per-pair
 results CSV to answer one planning question: how likely is the +6 bonus
-(F1 >= 0.90 on the 180-pair grade) at a given found threshold?
+(F1_reject >= 0.90 on the 180-pair grade, reject-positive) at a
+given found threshold?
 
 Rubric (corrected semantics, identical credit tiers to scripts/eval_ext.py
 -> score()):
@@ -17,15 +18,19 @@ Rubric (corrected semantics, identical credit tiers to scripts/eval_ext.py
   (register.py writes no pose/location fields for a declined answer);
 * pose (scale <=1/2/5% and rotation <=0.25/0.5/1.0 deg, credits 1/0.6/0.3),
   scored only where localisation earned credit;
-* rejection F1 on the found flag (present-as-positive) at
-  found = score >= t over the 180 grayscale pairs;
+* rejection F1 (REJECT-POSITIVE: a correctly declined absent pair is the
+  true positive) at found = score >= t over the 180 grayscale pairs. This
+  is the Phase 2 scoring convention -- the official slide statement that
+  "a system that never rejects scores zero" only holds under
+  reject-positive, and eval_ext.py / the promoted 0.9078 are
+  reject-positive;
 * calibration AUC, present-only (correct = present pair localised <=5 px).
 
 Bootstrap: N stratified draws (draw i uses RandomState(seed + i) per set so
 draw 0 equals a standalone stratified_draw call with the same seed), the
 rubric scored on each draw, and
 
-    P(bonus) = P(F1 >= 0.90)   over draws
+    P(bonus) = P(F1_reject >= 0.90)   over draws (reject-positive F1)
     E[total + 4*P(bonus)] = E[total] + 4 * P(bonus)
 
 where total is the 85-point measurable subtotal (loc 40 + pose 20 +
@@ -51,7 +56,8 @@ W_A, W_B = 0.45, 0.55
 # Disclosed blind-grade composition. Set D (20 pairs, optical) is excluded
 # from the grayscale grade; the rejection F1 is over exactly these 180 pairs.
 BLIND_COMPOSITION = {"A": 70, "B": 70, "C": 40}
-BONUS_F1 = 0.90          # the +6 bonus gate used for planning: F1 >= 0.90
+BONUS_F1 = 0.90          # the +6 bonus gate used for planning:
+                         # F1_reject >= 0.90 (reject-positive F1)
 BONUS_WEIGHT = 4.0       # E[total + 4*P(bonus)] weighting (6 pts discounted)
 DEFAULT_THRESHOLDS = (0.1587, 0.18, 0.25)
 
@@ -156,8 +162,12 @@ def f1_found(gray, t):
 
 
 def f1_reject(gray, t):
-    """Conservative planning variant: reject-as-positive F1. eval_ext prints
-    both; they are NOT the same metric and must not be quoted as one."""
+    """Reject-as-positive F1 -- the Phase 2 scoring convention (the official
+    slide statement that a system that never rejects scores zero only holds
+    under reject-positive; eval_ext.py and the promoted 0.9078 are
+    reject-positive). f1_found (present-positive) is reported alongside as a
+    labelled diagnostic only; the two are NOT the same metric and must not
+    be quoted as one."""
     return _f1(gray["score"].to_numpy().astype(float),
                gray["gt_found"].to_numpy().astype(int), t, "reject")
 
@@ -192,7 +202,7 @@ def rubric(gray, t):
                   if len(a) and len(b) else float("nan"))
 
     total = (40 * loc + 10 * res["scale"] + 10 * res["rot"]
-             + 15 * res["f1_found"] + 10 * res["auc"])
+             + 15 * res["f1_reject"] + 10 * res["auc"])
     res["total"] = float(total) if np.isfinite(total) else float("nan")
     res["n"] = len(gray)
     res["n_present"] = int(present.sum())
@@ -205,7 +215,8 @@ def rubric(gray, t):
 
 def bootstrap(df, thresholds=None, draws=10000, seed=0):
     """Stratified bootstrap: draws exact-composition blind grades; per
-    threshold, P(F1 >= 0.90) over draws and E[total] + 4*P(bonus).
+    threshold, P(F1_reject >= 0.90) over draws (reject-positive F1 -- the
+    Phase 2 scoring convention) and E[total] + 4*P(bonus).
 
     Draw i uses np.random.RandomState(seed + i) per set (fixed set order),
     so the draw sequence is deterministic in (seed, draws, frame order) and
@@ -248,7 +259,7 @@ def bootstrap(df, thresholds=None, draws=10000, seed=0):
             okm = present & (loc_credit > 0)
             sc_credit = float(p["raw_sc"][idx][okm].mean()) if okm.any() else float("nan")
             rc_credit = float(p["raw_rc"][idx][okm].mean()) if okm.any() else float("nan")
-            f1 = _f1(sc, gt, t, "present")
+            f1 = _f1(sc, gt, t, "reject")   # bonus gate: reject-positive F1
             a, b = sc[correct], sc[~correct]
             auc = (float((a[:, None] > b[None, :]).mean()
                          + 0.5 * (a[:, None] == b[None, :]).mean())
@@ -309,15 +320,16 @@ def main(argv=None):
                       for s in sorted(BLIND_COMPOSITION)) + ")")
     print("Blind composition: " + ", ".join(f"{s}={q}"
           for s, q in sorted(BLIND_COMPOSITION.items()))
-          + f"  (D excluded; F1 over {sum(BLIND_COMPOSITION.values())} pairs)")
+          + f"  (D excluded; reject-positive F1 over "
+          f"{sum(BLIND_COMPOSITION.values())} pairs)")
     print(f"Bootstrap: {a.draws} stratified draws, seed {a.seed}, "
-          f"bonus gate F1 >= {BONUS_F1}")
+          f"bonus gate F1_reject >= {BONUS_F1}")
     print()
 
-    header = f"{'t':>8}{'F1_found':>10}{'F1_rej':>10}{'P(F1>=.90)':>13}" \
+    header = f"{'t':>8}{'F1_found':>10}{'F1_rej':>10}{'P(F1_rej>=.90)':>15}" \
              f"{'E[total]':>10}{'E[tot]+4P':>11}"
     print(header)
-    print("-" * 62)
+    print("-" * 64)
     # One bootstrap pass for ALL thresholds: the stratified draws do not
     # depend on t, so the draw sequence is shared (and computed once).
     bs_all = bootstrap(df, thresholds=thresholds, draws=a.draws, seed=a.seed)
@@ -326,17 +338,18 @@ def main(argv=None):
         f1f, f1r = f1_found(gray, t), f1_reject(gray, t)
         results.append((t, f1f, f1r, bs))
         print(f"{t:>8.4f}{f1f:>10.4f}{f1r:>10.4f}"
-              f"{bs['p_f1_ge_bonus']:>13.4f}{bs['e_total']:>10.2f}"
+              f"{bs['p_f1_ge_bonus']:>15.4f}{bs['e_total']:>10.2f}"
               f"{bs['e_total_plus_bonus']:>11.2f}")
-    print("-" * 62)
+    print("-" * 64)
     best = max(results, key=lambda r: r[3]["e_total_plus_bonus"])
     print(f"argmax E[total + 4*P(bonus)]: t = {best[0]:.4f} "
           f"(E = {best[3]['e_total_plus_bonus']:.2f})")
     print()
     print("Caveat: loc/pose/AUC totals here use the CSV's latent columns "
           "BEFORE the pending Set-D masking fix (Task 1) lands -- they are "
-          "provisional. F1 and P(F1 >= 0.90) depend ONLY on the score and "
-          "gt_found columns, so the bonus probabilities are final regardless.")
+          "provisional. F1_reject and P(F1_reject >= 0.90) depend ONLY on the "
+          "score and gt_found columns, so the bonus probabilities are final "
+          "regardless.")
     return results
 
 

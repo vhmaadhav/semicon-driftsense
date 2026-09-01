@@ -12,7 +12,11 @@ Two modes:
     against the extraction: required root layout (register.py at the root,
     weights/driftsense.pt next to it, requirements.txt, failure_analysis.pdf,
     generate_dataset.py), an actual torch.load(weights_only=True) of the
-    shipped checkpoint, --help smoke tests for the organizer entry points
+    shipped checkpoint, a full instantiation through the real ship loader
+    (import infer; infer.load_model(<extraction>/weights/driftsense.pt) with
+    a non-None model -- a checkpoint that loads as pickle but cannot
+    instantiate an architecture FAILS), --help smoke tests for the organizer
+    entry points
     run from the extraction directory, a transitive-import network scan,
     PDF page count, and the requirements pin check read from inside the ZIP.
 
@@ -200,6 +204,24 @@ def audit_requirements(root):
           str(len(pinned)) + "/" + str(len(lines)) + " pinned")
 
 
+def torch_interpreter():
+    """An interpreter path that can import torch+cv2, else None.
+
+    Same probe the --help smoke tests use: prefer a repo venv, fall back to
+    the auditing interpreter.
+    """
+    for cand in (os.path.join(REPO, "venv313", "bin", "python"),
+                 os.path.join(REPO, "venv", "bin", "python"),
+                 sys.executable):
+        if not os.path.isfile(cand) and not shutil.which(cand):
+            continue
+        probe = subprocess.run(
+            [cand, "-c", "import torch, cv2"],
+            capture_output=True, text=True, timeout=120)
+        return cand if probe.returncode == 0 else None
+    return None
+
+
 def audit_weights_load(root):
     """Actual load test, mirroring tests/test_checkpoint_safety.py."""
     w = os.path.join(root, WEIGHTS_REL)
@@ -228,6 +250,61 @@ def audit_weights_load(root):
     except Exception as exc:
         check(name, False,
               "torch.load failed: " + type(exc).__name__ + ": " + str(exc))
+        return
+
+    # Beyond pickle + key-presence: exercise the REAL ship loader from the
+    # extraction. infer.load_model returns None on any instantiation failure
+    # (shape/arch mismatch, arch_kwargs drift, state_dict rejection), so a
+    # checkpoint that torch.loads fine but cannot build a model FAILS here.
+    # Guard: only when a torch-capable interpreter exists; otherwise a
+    # required SKIP (which already forces a non-zero exit in artifact mode).
+    inst_name = ("checkpoint instantiates via the ship loader "
+                 "(import infer; infer.load_model non-None)")
+    if not os.path.isfile(os.path.join(root, "infer.py")):
+        check(inst_name, False,
+              "infer.py missing from the artifact; cannot exercise the "
+              "ship loader path")
+        return
+    interpreter = torch_interpreter()
+    if interpreter is None:
+        check(inst_name, None,
+              "SKIP: no torch-capable interpreter available to exercise the "
+              "ship loader (tried venv313/venv/" + sys.executable + ")",
+              skipped=True)
+        return
+    prog = (
+        "import sys\n"
+        "sys.path.insert(0, " + repr(os.path.abspath(root)) + ")\n"
+        "import infer\n"
+        "loaded = infer.load_model(" + repr(os.path.abspath(w)) + ")\n"
+        "if loaded is None:\n"
+        "    raise SystemExit('infer.load_model returned None')\n"
+        "model, device = loaded\n"
+        "if model is None:\n"
+        "    raise SystemExit('infer.load_model returned a None model')\n"
+        "print('OK', type(model).__name__)\n"
+    )
+    try:
+        proc = subprocess.run(
+            [interpreter, "-c", prog], cwd=root,
+            capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        check(inst_name, False,
+              "ship-loader instantiation timed out after 300s")
+        return
+    if proc.returncode == 0 and proc.stdout.strip().startswith("OK"):
+        check(inst_name, True,
+              proc.stdout.strip()[:200]
+              + " (interpreter: "
+              + (os.path.relpath(interpreter, REPO)
+                 if interpreter.startswith(REPO) else interpreter)
+              + ")")
+        return
+    tail = (proc.stderr or proc.stdout).strip().splitlines()
+    detail = "exit " + str(proc.returncode)
+    if tail:
+        detail += ": " + tail[-1][:300]
+    check(inst_name, False, detail)
 
 
 def audit_documentation(root):

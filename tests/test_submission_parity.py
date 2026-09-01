@@ -194,8 +194,10 @@ def _eval_decode(rp, sp):
     from driftsense.matching import locate_phase2
 
     loaded = I.load_model(os.path.join(REPO_ROOT, "weights", "driftsense.pt"))
-    if loaded is None:
-        pytest.skip("model weights unavailable")
+    assert loaded is not None, (
+        "infer.load_model returned None for weights/driftsense.pt: with torch "
+        "present the real ship checkpoint is expected to instantiate (a None "
+        "here hides a broken ship path, so this is a failure, not a skip)")
     model, device = loaded
 
     ref = cv2.imread(rp, cv2.IMREAD_GRAYSCALE)

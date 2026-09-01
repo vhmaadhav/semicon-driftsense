@@ -227,8 +227,10 @@ def test_decode_scale_is_z_semantics():
     assert search.min() != search.max() and float(search.var()) > 100.0
 
     loaded = I.load_model(os.path.join(REPO_ROOT, "weights", "driftsense.pt"))
-    if loaded is None:
-        pytest.skip("model weights unavailable")
+    assert loaded is not None, (
+        "infer.load_model returned None for weights/driftsense.pt: with torch "
+        "present the real ship checkpoint is expected to instantiate (a None "
+        "here hides a broken ship path, so this is a failure, not a skip)")
     model, device = loaded
 
     res = locate_phase2(model, reference, search, device, hypotheses=1,

@@ -154,8 +154,12 @@ def main():
                 })
             except Exception as e:                      # noqa: BLE001
                 # Never let one bad pair cost the rest of the run, and never
-                # drop the row.
+                # drop the row. SystemExit is caught too: read_gray raises
+                # SystemExit for an unreadable image, and that must zero-fill
+                # THIS row only -- not kill the whole batch.
                 print(f"[warn] pair {pid}: {type(e).__name__}: {e}", file=sys.stderr)
+            except SystemExit as e:
+                print(f"[warn] pair {pid}: SystemExit: {e}", file=sys.stderr)
             w.writerow(out)
             times.append(time.perf_counter() - t0)
             if not a.quiet and (n + 1) % 25 == 0:
