@@ -196,7 +196,21 @@ T+0 addendum released; T+2 sample pairs published (3 unscored, with GT); T+3
 I/O-contract questions close; T+7 submission due 23:59, code frozen; T+8..9
 organizers run everything on the reference machine; T+10..11 top 10 announced.
 
-## 10. Source files (local extraction)
+## 10. Source (the authoritative link)
+
+Official Phase 2 task materials folder (organizer SharePoint, Applied Materials - Problem Statement 2):
+https://interinstitutional-my.sharepoint.com/:f:/g/personal/sourabh_i4c_in/IgAcHvZyl5QISJT0RIfvgFOcAc7Il3foDNtUgRe9BI6F_ps?e=UrYBJn
+
+Every rubric statement in this file traces to one of these files inside it:
+
+- Applied Materials_Phase 2_Task.pptx - slide 4 (blind-set composition), slide 5 (output contract + reference machine), slide 6 (scoring: 40/20/15/10/5/10 and the verbatim bonus line "+6 Set D credit >= 0.40 with Sets A-C >= 0.50 | +4 rejection F1 >= 0.90"), slide 7 (credit tiers), slide 8 (rejection semantics), slide 9 (allowed/disqualified), slide 10 (timeline), slide 11 (FAQ: score column, theta definition, nearest-to-centre rule, tie-breakers)
+- Applied Materials_Prompt for phase 2 dataset.docx - section 2.2 (theta convention), 2.3 (scale-by-fiat + absent-row zeroing), 3 (geometry R1-R5), 5 (verification gate, margin floor 0.02 / preferred 0.12), 5.1 (VERBATIM: "Target: overall mean credit on present pairs between 0.30 and 0.55" - the generator difficulty-calibration band), 6 (determinism + REPORT.md), 7 (deliverables), 8 (generator grading weights)
+- AMP_Phase 2 material/README.md - section 5 (jury calibration: "My jury note targeted a naive baseline of 0.30-0.55 on the weighted total"; negative separation gap by design; severity-skew recommendation for the 200-pair set), section 6 (per-pair verification table)
+- AMP_Phase 2 material/ground_truth.csv, manifest_jury.csv, baseline_calibration.txt - machine-readable ground truth
+
+Local extraction: /tmp/amp_p2/ (session scratch) from ~/Downloads/OneDrive_1_9-1-2026.zip (36.6 MB, 62 files, downloaded 2026-09-01 via browser from the link above). Original section 10 content follows.
+
+## 11. Local extraction notes
 
 - Extracted to /tmp/amp_p2 (session scratch): PPTX slide text, DOCX text,
   AMP_Phase 2 material/*. The zip remains at ~/Downloads/OneDrive_1_9-1-2026.zip.
