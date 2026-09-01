@@ -292,11 +292,9 @@ def main():
     print(f"parameters: {n_params/1e6:.2f}M")
 
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    steps = max(len(loader) * args.epochs, 1)
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt, max_lr=args.lr, total_steps=steps, pct_start=0.15)
 
     start_epoch, best = 0, float("inf")
+    sched_ff = 0  # checkpoint steps to fast-forward the scheduler by
     if args.resume and os.path.exists(args.resume):
         ck = torch.load(args.resume, map_location=device, weights_only=False)
         # Adopt the checkpoint's architecture unless the caller asked for a
@@ -333,10 +331,21 @@ def main():
                   f"epoch counter from 0)")
         elif "optimizer" in ck and ck.get("crop") == args.crop:
             opt.load_state_dict(ck["optimizer"])
-            for _ in range(ck.get("global_step", 0)):
-                sched.step()
+            sched_ff = ck.get("global_step", 0)
             start_epoch = ck.get("epoch", 0)
         best = ck.get("best", float("inf"))
+
+    # Built *after* the resume block so it binds to the final optimizer: the
+    # arch-adopt branch above may replace model and opt, and a scheduler
+    # constructed earlier would stay bound to the discarded optimizer, leaving
+    # the run without the intended one-cycle schedule. The fast-forward below
+    # then advances this rebuilt scheduler to the checkpoint's global_step, so
+    # the LR continues from where the interrupted run left the schedule.
+    steps = max(len(loader) * args.epochs, 1)
+    sched = torch.optim.lr_scheduler.OneCycleLR(
+        opt, max_lr=args.lr, total_steps=steps, pct_start=0.15)
+    for _ in range(sched_ff):
+        sched.step()
 
     # Built *after* --resume, so the average starts from the weights we are
     # continuing from. Constructed before the loop it would have seeded the
