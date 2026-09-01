@@ -48,14 +48,14 @@ Weights ship inside the ZIP. Median ≤5 s/pair, hard timeout 20 s.
 | Generator, citations, failure analysis | 10 | carried forward, re-judged |
 | **Bonus** | +10 | +6 for Set D, +4 if rejection F1 ≥ 0.90 |
 
-**The Set D bonus is out of reach — treat it as unavailable.** The slide reads
-"+6 if Set D credit >= 0.40 with Sets A-C >= 0.50", which we clear easily (Set D
-0.938, A-C 0.814). But the gate confirmed with the organisers is that **Sets
-A-C must be above 95**, not 0.50, and we are at 72.55 of the 85 measurable. The
-briefing call's phrasing — it "only unlocks if your scores are extremely good on
-grayscale" — matches the stricter reading. So Set D work has no expected value
-at our current standing, and the only reachable bonus is the **+4 at rejection
-F1 >= 0.90**. Plan against 100, not 110.
+**The Set D bonus: two readings on record — resolve at the T+3 window.** The
+slide reads "+6 if Set D credit >= 0.40 with Sets A-C >= 0.50", which we clear
+easily (Set D 0.938, A-C 0.814). The briefing call's phrasing — it "only
+unlocks if your scores are extremely good on grayscale" — suggests a stricter
+reading (earlier notes recorded it as "Sets A-C above 95", which we do not
+meet). The slide text is the only WRITTEN evidence; treat the per-set-credit
+reading as operative but flag it in the T+3 I/O-contract question window
+before relying on the +6. The +4 at rejection F1 >= 0.90 is unambiguous.
 
 Credit tiers — localisation: 1.00 ≤1px, 0.80 ≤2px, 0.60 ≤3px, 0.40 ≤5px, else 0.
 Scale: 1.00 ≤1%, 0.60 ≤2%, 0.30 ≤5%. Rotation: 1.00 ≤0.25°, 0.60 ≤0.5°, 0.30 ≤1.0°.
