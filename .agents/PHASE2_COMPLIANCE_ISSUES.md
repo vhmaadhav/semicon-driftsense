@@ -99,21 +99,52 @@ wide model risks the bottom quartile if the field ships leaner decodes.
 Fix: no code change; strategy note - the coarse-sweep elimination (#7) is the
 lever, as already planned.
 
-### G5. Calibration AUC dual definition — RESOLVED in code (eval_ext.py computes both variants)
+### G5. Calibration AUC definition — PARTIALLY RESOLVED: submitted-output variant fixed (issue #27); organizer definition still ambiguous, question reserved for the T+3 window
 Official: slide 6 - 'AUC of your score column against per-pair correctness on
-the blind set'. Our eval uses err <= 5 px as 'correct' for present pairs and
-excludes absent pairs from AUC (eval_ext.py). The official correctness binary
-could plausibly include absent pairs (correct = correctly rejected). Not
-specifiable further from the materials; flag for the organizers' T+3 question
-window.
-Fix: prepare the question; optionally compute both variants locally.
+the blind set'. The organizer definition of per-pair 'correctness' for absent
+pairs is still not specifiable from the materials. eval_ext.py now computes
+two separately named variants (issue #27):
+- `calibration` — present-only, err <= 5 px (historical, unchanged);
+- `calibration_submitted` — submitted-output correctness: a present pair is
+  correct only if the score clears the found threshold AND localises within
+  5 px (a declined present pair forfeits its measurement and is NOT correct);
+  an absent pair is correct only if it was actually rejected (found=0
+  submitted). The earlier `calibration_all_pairs` variant was WRONG
+  (issue #27): it labelled every absent pair correct regardless of the
+  submitted found decision — it was removed, not replaced, so no historical
+  number is silently redefined.
+Fix (remaining): prepare the T+3 question to the organizers asking which
+correctness binary the blind-set calibration AUC uses; implement the
+organizer's answer separately with a citation when it arrives.
 
-### G6. Submission zip checklist — RESOLVED: scripts/check_submission_zip.py (7/7 PASS as of 2026-09-01)
-Official: slide 5. Repo: requirements.txt exists (pinned, pip-freeze format).
-generate_dataset.py exists with --help docs. ACTION before shipping: regenerate
-requirements.txt from the EXACT ship venv and confirm the zip contents checklist
-(register.py, weights/, requirements.txt, generate_dataset.py,
-failure_analysis.pdf).
+### G6. Submission zip checklist — RESOLVED: scripts/check_submission_zip.py now audits an
+actual ZIP (artifact-level); repo-tree runs are --preflight only
+Official: slide 5. Usage: `python scripts/check_submission_zip.py
+dist/submission.zip` extracts the artifact to a temp dir and audits ONLY the
+extraction: required root layout (register.py, infer.py, requirements.txt,
+generate_dataset.py, failure_analysis.pdf, weights/driftsense.pt -- the layout
+the organizer command `python register.py --input pairs.csv --output
+predictions.csv` needs, since register.py resolves weights relative to its own
+location via infer.DEFAULT_WEIGHTS); an actual torch.load(weights_only=True)
+of the shipped checkpoint asserting a 'model' key (mirrors
+tests/test_checkpoint_safety.py; SKIPs honestly, never false-PASSES, when the
+auditing python has no torch); `python register.py --help` and
+`python generate_dataset.py --help` smoke tests executed from the extraction
+dir (outside the checkout); a network-marker scan over register.py, infer.py
+AND every local .py they transitively import within the extraction; PDF page
+count (max of /Type /Page objects and /Count, fail over 2); requirements pin
+check read from the ZIP. Running with no argument or --preflight audits the
+repository tree instead, labels every line and the summary PREFLIGHT, and is
+explicitly NOT evidence that the submitted artifact is compliant. The
+documentation predicate parses the AST for a real module docstring that names
+its arguments -- a shebang or a --help string literal cannot pass it.
+Honest limits: (a) the generate_dataset.py --help smoke test additionally
+requires generator/src/ inside the ZIP (driftsense/generate.py and
+driftsense/presets.py import src.* from REPO_ROOT/generator), so a ZIP
+omitting generator/ fails the smoke test -- ship it; (b) offline-runtime
+evidence is limited to the --help smoke tests; no network-isolated execution
+test is claimed. ACTION before shipping: run the artifact audit on the final
+ZIP with ./venv313/bin/python and confirm 0 FAILED.
 
 ### G7. gt_scale semantics — RESOLVED: tests/test_scale_semantics.py pins z-semantics (doc + decode path)
 Official: slide 5 scale 'nominally in [8, 12]' (= z); DOCX 2.3 fixes the
