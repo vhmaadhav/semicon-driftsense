@@ -6,6 +6,13 @@
 Writes one row per input pair, in input order, with the columns the Phase 2
 contract names: pair_id, x, y, theta, scale, found, score.
 
+Scale semantics, fixed by the Phase 2 task material (slide 5 + prompt section
+2.3; see .agents/ORGANIZER_PHASE2_GROUND_TRUTH.md section 5): `scale` is the
+recovered down-scaling factor z -- nominally in [8, 12], i.e. the search
+image's nm/px -- NOT the reference-to-search linear factor 1/z (the two
+readings differ by ~100x). theta is degrees, CCW positive as displayed,
+about the match centre.
+
 Two properties are treated as non-negotiable, because the scoring rules make
 them expensive to get wrong:
 

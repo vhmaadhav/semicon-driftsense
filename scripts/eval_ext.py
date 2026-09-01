@@ -252,11 +252,25 @@ def score(df, threshold, quiet=False):
     best = max(((f1_at(t)[0], t) for t in np.unique(gray.score.values)), default=(0, 0))
 
     # ---- Calibration (10 pts): AUC of score vs per-pair correctness --------
+    # The task material says "AUC of your score column against per-pair
+    # correctness" without defining correctness for ABSENT pairs (slide 6;
+    # see ORGANIZER_PHASE2_GROUND_TRUTH.md G5). Two defensible readings:
+    #   present-only: correct = present pair localised within 5 px (the
+    #     reading this evaluator scored with historically);
+    #   all-pairs: correct additionally credits a correct rejection of an
+    #     absent pair, so `found` quality feeds the AUC too.
+    # The primary figure stays present-only (comparable with every number
+    # quoted before this change); the all-pairs variant is printed alongside.
     correct = np.where(gray.gt_found == 1, (gray.err <= 5).fillna(False), False)
     a, b = gray.score.values[correct], gray.score.values[~correct]
     auc = float((a[:, None] > b[None, :]).mean() + 0.5 * (a[:, None] == b[None, :]).mean()) \
         if len(a) and len(b) else float("nan")
     res["calibration"] = (auc, 10 * auc)
+    correct_all = correct | (gray.gt_found == 0).values
+    a2, b2 = gray.score.values[correct_all], gray.score.values[~correct_all]
+    auc_all = float((a2[:, None] > b2[None, :]).mean() + 0.5 * (a2[:, None] == b2[None, :]).mean()) \
+        if len(a2) and len(b2) else float("nan")
+    res["calibration_all_pairs"] = (auc_all, 10 * auc_all)
 
     if quiet:
         return res, df
@@ -279,6 +293,7 @@ def score(df, threshold, quiet=False):
     print(f"{'':<28}{f'[lenient F1(present) {f1_lenient:.4f}]':>26}")
     print(f"{'':<28}{f'[best-possible F1(reject) {best[0]:.4f} @ {best[1]:.4f}]':>26}")
     print(f"{'Calibration (10)':<28}{f'AUC {auc:.4f}':>26}{10*auc:>10.2f}")
+    print(f"{'   [all-pairs AUC variant':<28}{f'{auc_all:.4f} -> {10*auc_all:.2f}]':>26}")
     print("-" * 74)
     sub = sum(v[1] for v in res.values())
     print(f"{'SUBTOTAL (85 measurable)':<28}{'':>26}{sub:>10.2f}")
