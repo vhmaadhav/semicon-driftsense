@@ -11,11 +11,17 @@ each is a factual mismatch between the repo and the official spec/materials.
 ### B1. The +6 Set D bonus was wrongly written off in our docs
 Official: slide 6 - '+6 Set D credit >= 0.40 with Sets A-C >= 0.50'. Our
 PHASE2_STATE.md:152-154 claims it 'requires Sets A-C above 95' - no such
-condition exists in any official material, and our measured numbers clear the
-actual bar component-wise (A loc 0.97, B loc 0.82, F1 0.91, D 0.938). The bonus
-also acts as the second tie-breaker after Set B credit (slide 11), which makes
-claiming it strategically relevant even beyond the +6.
+condition exists in the official materials (verified against the original task
+deck and prompt 2026-09-01: the only '0.30-0.55' band is the generator
+difficulty-calibration target, DOCX section 5.1 / jury README section 5, NOT a
+bonus gate), and our measured numbers clear the actual bar component-wise
+(A loc 0.97, B loc 0.82, F1 0.91, D 0.938). The bonus also acts as the second
+tie-breaker after Set B credit (slide 11), which makes claiming it strategically
+relevant even beyond the +6.
 Fix: docs corrected by this audit; nothing to change in code.
+RESOLUTION: all doc references to the unsupported 95-gate retired; planning
+proceeds on the written slide 6 rubric (2026-09-01, commit on
+phase2-compliance-fixes).
 
 ### B2. failure_analysis.pdf page limit — RESOLVED: COMPLIANT (2 pages exactly; two independent probes agree). Keep the limit if regenerated.
 Verified 2026-09-01 (local branch phase2-compliance-fixes): two independent

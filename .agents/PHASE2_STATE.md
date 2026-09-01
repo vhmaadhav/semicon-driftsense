@@ -48,14 +48,18 @@ Weights ship inside the ZIP. Median ≤5 s/pair, hard timeout 20 s.
 | Generator, citations, failure analysis | 10 | carried forward, re-judged |
 | **Bonus** | +10 | +6 for Set D, +4 if rejection F1 ≥ 0.90 |
 
-**The Set D bonus: two readings on record — resolve at the T+3 window.** The
-slide reads "+6 if Set D credit >= 0.40 with Sets A-C >= 0.50", which we clear
-easily (Set D 0.938, A-C 0.814). The briefing call's phrasing — it "only
-unlocks if your scores are extremely good on grayscale" — suggests a stricter
-reading (earlier notes recorded it as "Sets A-C above 95", which we do not
-meet). The slide text is the only WRITTEN evidence; treat the per-set-credit
-reading as operative but flag it in the T+3 I/O-contract question window
-before relying on the +6. The +4 at rejection F1 >= 0.90 is unambiguous.
+**The Set D +6 gate — the official materials are authoritative (2026-09-01
+ruling).** The slide (Phase 2 task deck, slide 6) reads "+6 Set D credit >=
+0.40 with Sets A-C >= 0.50", which we clear easily (Set D 0.938, A-C 0.814).
+An earlier briefing-call recollection ("only unlocks if scores are extremely
+good on grayscale", once noted as 'Sets A-C above 95') has NO support anywhere
+in the official materials and is retired from planning; the written rubric
+governs. The +6 is REACHABLE. The +4 at rejection F1 >= 0.90 is likewise
+written on the same slide and is unambiguous (F1 0.91 clears it). Note the
+official materials contain a '0.30-0.55' band — that is the GENERATOR
+difficulty-calibration target (naive-baseline mean credit, DOCX section 5.1 /
+jury README section 5), NOT a bonus gate. Still worth one confirming question
+in the T+3 window, but plan on the written rubric.
 
 Credit tiers — localisation: 1.00 ≤1px, 0.80 ≤2px, 0.60 ≤3px, 0.40 ≤5px, else 0.
 Scale: 1.00 ≤1%, 0.60 ≤2%, 0.30 ≤5%. Rotation: 1.00 ≤0.25°, 0.60 ≤0.5°, 0.30 ≤1.0°.
@@ -157,15 +161,15 @@ was unnecessary.
 Localisation and pose are credited **zero on declined pairs**, as the grader
 will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
 4 threads on an idle machine, against a 5 s median target and a 20 s hard
-timeout. Set D scores 0.938 untouched. **Correction (2026-09-01, see
-ORGANIZER_PHASE2_GROUND_TRUTH.md §3):** the +6 bonus condition is officially
-'Set D credit ≥ 0.40 with Sets A–C ≥ 0.50' (slide 6) — per-set credit bars that
-our current numbers clear on every component, not the 'Sets A–C above 95'
-previously written here. The **+6 is reachable**; rejection F1 0.91 also
-**clears the +4** bar (0.90). Whether both hold on the corrected-semantics
-rescore (PR #24) is pending; do not assume zero bonus — model both bonuses in
-planning, and note the bonus is the second tie-breaker after Set B credit
-(slide 11).
+timeout. Set D scores 0.938 untouched. **Grounding (2026-09-01, see
+ORGANIZER_PHASE2_GROUND_TRUTH.md §3):** the +6 bonus condition per the official
+slide 6 is 'Set D credit ≥ 0.40 with Sets A–C ≥ 0.50' — per-set credit bars
+our numbers clear on every component. The 'Sets A–C above 95' figure has no
+support in the official materials and is retired. The **+6 is reachable**;
+rejection F1 0.91 also **clears the +4** bar (0.90). Whether both hold on the
+corrected-semantics rescore (PR #24) is pending; do not assume zero bonus —
+model both bonuses in planning, and note the bonus is the second tie-breaker
+after Set B credit (slide 11).
 
 ### The denominator is 85, not 95
 

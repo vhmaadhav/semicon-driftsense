@@ -69,19 +69,21 @@ families. The 200-pair set is built to the same recipe (README section 5).
 | Generator, citations, failure analysis | 10 | Carried forward from Phase 1, re-judged under Phase 2 conditions |
 | BONUS | +10 | +6 IF Set D credit >= 0.40 AND Sets A-C >= 0.50. +4 IF rejection F1 >= 0.90. Tie-breakers in order: Set B credit -> rejection F1 -> median error -> median runtime (slide 6). Bonus cannot lift ranking above 100 but is the SECOND tie-breaker after Set B credit (slide 11 FAQ) |
 
-### Reading the +6 condition (two readings on record)
+### Reading the +6 condition (grounded in the official materials)
 
-Slide 6: '+6 Set D credit >= 0.40 with Sets A-C >= 0.50'. The natural reading,
-parallel to how Set D credit is elsewhere a per-set mean credit, is per-set mean
-credits: our Set D measures 0.938 (PHASE2_STATE.md), Set A loc ~0.97,
-Set B loc ~0.82, Set C (rejection F1) 0.91 - every one clears its bar. Even the
-harshest component-points reading clears: A+B loc 35.5/40, pose 18/20, F1
-13.6/15. HOWEVER: earlier project notes record the briefing call as indicating
-a much stricter gate ('Sets A-C above 95'); no written material supports that
-reading, but it exists on record and PHASE2_STATE.md section 1 carries both
-readings. The written slide text is operative; raise the ambiguity in the T+3
-I/O-contract question window before relying on the +6. On the written
-reading, the +6 is REACHABLE for us.
+Slide 6 (task deck): '+6 Set D credit >= 0.40 with Sets A-C >= 0.50'. The
+natural reading, parallel to how Set D credit is elsewhere a per-set mean
+credit, is per-set mean credits: our Set D measures 0.938 (PHASE2_STATE.md),
+Set A loc ~0.97, Set B loc ~0.82, Set C (rejection F1) 0.91 - every one clears
+its bar. Even the harshest component-points reading clears: A+B loc 35.5/40,
+pose 18/20, F1 13.6/15. An earlier briefing-call recollection ('Sets A-C above
+95' / 'scores must be extremely good') has NO support anywhere in the official
+materials and is RETIRED from planning; the written rubric governs. The +6 is
+REACHABLE. Disambiguation note: the official materials DO contain a '0.30-0.55'
+band - that is the generator difficulty-calibration target (naive-baseline mean
+credit on present pairs, DOCX section 5.1; jury README section 5), unrelated to
+any bonus gate. A single confirming question in the T+3 window remains good
+practice, but planning proceeds on the written rubric.
 
 ## 4. Rejection, ambiguity, and the score column (slides 8 and 11)
 
