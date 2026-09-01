@@ -35,7 +35,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-import infer as I  # noqa: E402
+from driftsense import runtime as R  # noqa: E402
 from driftsense.matching import locate_phase2  # noqa: E402
 
 # The shipped Phase 2 operating point lives in driftsense.config (the ONE
@@ -75,7 +75,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", required=True, help="pairs.csv")
     ap.add_argument("--output", required=True, help="predictions.csv")
-    ap.add_argument("--weights", default=I.DEFAULT_WEIGHTS)
+    ap.add_argument("--weights", default=R.DEFAULT_WEIGHTS)
     ap.add_argument("--threshold", type=float, default=DEFAULT_FOUND_THRESHOLD,
                     help="score at or above which a pair is reported found")
     ap.add_argument("--verification", default="zncc",
@@ -110,7 +110,7 @@ def main():
         p = (p or "").strip()
         return p if os.path.isabs(p) else os.path.join(base, p)
 
-    model, device = I.load_model(a.weights) or (None, None)
+    model, device = R.load_model(a.weights) or (None, None)
 
     os.makedirs(os.path.dirname(os.path.abspath(a.output)) or ".", exist_ok=True)
     times = []
@@ -125,10 +125,10 @@ def main():
                    "found": 0, "score": 0.0}
             t0 = time.perf_counter()
             try:
-                ref = I.read_gray(resolve(r[ref_col]))
-                sea = I.read_gray(resolve(r[sea_col]))
+                ref = R.read_gray(resolve(r[ref_col]))
+                sea = R.read_gray(resolve(r[sea_col]))
                 if model is None:
-                    res = I.zncc_fallback(ref, sea)
+                    res = R.zncc_fallback(ref, sea)
                     res.setdefault("scale", 10.0)
                     res.setdefault("theta", 0.0)
                 else:
