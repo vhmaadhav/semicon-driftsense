@@ -1,0 +1,4 @@
+[22:48] queued 90 shards of set C across 6 workers
+[22:48] DONE set C  pool=169 shards, 84500 pairs
+[02:34] queued 60 shards of set C across 6 workers
+[02:34] DONE set C  pool=169 shards, 84500 pairs

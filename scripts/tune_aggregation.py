@@ -34,7 +34,7 @@ from driftsense.matching import (  # noqa: E402
     _dihedral_img, _dihedral_point_inv, locate, make_template, refine_zncc,
     standardize,
 )
-from driftsense.model import DriftSenseNet  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
 
 
 def dihedral_proposals(model, ref, sea, device):
@@ -55,7 +55,7 @@ def build_cache(split: str, weights: str, cache_path: str, limit=None):
     device = torch.device("mps" if torch.backends.mps.is_available()
                           else ("cuda" if torch.cuda.is_available() else "cpu"))
     ck = torch.load(weights, map_location="cpu", weights_only=True)
-    model = DriftSenseNet()
+    model = net_from_checkpoint(ckpt)
     model.load_state_dict(ck.get("model", ck))
     model.to(device).eval()
 

@@ -1,0 +1,6 @@
+1126 pairs over 5 shard(s), 5 workers
+  100/1126  5.72s/pair wall  eta 97.8 min
+  200/1126  5.95s/pair wall  eta 91.8 min
+  300/1126  5.88s/pair wall  eta 80.9 min
+  400/1126  6.19s/pair wall  eta 74.9 min
+  500/1126  6.36s/pair wall  eta 66.4 min

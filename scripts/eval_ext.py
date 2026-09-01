@@ -34,6 +34,11 @@ import pandas as pd
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
+# The shipped Phase 2 operating point, read from the ONE shared definition
+# (driftsense.config) so a default run here decodes and gates exactly what
+# register.py ships -- pinned by tests/test_submission_parity.py.
+from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
+
 # Published Phase 2 credit tiers.
 LOC_TIERS = ((1.0, 1.00), (2.0, 0.80), (3.0, 0.60), (5.0, 0.40))
 SCALE_TIERS = ((0.01, 1.00), (0.02, 0.60), (0.05, 0.30))
@@ -51,7 +56,9 @@ def tier(value: float, tiers) -> float:
 
 def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
-    shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy, coarse, band, verification, denoise, tie_tol, features = job
+    (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
+     coarse, band, verification, denoise, tie_tol, features,
+     early_exit, rescue_margin, rescue_delta) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -76,11 +83,12 @@ def _worker(job):
                         polish_scale=polish_scale, refit_xy=refit_xy,
                         coarse_scales=coarse, band=band,
                         verification=verification, denoise=denoise,
-                        tie_tol=tie_tol,
-                        # --features: compute the rank/band feature maps and
-                        # the winner margin WITHOUT changing the selector --
-                        # the hypothesis choice stays the shipped zncc winner,
-                        # so the recorded features describe exactly the decode
+                        tie_tol=tie_tol, early_exit_zncc=early_exit,
+                        rescue_margin=rescue_margin, rescue_delta=rescue_delta,
+                        # --features: compute the rank/band feature maps and the
+                        # winner margin WITHOUT changing the selector -- the
+                        # hypothesis choice stays the shipped zncc winner, so the
+                        # recorded features describe exactly the decode
                         # register.py ships (issue #6).
                         return_hypotheses=features)
     dt = time.perf_counter() - t0
@@ -125,6 +133,9 @@ def _worker(job):
         # attached by locate_phase2 on every decode path.
         "margin": float(res.get("winner_margin", np.nan)),
         "n_hyp": int(res.get("n_hypotheses", 0)),
+        "n_hyp_offered": int(res.get("n_hypotheses_offered", 0)),
+        "winner_margin": float(res.get("winner_margin", np.nan)),
+        "rescued": int(bool(res.get("rescued", False))),
         "secs": dt,
     }
 
@@ -140,7 +151,8 @@ def sample_pairs(df, n: int, seed: int = 0):
 
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         polish_scale, refit_xy, stride, coarse, band, verification, denoise,
-        tie_tol, features=False, sample=0, seed=0):
+        tie_tol, features=False, sample=0, seed=0, early_exit=None,
+        rescue_margin=None, rescue_delta=0.0):
     import multiprocessing as mp
 
     tasks = []
@@ -153,7 +165,8 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         for _, r in man.iterrows():
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
                           polish_scale, refit_xy, coarse, band, verification,
-                          denoise, tie_tol, features))
+                          denoise, tie_tol, features,
+                          early_exit, rescue_margin, rescue_delta))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
     if sample:
         rng = np.random.RandomState(seed)
@@ -180,17 +193,24 @@ def score(df, threshold, quiet=False):
     df["s_err"] = np.abs(df.scale - df.gt_scale) / df.gt_scale
     df["r_err"] = np.abs(df.theta - df.gt_rot)
 
-    gray = df[df["set"].isin(["A", "B", "C"])]
-
-    # ---- Localisation (40 pts), weighted 0.45 A + 0.55 B -------------------
+    # ---- Submission masking, applied to the FULL frame ----------------------
     # register.py writes zero pose/location fields for a declined answer, so
     # the grader credits a wrongly declined PRESENT pair with zero
     # localisation (and therefore zero pose). Mask by pred_found -- parity
-    # with optimize_threshold.points() (issue #22 P0). The mask must be
-    # applied before any subset is taken.
-    said_found = gray.score.values >= threshold
-    gray = gray.assign(
-        loc_credit=np.where(said_found, gray.loc_credit.fillna(0.0).values, 0.0))
+    # with optimize_threshold.points() (issue #22 P0). The mask is applied to
+    # every row (A/B/C *and* D) BEFORE any subset is taken, so the Set D bonus
+    # path cannot read credit a declined answer could never have earned
+    # (PR #24/#25 review): for a declined pair register.py submits x=y=0
+    # against a real target, so its geometric credit is not submittable.
+    df["loc_credit"] = np.where(
+        df.pred_found.values == 1, df.loc_credit.fillna(0.0).values, 0.0)
+
+    gray = df[df["set"].isin(["A", "B", "C"])]
+
+    # ---- Localisation (40 pts), weighted 0.45 A + 0.55 B -------------------
+    # Masking note: pred_found masking of loc_credit is applied to the FULL df
+    # above (all sets, before this split) -- supersedes the gray-only mask from
+    # the #18 lineage and also covers the Set D bonus path (PR #25 review).
     present = gray[gray.gt_found == 1]
 
     parts, res = {}, {}
@@ -244,11 +264,39 @@ def score(df, threshold, quiet=False):
     best = max(((f1_at(t)[0], t) for t in np.unique(gray.score.values)), default=(0, 0))
 
     # ---- Calibration (10 pts): AUC of score vs per-pair correctness --------
+    # The task material says "AUC of your score column against per-pair
+    # correctness" without defining correctness for ABSENT pairs (slide 6;
+    # see ORGANIZER_PHASE2_GROUND_TRUTH.md G5). Two defensible readings:
+    #   present-only: correct = present pair localised within 5 px (the
+    #     reading this evaluator scored with historically);
+    #   submitted: the submitted output itself is correct -- for a present
+    #     pair that means we said found AND localised within 5 px, for an
+    #     absent pair that means we said NOT found. A declined present pair
+    #     forfeits its measurement and is NOT correct (issue #27;
+    #     ORGANIZER_PHASE2_GROUND_TRUTH.md G5).
+    # The primary figure stays present-only (comparable with every number
+    # quoted before this change); the submitted-output variant is printed
+    # alongside. Note the old `correct_all` variant (issue #27) labelled
+    # every absent pair correct regardless of the submitted decision --
+    # it was NOT a correct-rejection AUC and is not preserved.
     correct = np.where(gray.gt_found == 1, (gray.err <= 5).fillna(False), False)
     a, b = gray.score.values[correct], gray.score.values[~correct]
     auc = float((a[:, None] > b[None, :]).mean() + 0.5 * (a[:, None] == b[None, :]).mean()) \
         if len(a) and len(b) else float("nan")
     res["calibration"] = (auc, 10 * auc)
+    # Submitted-output correctness (issue #27, G5): judge the decision
+    # register.py would actually emit. pred_found is the same threshold
+    # register.py applies, so a present pair whose score falls below it is
+    # submitted as found=0 (declined) and is not correct here.
+    pred_found = gray.score.values >= threshold
+    correct_submitted = (
+        ((gray.gt_found.values == 1) & pred_found & (gray.err.fillna(np.inf).values <= 5))
+        | ((gray.gt_found.values == 0) & ~pred_found)
+    )
+    a3, b3 = gray.score.values[correct_submitted], gray.score.values[~correct_submitted]
+    auc_submitted = float((a3[:, None] > b3[None, :]).mean() + 0.5 * (a3[:, None] == b3[None, :]).mean()) \
+        if len(a3) and len(b3) else float("nan")
+    res["calibration_submitted"] = (auc_submitted, 10 * auc_submitted)
 
     if quiet:
         return res, df
@@ -271,13 +319,21 @@ def score(df, threshold, quiet=False):
     print(f"{'':<28}{f'[lenient F1(present) {f1_lenient:.4f}]':>26}")
     print(f"{'':<28}{f'[best-possible F1(reject) {best[0]:.4f} @ {best[1]:.4f}]':>26}")
     print(f"{'Calibration (10)':<28}{f'AUC {auc:.4f}':>26}{10*auc:>10.2f}")
+    print(f"{'   [submitted AUC (issue #27)':<28}{f'{auc_submitted:.4f} -> {10*auc_submitted:.2f}]':>26}")
     print("-" * 74)
-    sub = sum(v[1] for v in res.values())
+    # The submitted AUC is a printed ALTERNATIVE to the primary calibration
+    # number, not an additive component -- summing both res entries would
+    # double-count the 10 calibration points (issue #27 side-fix; the same
+    # bug shipped with PR #25's calibration_all_pairs).
+    sub = sum(v[1] for k, v in res.items() if k != "calibration_submitted")
     print(f"{'SUBTOTAL (85 measurable)':<28}{'':>26}{sub:>10.2f}")
     print(f"{'  + efficiency (5)':<28}{'not measurable in parallel':>26}")
     print(f"{'  + generator/report (10)':<28}{'judged, not self-assessable':>26}")
 
     if (df["set"] == "D").any():
+        # Set D reads the SAME submission-masked loc_credit as A/B/C: the
+        # mask was applied to the full frame above, so a declined present-D
+        # pair scores 0 credit here exactly as it would on the submitted CSV.
         d = df[df["set"] == "D"]
         dp = d[d.gt_found == 1]
         dc = dp.loc_credit.mean()
@@ -306,16 +362,20 @@ def main():
                          "200-pair blind grade (use --sample 200)")
     ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
-    ap.add_argument("--no-band", action="store_true",
-                    help="accepted for backwards compatibility; band is OFF by "
-                         "default since the measured A/B (issue #9)")
     ap.add_argument("--band", action="store_true",
-                    help="opt back into band-passing the coarse sweep")
+                    help="enable the difference-of-Gaussians band pre-filter "
+                         "on the coarse sweep. OFF by default: it mirrors the "
+                         "shipped decode (register.py passes band=False; "
+                         "measured negative in #18/#24) and is opt-in here for "
+                         "A/B use only")
+    ap.add_argument("--no-band", action="store_true",
+                    help="accepted as a no-op for backward compatibility; band "
+                         "is now opt-in via --band (shipped default is OFF)")
     ap.add_argument("--features", action="store_true",
                     help="record rank/band/winner-margin features WITHOUT changing "
                          "the hypothesis selector (the decode stays the shipped zncc "
                          "winner) -- the CSV rejector_cv.py fits on (issue #6)")
-    ap.add_argument("--verification", default="zncc",
+    ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
                     choices=["zncc", "consensus", "majority"],
                     help="hypothesis selector implemented in locate_phase2. rank/band/"
                          "dog were measured as research scores and are NOT implemented "
@@ -326,10 +386,22 @@ def main():
     ap.add_argument("--tie-tol", type=float, default=0.04,
                     help="peaks within this relative margin of the best are "
                          "treated as tied and resolved toward the frame centre")
-    ap.add_argument("--threshold", type=float, default=0.2018,
-                    help="found operating point; aligned with register.py's "
-                         "DEFAULT_FOUND_THRESHOLD so a default run reads the shipped "
-                         "configuration instead of a stale 0.25")
+    ap.add_argument("--early-exit", type=float, default=None,
+                    help="stop evaluating pose hypotheses once one verifies at or "
+                         "above this native ZNCC. Measured negative: it loses "
+                         "points at every setting tried, because the network is "
+                         "only 21%% of a pair (issue #7)")
+    ap.add_argument("--rescue-margin", type=float, default=None,
+                    help="fire a second, denser pose search when the selected "
+                         "winner's margin over the runner-up is below this "
+                         "(issue #5). Measured negative on the full 2250")
+    ap.add_argument("--rescue-delta", type=float, default=0.0,
+                    help="a rescued candidate must beat the incumbent by this "
+                         "much to be adopted")
+    ap.add_argument("--threshold", type=float, default=SHIPPED_THRESHOLD,
+                    help="found operating point; mirrors register.py's shipped "
+                         "DEFAULT_FOUND_THRESHOLD (driftsense.config) so a "
+                         "default run reads the shipped configuration")
     a = ap.parse_args()
 
     if a.rescore:
@@ -339,7 +411,8 @@ def main():
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
                  a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
-                 a.sample, a.seed)
+                 a.sample, a.seed, a.early_exit,
+                 a.rescue_margin, a.rescue_delta)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

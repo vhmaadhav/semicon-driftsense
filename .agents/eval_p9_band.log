@@ -1,0 +1,46 @@
+2250 pairs over 5 shard(s), 3 workers
+  100/2250  0.23s/pair wall  eta 8.2 min
+  200/2250  0.21s/pair wall  eta 7.3 min
+  300/2250  0.21s/pair wall  eta 6.8 min
+  400/2250  0.21s/pair wall  eta 6.4 min
+  500/2250  0.21s/pair wall  eta 6.0 min
+  600/2250  0.21s/pair wall  eta 5.7 min
+  700/2250  0.21s/pair wall  eta 5.3 min
+  800/2250  0.20s/pair wall  eta 4.9 min
+  900/2250  0.21s/pair wall  eta 4.6 min
+  1000/2250  0.21s/pair wall  eta 4.3 min
+  1100/2250  0.21s/pair wall  eta 3.9 min
+  1200/2250  0.21s/pair wall  eta 3.6 min
+  1300/2250  0.20s/pair wall  eta 3.2 min
+  1400/2250  0.20s/pair wall  eta 2.9 min
+  1500/2250  0.20s/pair wall  eta 2.6 min
+  1600/2250  0.21s/pair wall  eta 2.2 min
+  1700/2250  0.20s/pair wall  eta 1.9 min
+  1800/2250  0.20s/pair wall  eta 1.5 min
+  1900/2250  0.20s/pair wall  eta 1.2 min
+  2000/2250  0.20s/pair wall  eta 0.9 min
+  2100/2250  0.20s/pair wall  eta 0.5 min
+  2200/2250  0.20s/pair wall  eta 0.2 min
+wrote .agents/cand_p9_band.csv
+
+==========================================================================
+EXTERNAL TEST SET — 2250 pairs (A 875, B 875, C 500, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8710     34.84
+   set A (875 pairs)        0.9723  <=5px 98.5%  <=1px 92.2%
+                                         median 0.32px
+   set B (875 pairs)        0.7881  <=5px 88.5%  <=1px 55.0%
+                                         median 0.87px
+Pose — scale (10)             credit 0.8953  med 0.42%      8.95
+Pose — rotation (10)        credit 0.8949  med 0.105deg      8.95
+Rejection (15)              F1(reject) 0.8780 @fix 0.202     13.17
+                            correct-rej 450  lost-real 75  missed-abs 50
+                            [lenient F1(present) 0.9640]
+                            [best-possible F1(reject) 0.8787 @ 0.2009]
+Calibration (10)                            AUC 0.9876      9.88
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   75.79
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

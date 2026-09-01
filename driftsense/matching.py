@@ -732,6 +732,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
                   band: bool = False, return_hypotheses: bool = False,
+                  early_exit_zncc: float | None = None,
+                  rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
@@ -755,6 +757,10 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
       one on a half-resolution probe -- that was every measured localisation
       failure -- but at full resolution the wrong basin correlates near zero
       while the right one is around 0.9, so the decision becomes easy.
+
+    band defaults to False: it mirrors the shipped decode (register.py passes
+    band=False; the DoG pre-filter measured negative in #18/#24). Pass
+    band=True only for A/B measurement.
     """
     verification = str(verification).lower()
     valid_verification = {"zncc", "majority", "consensus"}
@@ -861,7 +867,61 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             r = attempt(m, rot)
             r["pose_peak"] = float(coarse_peak)
             candidates.append(r)
+            # Early exit. `pose_candidates` returns hypotheses already ranked by
+            # coarse peak and `choose` takes the highest native ZNCC, so once a
+            # candidate verifies strongly enough there is nothing for the rest to
+            # win. The network is ~86% of a pair and is paid once per hypothesis,
+            # so stopping here is close to a 3x saving on the pairs that take it.
+            # Off by default: this trades a small chance of missing a better
+            # hypothesis for runtime, and the threshold has to be earned on data.
+            if (early_exit_zncc is not None
+                    and len(candidates) < len(cands)
+                    and r.get("zncc", -np.inf) >= early_exit_zncc):
+                break
         best = choose(candidates)
+
+        # --- rescue pass (issue #5), off by default -----------------------
+        # The coarse sweep is discrete, so when two hypotheses finish close
+        # together the true pose is often *between* them rather than at either.
+        # The oracle puts 58% of the remaining set B gap on the pose search and
+        # the failures are wrong-scale lock-ons (median 6.65% scale error
+        # against 0.60% on successes), while widening the sweep globally is
+        # monotonically worse -- more candidates means more decoys on the ~87%
+        # already correct. Gating on a contested decision keeps the extra
+        # candidates away from the pairs that do not need them.
+        #
+        # Measured negative across five settings on the full 2250 (paired delta
+        # -0.022 to -0.069, none near the +0.35 gate). Kept because it is cheap
+        # to re-test on new weights, not because it currently pays.
+        if rescue_margin is not None and len(candidates) > 1:
+            gate = winner_margin(candidates, best)
+            if np.isfinite(gate) and gate < rescue_margin:
+                def _v(c):
+                    return float(c.get("zncc", c.get("score", -np.inf)))
+                top = sorted(candidates, key=_v, reverse=True)[:2]
+                ds = abs(top[0]["scale"] - top[1]["scale"]) or 0.05
+                dr = abs(top[0]["theta"] - top[1]["theta"]) or 0.5
+                extra = [(0.5 * (top[0]["scale"] + top[1]["scale"]),
+                          0.5 * (top[0]["theta"] + top[1]["theta"])),
+                         (top[0]["scale"] + 0.5 * ds, top[0]["theta"]),
+                         (top[0]["scale"] - 0.5 * ds, top[0]["theta"]),
+                         (top[0]["scale"], top[0]["theta"] + 0.5 * dr),
+                         (top[0]["scale"], top[0]["theta"] - 0.5 * dr)]
+                lo_s, hi_s = PHASE2_SCALE_BOUNDS
+                lo_r, hi_r = PHASE2_ROTATION_BOUNDS
+                rescued = []
+                for mm, rr in extra:
+                    if not (lo_s <= mm <= hi_s and lo_r <= rr <= hi_r):
+                        continue
+                    c = attempt(float(mm), float(rr))
+                    c["pose_peak"] = float("nan")
+                    rescued.append(c)
+                if rescued:
+                    challenger = max(rescued, key=_v)
+                    if _v(challenger) > _v(best) + rescue_delta:
+                        best = challenger
+                        best["rescued"] = True
+                    candidates.extend(rescued)
         best["n_hypotheses"] = len(cands)
     # The SELECTED winner's min(score, zncc) margin over the best runner-up:
     # an inference-time uncertainty feature for the present/absent rejector

@@ -27,7 +27,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense.matching import locate, locate_tta, zncc_only  # noqa: E402
-from driftsense.model import DriftSenseNet, TEMPLATE_SIZE  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint, TEMPLATE_SIZE  # noqa: E402
 
 
 def draw(ax, img, title):
@@ -60,7 +60,7 @@ def main():
     device = torch.device("mps" if torch.backends.mps.is_available()
                           else ("cuda" if torch.cuda.is_available() else "cpu"))
     ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
-    model = DriftSenseNet()
+    model = net_from_checkpoint(ckpt)
     model.load_state_dict(ckpt.get("model", ckpt))
     model.to(device).eval()
 

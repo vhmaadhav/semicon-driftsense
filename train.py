@@ -18,6 +18,7 @@ import argparse
 import glob
 import json
 import os
+import sys
 import time
 
 import cv2
@@ -152,6 +153,16 @@ def parse_args():
                         "epoch boundary, so training can start before generation "
                         "has finished. Requires --samples-per-epoch, so the step "
                         "count per epoch stays fixed as the pool grows.")
+    p.add_argument("--width", type=int, default=64,
+                   help="encoder width. The model is capacity-limited rather than "
+                        "overfitting (holdout gap +1.3%%), and the network is only "
+                        "21%% of pair time, so widening is affordable")
+    p.add_argument("--ctx", type=int, default=32, help="context-branch width")
+    p.add_argument("--head", type=int, default=64, help="head width")
+    p.add_argument("--ema", type=float, default=0.0,
+                   help="exponential moving average decay for the weights, e.g. 0.999. "
+                        "0 disables it. The averaged weights are what gets saved; the "
+                        "raw ones are kept alongside as raw_model")
     p.add_argument("--jitter-power", type=float, default=1.0,
                    help="exponent on the label-noise weight for the offset head: "
                         "+1 down-weights high-drift pairs (their offset target is "
@@ -166,6 +177,40 @@ def parse_args():
                         "finished. Capping turns that into an honest OOM. Set 0 to "
                         "disable.")
     return p.parse_args()
+
+
+class WeightEMA:
+    """Exponential moving average of the weights, evaluated instead of the raw ones.
+
+    Bello et al., "Revisiting ResNets: Improved Training and Scaling Strategies"
+    (arXiv:2103.07579) find that the training *recipe* accounts for more of the
+    gain than architectural change, and EMA is one of the components they carry
+    through. It costs one extra copy of a 0.456M-parameter model and nothing at
+    inference -- the averaged weights are simply what gets saved.
+
+    The averaged iterate is smoother than any single SGD point, which matters
+    here because the sub-pixel offset target carries per-pair label noise
+    (measured: error is 0.72x the frame's raster drift). Averaging suppresses
+    exactly the parameter jitter that noise induces.
+
+    Buffers (BatchNorm statistics) are copied rather than averaged; they are
+    already running estimates and averaging them twice is not meaningful.
+    """
+
+    def __init__(self, model, decay: float = 0.999):
+        import copy
+        self.decay = decay
+        self.shadow = copy.deepcopy(model).eval()
+        for p in self.shadow.parameters():
+            p.requires_grad_(False)
+
+    @torch.no_grad()
+    def update(self, model):
+        d = self.decay
+        for s, p in zip(self.shadow.parameters(), model.parameters()):
+            s.mul_(d).add_(p.detach(), alpha=1.0 - d)
+        for s, b in zip(self.shadow.buffers(), model.buffers()):
+            s.copy_(b)
 
 
 def main():
@@ -241,18 +286,34 @@ def main():
         **loader_kw,
     )
 
-    model = DriftSenseNet().to(device)
+    arch_kwargs = {"width": args.width, "ctx": args.ctx, "head": args.head}
+    model = DriftSenseNet(**arch_kwargs).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"parameters: {n_params/1e6:.2f}M")
 
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    steps = max(len(loader) * args.epochs, 1)
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt, max_lr=args.lr, total_steps=steps, pct_start=0.15)
 
     start_epoch, best = 0, float("inf")
+    sched_ff = 0  # checkpoint steps to fast-forward the scheduler by
     if args.resume and os.path.exists(args.resume):
         ck = torch.load(args.resume, map_location=device, weights_only=False)
+        # Adopt the checkpoint's architecture unless the caller asked for a
+        # different one explicitly. Without this, resuming a 1.02M checkpoint
+        # without repeating --width/--ctx/--head builds a 0.456M model and dies
+        # on fourteen size mismatches.
+        ck_arch = ck.get("arch_kwargs")
+        if ck_arch and ck_arch != arch_kwargs:
+            explicit = {k for k in ("width", "ctx", "head")
+                        if f"--{k}" in sys.argv}
+            if not explicit:
+                print(f"adopting architecture from the checkpoint: {ck_arch}")
+                arch_kwargs = dict(ck_arch)
+                model = DriftSenseNet(**arch_kwargs).to(device)
+                opt = torch.optim.AdamW(model.parameters(), lr=args.lr,
+                                        weight_decay=args.weight_decay)
+            else:
+                print(f"WARNING checkpoint is {ck_arch} but flags ask for "
+                      f"{arch_kwargs}; using the flags")
         model.load_state_dict(ck["model"])
         if args.finetune:
             # Weights only. --resume is for continuing an interrupted run: it
@@ -270,10 +331,31 @@ def main():
                   f"epoch counter from 0)")
         elif "optimizer" in ck and ck.get("crop") == args.crop:
             opt.load_state_dict(ck["optimizer"])
-            for _ in range(ck.get("global_step", 0)):
-                sched.step()
+            sched_ff = ck.get("global_step", 0)
             start_epoch = ck.get("epoch", 0)
         best = ck.get("best", float("inf"))
+
+    # Built *after* the resume block so it binds to the final optimizer: the
+    # arch-adopt branch above may replace model and opt, and a scheduler
+    # constructed earlier would stay bound to the discarded optimizer, leaving
+    # the run without the intended one-cycle schedule. The fast-forward below
+    # then advances this rebuilt scheduler to the checkpoint's global_step, so
+    # the LR continues from where the interrupted run left the schedule.
+    steps = max(len(loader) * args.epochs, 1)
+    sched = torch.optim.lr_scheduler.OneCycleLR(
+        opt, max_lr=args.lr, total_steps=steps, pct_start=0.15)
+    for _ in range(sched_ff):
+        sched.step()
+
+    # Built *after* --resume, so the average starts from the weights we are
+    # continuing from. Constructed before the loop it would have seeded the
+    # shadow copy with the random init and spent the whole run climbing out of
+    # it, which is a silent way to make a fine-tune worse than its starting
+    # point.
+    ema = WeightEMA(model, args.ema) if args.ema and args.ema > 0 else None
+    if ema is not None:
+        print(f"EMA enabled, decay {args.ema}: saved weights are the average; "
+              f"the raw ones are kept alongside as raw_model")
         print(f"resumed from {args.resume} (epoch {start_epoch}, best {best:.3f}px)")
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
@@ -317,6 +399,8 @@ def main():
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             opt.step()
+            if ema is not None:
+                ema.update(model)
             if global_step < steps - 1:
                 sched.step()
             global_step += 1
@@ -352,10 +436,12 @@ def main():
         # decoy lock-ons for slightly tighter sub-pixel placement.
         score = (1.0 - val["acc@5px"]) * 1000.0 + val["median_px"]
         ckpt = {
-            "model": model.state_dict(), "optimizer": opt.state_dict(),
+            "model": (ema.shadow if ema is not None else model).state_dict(),
+            "raw_model": model.state_dict() if ema is not None else None,
+            "optimizer": opt.state_dict(),
             "epoch": epoch + 1, "global_step": global_step, "best": min(best, score),
             "crop": args.crop, "val": {k: v for k, v in val.items() if k not in ("dists", "scores")},
-            "arch": "DriftSenseNet",
+            "arch": "DriftSenseNet", "arch_kwargs": arch_kwargs,
         }
         torch.save(ckpt, args.out.replace(".pt", "_last.pt"))
         if args.keep_epochs:

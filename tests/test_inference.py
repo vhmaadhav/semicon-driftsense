@@ -16,7 +16,7 @@ import pytest
 import torch
 
 from driftsense.matching import locate, locate_phase2, locate_tta, zncc_only
-from driftsense.model import DriftSenseNet
+from driftsense.model import DriftSenseNet, net_from_checkpoint
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEIGHTS = os.path.join(REPO_ROOT, "weights", "driftsense.pt")
@@ -26,7 +26,7 @@ INFER = os.path.join(REPO_ROOT, "infer.py")
 @pytest.fixture(scope="module")
 def model():
     ckpt = torch.load(WEIGHTS, map_location="cpu", weights_only=True)
-    m = DriftSenseNet()
+    m = net_from_checkpoint(ckpt)
     m.load_state_dict(ckpt.get("model", ckpt))
     return m.eval()
 

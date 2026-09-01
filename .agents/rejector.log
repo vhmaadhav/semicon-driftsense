@@ -1,3 +1,2 @@
-extracting 1680 pairs from 14 shards
-  200/1680  eta 84.5 min
-  400/1680  eta 75.1 min
+extracting 1320 pairs from 24 shards (shuffled, so a partial cache is still representative)
+  200/1320  eta 201.5 min (cached 200)

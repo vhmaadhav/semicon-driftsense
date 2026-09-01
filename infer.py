@@ -93,7 +93,11 @@ def load_model(weights_path: str):
     try:
         ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
         state = ckpt.get("model", ckpt)
-        model = DriftSenseNet()
+        # Checkpoints from a scaled run record their own width. Older ones do
+        # not, and must keep loading with the original defaults -- so the
+        # fallback here is the constructor's own signature, not a guess.
+        kw = ckpt.get("arch_kwargs") or {}
+        model = DriftSenseNet(**kw)
         model.load_state_dict(state)
         model.eval()
     except Exception as e:

@@ -31,9 +31,14 @@ def test_no_unrestricted_pickle_loading_on_inference_paths():
     an explicitly trusted training-resume artifact."""
     bad = []
     for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        # Any virtualenv, not just the two that existed when this was written:
+        # a second env (venv-train, venv-hf) puts torch's own source inside the
+        # walk, and torch uses weights_only=False in ~40 places of its own.
         dirnames[:] = [d for d in dirnames
-                       if d not in (".git", "__pycache__", "venv", "venv313",
-                                    "graphify-out", ".skill-port", ".dsh")]
+                       if d not in (".git", "__pycache__", "graphify-out",
+                                    ".skill-port", ".dsh")
+                       and not d.startswith("venv")
+                       and not os.path.exists(os.path.join(dirpath, d, "pyvenv.cfg"))]
         for name in filenames:
             if not name.endswith(".py"):
                 continue

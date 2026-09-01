@@ -1,0 +1,13 @@
+200 pairs (already within 5 px, so this is purely the precision tier)
+
+                             median err px    <=1px    <=2px
+------------------------------------------------------------
+as shipped                           0.453      80%      92%
+row-shift corrected                  0.598      69%      90%
+
+corr(estimated deviation, actual x error) = -0.002
+A correlation near +1 would mean the estimator recovers the residual;
+near 0 means the per-row signal is too weak to measure at this noise.
+  set A: median 0.304 -> 0.369 px, <=1px 96% -> 83%
+  set B: median 0.769 -> 0.927 px, <=1px 64% -> 55%
+PROBEDONE

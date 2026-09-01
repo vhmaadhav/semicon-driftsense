@@ -4,3 +4,14 @@
 [02:35:07] watchdog started on .agents/train_p7.log
 [02:35:07] baseline loss 0.377
 [04:50:10] ALERT training process gone without a completion marker
+[06:11:00] watchdog started on .agents/train_p8.log
+[06:11:00] baseline loss 0.337
+[09:46:06] ALERT log stalled 920s -- killing training so the eval phase can still run
+[09:48:34] watchdog started on .agents/train_p9.log
+[09:48:34] baseline loss 0.348
+[09:49:35] watchdog started on .agents/train_p9.log
+[09:49:35] baseline loss 0.350
+[13:09:40] ALERT training process gone without a completion marker
+[20:57:37] watchdog started on .agents/train_wide.log
+[20:57:37] baseline loss 0.523
+[02:31:46] ALERT training process gone without a completion marker

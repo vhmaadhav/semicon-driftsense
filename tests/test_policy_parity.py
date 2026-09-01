@@ -23,7 +23,7 @@ sys.path.insert(0, REPO_ROOT)
 torch = pytest.importorskip("torch")
 cv2 = pytest.importorskip("cv2")
 
-from driftsense.model import DriftSenseNet  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
 
 WEIGHTS = os.path.join(REPO_ROOT, "weights", "driftsense.pt")
 
@@ -31,7 +31,7 @@ WEIGHTS = os.path.join(REPO_ROOT, "weights", "driftsense.pt")
 @pytest.fixture(scope="module")
 def model():
     ck = torch.load(WEIGHTS, map_location="cpu", weights_only=True)
-    net = DriftSenseNet()
+    net = net_from_checkpoint(ck)
     net.load_state_dict(ck.get("model", ck))
     net.eval()
     return net

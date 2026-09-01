@@ -37,5 +37,10 @@ results/*/
 weights/*_e[0-9]*.pt
 weights/*_p2_history.json
 
+# HF port: staging tars, isolated venv, and upload state. None of this is
+# part of the submission and none of it should be tracked.
+venv-hf/
+.hf_stage/
+.agents/hf_port_state.tsv
 # agent memory (local only)
 .dsh/

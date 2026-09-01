@@ -1,0 +1,24 @@
+targets: 90 current failures + 180 current successes
+270 pairs located in the shards
+  25/270  eta 25.9 min
+  50/270  eta 20.6 min
+  75/270  eta 17.8 min
+  100/270  eta 15.0 min
+  125/270  eta 12.6 min
+  150/270  eta 10.2 min
+  175/270  eta 8.0 min
+  200/270  eta 5.8 min
+  225/270  eta 3.8 min
+  250/270  eta 1.7 min
+
+score          recovers failures   breaks successes  net pairs
+--------------------------------------------------------------
+zncc              12/22                   5/180             +7
+zncc_rank         14/22                  13/180             +1
+zncc_dog          14/22                   4/180            +10
+zncc_grad         13/22                   7/180             +6
+zncc_clip         12/22                   5/180             +7
+
+'recovers' counts only failures where some hypothesis was within 5 px --
+the rest need a better pose search or a better network, not a better score.
+A score is worth adopting only if net > 7 (the incumbent's net).
