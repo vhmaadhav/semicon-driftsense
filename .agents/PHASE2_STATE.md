@@ -1,8 +1,16 @@
 # Phase 2 — current state, and how to not waste a session
 
 **Read this file first.** It is the single source of truth for where Phase 2
-stands. Last updated 2026-08-29. Deadline: **3 September 2026**, code frozen,
+stands. Last updated 2026-09-01. Deadline: **3 September 2026**, code frozen,
 no resubmission.
+
+**2026-09-01: the official Phase 2 task materials have been obtained and
+analysed.** `.agents/ORGANIZER_PHASE2_GROUND_TRUTH.md` is now the authoritative
+statement of the rubric, bonus conditions, output contract, and ground-truth
+conventions (every claim cited to a slide/section); where this file disagrees,
+that file wins. `.agents/PHASE2_COMPLIANCE_ISSUES.md` lists the resulting
+compliance gaps (3 blockers, 7 gaps, 4 minor — including the corrected +6 bonus
+analysis below).
 
 If you only read one section, read *Do not re-derive these* and *Dead ends
 already paid for*.
@@ -149,9 +157,15 @@ was unnecessary.
 Localisation and pose are credited **zero on declined pairs**, as the grader
 will see them. Runtime **3.35 s median** (p90 4.16, max 4.42) single-process at
 4 threads on an idle machine, against a 5 s median target and a 20 s hard
-timeout. Set D scores 0.938 untouched but the **+6 is not reachable** (it
-requires Sets A-C above 95; see §1), and rejection F1 is below 0.90 so the
-**+4** is not earned either. Assume **zero bonus**.
+timeout. Set D scores 0.938 untouched. **Correction (2026-09-01, see
+ORGANIZER_PHASE2_GROUND_TRUTH.md §3):** the +6 bonus condition is officially
+'Set D credit ≥ 0.40 with Sets A–C ≥ 0.50' (slide 6) — per-set credit bars that
+our current numbers clear on every component, not the 'Sets A–C above 95'
+previously written here. The **+6 is reachable**; rejection F1 0.91 also
+**clears the +4** bar (0.90). Whether both hold on the corrected-semantics
+rescore (PR #24) is pending; do not assume zero bonus — model both bonuses in
+planning, and note the bonus is the second tie-breaker after Set B credit
+(slide 11).
 
 ### The denominator is 85, not 95
 
