@@ -416,3 +416,37 @@ python scripts/judge_run.py --run weights/driftsense_v5.pt --epochs 24
 Every sample is reproducible from its seed: sample *i* is drawn from its own
 `SeedSequence` child, so a given `(seed, i)` yields the same sample regardless of
 how many workers run or how the run was chunked.
+
+
+---
+
+## Phase 2 retraining lineage (current shipped weights)
+
+The narrative above stops at the Phase 4/v5 story. The shipped Phase 2 model
+(`weights/driftsense.pt`) descends from the Phase 2 fine-tune chain; the
+authoritative session log is `.agents/PHASE2_STATE.md`. Summary of the lineage
+and how the shipped checkpoint was selected:
+
+- **Phase 2 base** — fine-tuned from the Phase 1 best on the Phase 2
+  distribution (unknown pose, absent pairs, severity ladder).
+- **p6 / p6_last** — continuation fine-tunes; `p6_last` measured +2.72 on the
+  external hold-out (2.2σ on the 200-pair grade scale) and was shipped as
+  `cand_driftsense_p6_last`.
+- **p8 vs p9** — two arms differing (p8 vs p9) only in `--jitter-power`
+  label-noise weighting; p8's inverted weighting (`--jitter-power -1`) measured
+  +0.05 (0.04σ on the grade scale — inside noise) and was recorded as a
+  controlled negative.
+- **p9_last (shipped)** — the epoch-39 checkpoint; measured 72.55 → 75.27 on
+  the 85-point scale across the held-out re-measurement, and is the state in
+  `weights/driftsense.pt` (epoch metadata in the checkpoint file). Promoted on
+  the paired full-set comparison even though one CI crossed zero, because the
+  component breakdown was uniformly non-inferior (decision documented in
+  `.agents/PHASE2_STATE.md`).
+- **Negative experiments kept on record:** spectral pose estimation (measured,
+  negative, `7ee5473`), Set D bonus unreachable at the then-current score
+  (`3185778`), second-checkpoint ensemble (hurt, dropped), epoch-12/24/30
+  trajectory soups (−1.7/−2.0 on a paired draw, `.agents/INFERENCE_TWEAKS.md`).
+
+Which checkpoint ships: whatever `weights/driftsense.pt` contains — verify with
+`python -c "import torch; ck=torch.load('weights/driftsense.pt', weights_only=True); print(ck.get('epoch'), ck.get('arch'))"`
+and the SHA-256 recorded in the submission notes.

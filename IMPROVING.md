@@ -39,9 +39,17 @@ quietly keeping:
   20-point pose credit as well as hurting F1. Scoring localisation on pairs we
   would have declined is not what the grader will see.
 
-## Current standing — full 2500-pair external set
+## Current standing — full 2,250-pair A/B/C hold-out (corrected grader semantics)
 
-| Component | Weight | baseline (HEAD) | shipped |
+**Authoritative current figure: 75.92 / 85** (threshold 0.2018, `verification="zncc"`,
+`band=False`, weights `weights/driftsense.pt`; corrected scorer that zeroes declined
+present pairs — issue #22 P0). Full breakdown in `README.md`; campaign history in
+`.agents/INFERENCE_TWEAKS.md`.
+
+The table below is the **historical** Phase 2 entry point (2,500 pairs including
+Set D, older decode, pre-#22 scorer semantics) — kept for comparison only:
+
+| Component | Weight | baseline (HEAD) | shipped (historical) |
 | --------- | -----: | --------------- | ------- |
 | Localisation | 40 | 0.7871 | **0.8138** |
 | — set A / set B | | 0.9141 / 0.6832 | 0.9243 / **0.7234** |
@@ -117,14 +125,14 @@ Rank/census rescues the most and is still the worst choice. PR #3 reached the
 same verdict independently (net −6 / −4) and also rejected it. Its safer
 construction — override native ZNCC only when rank *and* band agree — is merged
 as `verification="consensus"`, opt-in, worth about +0.31–0.37 points on that
-report's local proxy and **not yet measured on `data/ext_p2/`**.
+report's local proxy. **Now measured on the full 2,250** (issue #9): +0.11 raw,
+paired CI spanning zero, 5 broken / 6 rescued — below the promotion gate and
+not shipped.
 
-Selector availability, recorded so nobody trusts the `--verification` help text
-blindly: `locate_phase2` accepts only `zncc`, `majority` and `consensus`.
-`rank`, `band` and `dog` were measured above as *scores*, never wired in as
-selectors, and `scripts/eval_ext.py --verification rank|band|dog` aborts with a
-`ValueError` before producing results. The help text advertising them is stale
-on this branch.
+Selector availability: `locate_phase2` accepts only `zncc`, `majority` and
+`consensus`. `rank`, `band` and `dog` were measured above as *scores*, never
+wired in as selectors; the stale help text that advertised them was fixed
+(2026-08-31) — `--verification` now offers exactly `zncc|consensus|majority`.
 
 ### 2. Rejection — ~2.9 points plus a `+4` bonus
 

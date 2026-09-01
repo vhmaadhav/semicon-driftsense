@@ -731,9 +731,14 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
                   polish_scale: bool = True, refit_xy: bool = False,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
-                  band: bool = True, return_hypotheses: bool = False,
+                  band: bool = False, return_hypotheses: bool = False,
                   verification: str = "zncc", denoise: int = 0, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
+
+    band=False is the measured default (full 2,250-pair A/B, 2026-08-31):
+    band-passing the coarse probe cost 0.45 rubric points (paired loc delta
+    +0.167, CI [+0.014, +0.327]; rescued 18 / broken 9) and buys no measurable
+    time. The old True default shipped without an A/B -- see issue #9.
 
     For each pose hypothesis: canonicalise the search frame, let the network
     make the coarse decision on the matched-scale input it was trained for,
@@ -956,8 +961,15 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
            refine: bool = True, return_heatmap: bool = False,
            tie_tol: float = TIE_REL_TOL, refine_radius: int = REFINE_RADIUS,
            refine_accept_px: float = 10.0, factor: float = SCALE,
-           rotation_deg: float = 0.0) -> dict:
-    """Full inference: reference + search (uint8 grayscale) -> centre (x, y)."""
+           rotation_deg: float = 0.0,
+           ref_feat: "torch.Tensor | None" = None) -> dict:
+    """Full inference: reference + search (uint8 grayscale) -> centre (x, y).
+
+    ref_feat: optional precomputed template-branch embedding. The template is
+    make_template(reference, SCALE, 0) for every pose hypothesis (the pose is
+    applied by canonicalizing the search), so callers that attempt several
+    hypotheses of one pair can encode the template once and pass it here --
+    output-identical, minus the redundant encoder passes (issue #7, E1)."""
     model.eval()
 
     template = make_template(reference, factor, rotation_deg)
@@ -969,7 +981,7 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
     t = torch.from_numpy(tpl_n)[None, None].to(device)
     s = torch.from_numpy(pad_to_stride(sea_n))[None, None].to(device)
 
-    out = model(t, s)
+    out = model(t, s, ref_feat=ref_feat)
     prob = torch.sigmoid(out["logit"])[0, 0].float().cpu().numpy()
     offs = out["offset"][0].float().cpu().numpy()
 

@@ -181,9 +181,18 @@ def score(df, threshold, quiet=False):
     df["r_err"] = np.abs(df.theta - df.gt_rot)
 
     gray = df[df["set"].isin(["A", "B", "C"])]
-    present = gray[gray.gt_found == 1]
 
     # ---- Localisation (40 pts), weighted 0.45 A + 0.55 B -------------------
+    # register.py writes zero pose/location fields for a declined answer, so
+    # the grader credits a wrongly declined PRESENT pair with zero
+    # localisation (and therefore zero pose). Mask by pred_found -- parity
+    # with optimize_threshold.points() (issue #22 P0). The mask must be
+    # applied before any subset is taken.
+    said_found = gray.score.values >= threshold
+    gray = gray.assign(
+        loc_credit=np.where(said_found, gray.loc_credit.fillna(0.0).values, 0.0))
+    present = gray[gray.gt_found == 1]
+
     parts, res = {}, {}
     for s in ("A", "B"):
         p = present[present["set"] == s]
@@ -297,7 +306,11 @@ def main():
                          "200-pair blind grade (use --sample 200)")
     ap.add_argument("--seed", type=int, default=0, help="sample draw seed")
     ap.add_argument("--coarse-scales", type=int, default=17)
-    ap.add_argument("--no-band", action="store_true")
+    ap.add_argument("--no-band", action="store_true",
+                    help="accepted for backwards compatibility; band is OFF by "
+                         "default since the measured A/B (issue #9)")
+    ap.add_argument("--band", action="store_true",
+                    help="opt back into band-passing the coarse sweep")
     ap.add_argument("--features", action="store_true",
                     help="record rank/band/winner-margin features WITHOUT changing "
                          "the hypothesis selector (the decode stays the shipped zncc "
@@ -324,7 +337,7 @@ def main():
     else:
         df = run(a.shards, a.weights, a.jobs, a.threads, a.limit,
                  a.hypotheses, not a.no_polish, not a.no_polish_scale,
-                 a.refit_xy, a.stride, a.coarse_scales, not a.no_band,
+                 a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed)
         if a.out:
