@@ -73,3 +73,66 @@ pose/location fields for a declined answer. Parity with
 - **The paired A/B conclusion is unchanged**: both configs were scored under
   the same inflated semantics; the band flip (no-band better by ~0.4) remains
   real. All absolute numbers quoted before this fix are inflated by ~0.3.
+
+## Stratified blind-grade emulation (P(bonus)) — PR #24 review blocker 4
+
+**Method.** New module `scripts/grade_emulation.py` (stdlib + numpy + pandas
+only, torch-free). The disclosed blind composition is **A=70, B=70, C=40**
+(set D=20 is excluded from the grayscale grade; the rejection F1 runs over
+exactly the 180 A/B/C pairs). Each bootstrap draw is an exact stratified
+sample: per-set `np.random.RandomState(seed + i)` shuffle, take exactly the
+quota, union, order-stable; draw 0 equals a standalone `stratified_draw`
+call with the same seed. The corrected-semantics rubric is scored per draw
+with the same credit tiers as `eval_ext.py -> score()`: loc 1/0.8/0.6/0.4
+at 1/2/3/5 px weighted 0.45A + 0.55B (zero for a present pair the system
+declined), pose tiers 1/0.6/0.3 at 1/2/5% (scale) and 0.25/0.5/1.0 deg
+(rotation) scored only where loc > 0, F1 on the **found** flag
+(present-as-positive; `found = score >= t`) over the 180 pairs, and a
+present-only calibration AUC (correct = present pair localised <=5 px).
+N = 10000 draws, seed 0. Reported: `P(F1 >= 0.90)` over draws (the +6
+bonus gate) and `E[total] + 4*P(bonus)` where total is the 85-pt
+measurable subtotal with the found-flag F1 (per the blocker-4 spec; note
+`eval_ext.py`'s printed subtotal uses the conservative reject-positive F1,
+so the two "totals" are not the same metric and are not comparable).
+
+**Data.** `.agents/cand_driftsense_wide_last.csv` (full 2250, wide model:
+A=875 / B=875 / C=500; gt_found = 1 on A and B, 0 on C — so every 180-pair
+draw is exactly 140 present / 40 absent, matching the disclosed grade).
+Command:
+`./venv313/bin/python scripts/grade_emulation.py --csv .agents/cand_driftsense_wide_last.csv --threshold 0.1587,0.18,0.25 --draws 10000 --seed 0`
+
+**Numbers.**
+
+| t | F1(found) full set | F1(reject) full set | P(F1 >= 0.90) | E[total] | E[total] + 4*P |
+|---|---|---|---|---|---|
+| 0.1587 | 0.9739 | 0.9061 | **1.0000** | 77.99 | **81.99** |
+| 0.18 | 0.9737 | 0.9078 | **1.0000** | 77.93 | **81.93** |
+| 0.25 | 0.9697 | 0.9023 | **1.0000** | 77.37 | **81.37** |
+
+Cross-check: F1(reject) = **0.9078 @ 0.18** reproduces the PR body's
+quoted full-set F1 to 4 decimals.
+
+**Does the 0.18 threshold choice survive? Yes.** P(bonus) = 1.0000 at all
+three thresholds (with 10000 draws the Monte-Carlo standard error on a
+probability at the boundary is <= 0.005), and the E[total] + 4*P spread
+between 0.1587 and 0.18 is 0.06 pts — driven entirely by the provisional
+loc/pose columns (see caveat), not by bonus risk. The F1(found) full-set
+values are within 0.004 of each other. Nothing here argues for moving the
+shipped 0.18.
+
+**Caveat (provisional vs final numbers).** The E[total] and E[total] + 4*P
+columns use the CSV's latent columns (x/y/scale/theta vs gt) for loc/pose
+BEFORE the pending Set-D masking fix (Task 1, in flight) lands — those are
+**provisional**. F1 and P(F1 >= 0.90) depend ONLY on the `score` and
+`gt_found` columns, which the masking fix does not touch, so the three
+**P(F1 >= 0.90) = 1.0000 values are final regardless**. Also note this CSV
+carries no set-D rows (A/B/C only), which does not affect the grade
+emulation because D is excluded from the grayscale grade anyway.
+
+Tests: `tests/test_grade_emulation.py` (torch-free) covers the exact
+70/70/40 stratified draw from a synthetic 875/875/500 frame (deterministic
+per seed, no set mixing, order-stable, clear quota error), the credit-tier
+edges (1/2/3/5 px; 1/2/5%; 0.25/0.5/1.0 deg), one hand-computed F1 case,
+the declined-present-pair zero-loc semantics, and a draws=200 bootstrap
+smoke test. 12 passed.
+
