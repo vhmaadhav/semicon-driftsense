@@ -39,7 +39,7 @@ from driftsense.matching import locate_phase2  # noqa: E402
 # present pair forfeits its localisation (40 pts) and pose (20 pts) credit as
 # well as hurting F1, so an F1-optimal threshold sits too high. Held-out and
 # in-sample agreed to 0.00 points at this value.
-DEFAULT_FOUND_THRESHOLD = 0.2018
+DEFAULT_FOUND_THRESHOLD = 0.18
 
 OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
 
@@ -117,7 +117,13 @@ def main():
                     res.setdefault("scale", 10.0)
                     res.setdefault("theta", 0.0)
                 else:
-                    res = locate_phase2(model, ref, sea, device, refine=True)
+                    # band=False: the difference-of-Gaussians pre-filter on the
+                    # coarse sweep costs points on both architectures. Measured
+                    # independently here at +0.439 (P 99.8%) on the 0.456M model
+                    # and +0.509 (P 94.2%) on the shipped 1.02M one. PR #18
+                    # reached the same conclusion separately.
+                    res = locate_phase2(model, ref, sea, device, refine=True,
+                                        band=False)
                 # min(network score, full-resolution ZNCC); see locate_phase2.
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= a.threshold)

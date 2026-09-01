@@ -5,8 +5,9 @@ cd "$(dirname "$0")"
 printf '\n  %s\n\n' "$(date '+%H:%M:%S')"
 printf '  PHASE\n'
 if pgrep -f "[t]rain\.py --train-dir" >/dev/null; then
-  ep=$(grep -cE "^epoch" .agents/train_wide.log 2>/dev/null || echo 0)
-  printf '    training 1.02M model   epoch %s/34\n' "$ep"
+  ep=$(grep -cE "^epoch" .agents/train_wide.log 2>/dev/null); ep=${ep:-0}
+  printf '    training 1.02M model   epoch %s/34   (%s min/epoch)\n' "$ep" \
+      "$(grep -oE '\| [0-9.]+ min' .agents/train_wide.log 2>/dev/null | tail -1 | tr -dc '0-9.')"
   tail -1 .agents/train_wide.log 2>/dev/null | sed 's/^/      /'
 elif pgrep -f "[e]val_ext.py" >/dev/null; then
   printf '    evaluating\n'

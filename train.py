@@ -18,6 +18,7 @@ import argparse
 import glob
 import json
 import os
+import sys
 import time
 
 import cv2
@@ -298,6 +299,23 @@ def main():
     start_epoch, best = 0, float("inf")
     if args.resume and os.path.exists(args.resume):
         ck = torch.load(args.resume, map_location=device, weights_only=False)
+        # Adopt the checkpoint's architecture unless the caller asked for a
+        # different one explicitly. Without this, resuming a 1.02M checkpoint
+        # without repeating --width/--ctx/--head builds a 0.456M model and dies
+        # on fourteen size mismatches.
+        ck_arch = ck.get("arch_kwargs")
+        if ck_arch and ck_arch != arch_kwargs:
+            explicit = {k for k in ("width", "ctx", "head")
+                        if f"--{k}" in sys.argv}
+            if not explicit:
+                print(f"adopting architecture from the checkpoint: {ck_arch}")
+                arch_kwargs = dict(ck_arch)
+                model = DriftSenseNet(**arch_kwargs).to(device)
+                opt = torch.optim.AdamW(model.parameters(), lr=args.lr,
+                                        weight_decay=args.weight_decay)
+            else:
+                print(f"WARNING checkpoint is {ck_arch} but flags ask for "
+                      f"{arch_kwargs}; using the flags")
         model.load_state_dict(ck["model"])
         if args.finetune:
             # Weights only. --resume is for continuing an interrupted run: it

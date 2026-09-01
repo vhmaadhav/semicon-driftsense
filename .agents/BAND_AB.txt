@@ -1,0 +1,9 @@
+decode         best t  total/85     locA     locB       F1      AUC
+------------------------------------------------------------------
+band           0.2018     75.51   0.9691   0.7746   0.8780   0.9876
+noband         0.2007     75.96   0.9705   0.7847   0.8893   0.9871
+
+no-band vs band: paired delta +0.439  95% CI [+0.132, +0.767]  P(better) 99.8%
+PR #18 claims +0.45 -> CONFIRMED
+BANDDONE
+[19:22] band A/B done -- GPU free, starting the 1.02M wide run

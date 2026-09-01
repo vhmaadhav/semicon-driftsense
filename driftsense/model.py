@@ -142,6 +142,18 @@ def grouped_xcorr(search_feat: torch.Tensor, template_feat: torch.Tensor,
     return torch.cat(outs, dim=0)
 
 
+def net_from_checkpoint(ckpt: dict):
+    """Build the network a checkpoint was actually trained with.
+
+    Checkpoints from a scaled run record their width under `arch_kwargs`; older
+    ones predate the flag and must keep loading with the constructor's own
+    defaults. Constructing DriftSenseNet() and hoping is how a 1.02M checkpoint
+    meets a 0.456M model and raises fourteen size-mismatch errors -- which is
+    exactly what happened to every caller that did it by hand.
+    """
+    return DriftSenseNet(**(ckpt.get("arch_kwargs") or {}))
+
+
 class DriftSenseNet(nn.Module):
     """Reference + search -> (centre heatmap, sub-cell offsets).
 

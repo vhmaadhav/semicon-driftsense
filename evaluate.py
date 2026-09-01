@@ -51,7 +51,7 @@ sys.path.insert(0, HERE)
 
 from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense.matching import locate, locate_tta, zncc_only  # noqa: E402
-from driftsense.model import DriftSenseNet  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
 
 TOLERANCES = (1.0, 2.0, 5.0, 10.0)
 
@@ -159,7 +159,7 @@ def main():
     frames = ("corrected", "upstream") if args.gt_frame == "both" else (args.gt_frame,)
 
     ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
-    model = DriftSenseNet()
+    model = net_from_checkpoint(ckpt)
     model.load_state_dict(ckpt.get("model", ckpt))
     model.to(device).eval()
 
