@@ -189,9 +189,18 @@ def score(df, threshold, quiet=False):
     df["r_err"] = np.abs(df.theta - df.gt_rot)
 
     gray = df[df["set"].isin(["A", "B", "C"])]
-    present = gray[gray.gt_found == 1]
 
     # ---- Localisation (40 pts), weighted 0.45 A + 0.55 B -------------------
+    # register.py writes zero pose/location fields for a declined answer, so
+    # the grader credits a wrongly declined PRESENT pair with zero
+    # localisation (and therefore zero pose). Mask by pred_found -- parity
+    # with optimize_threshold.points() (issue #22 P0). The mask must be
+    # applied before any subset is taken.
+    said_found = gray.score.values >= threshold
+    gray = gray.assign(
+        loc_credit=np.where(said_found, gray.loc_credit.fillna(0.0).values, 0.0))
+    present = gray[gray.gt_found == 1]
+
     parts, res = {}, {}
     for s in ("A", "B"):
         p = present[present["set"] == s]
