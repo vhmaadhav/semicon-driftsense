@@ -38,7 +38,7 @@ Slide 4 also states: noise models from public SEM literature; the CATEGORIES are
 disclosed but the parameters and the severity ladder are NOT.
 
 Jury README corroboration (20-pair worked set): sets were A8/B6/C4/D2 = 20 with
-16/20 = 20% present, zoom list hits BOTH endpoints 8.00 and 12.00, theta spans
+16/20 = 80% present / 20% absent, zoom list hits BOTH endpoints 8.00 and 12.00, theta spans
 -4.9..+4.9 with three pairs at exactly 0.00, 9 architecture presets across both
 families. The 200-pair set is built to the same recipe (README section 5).
 
