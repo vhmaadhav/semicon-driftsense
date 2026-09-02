@@ -10,3 +10,16 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## failure analysis
+
+Maintain root-level `FAILURE_ANALYSIS.md` as the single source of truth for the final `failure_analysis.pdf` (max 2 pages).
+
+After every meaningful code, experiment, benchmark, bug fix, inference change, dataset change, or validation task:
+- update `FAILURE_ANALYSIS.md` before finishing;
+- keep only evidence-backed findings;
+- preserve prior findings unless newer evidence invalidates them;
+- record failure mode, evidence/metric, likely cause, mitigation, and remaining limitation;
+- prioritize localisation/Set B, pose, rejection, calibration, runtime, and generator/label failures;
+- include exact experiment/PR references when available;
+- do not duplicate or invent results.
