@@ -54,7 +54,32 @@ loss and the gross failures. Severity level is a proxy; jitter is the mechanism.
 - **Pose bias correction**: none left. Removing the median signed bias moves
   scale error 0.427% → 0.426%.
 
-## The untried lever
+## The untried lever — TRIED, and it is a measured NEGATIVE (2026-09-02)
+
+Result first, reasoning below. A 22-epoch fine-tune on the identical recipe with
+`--sampler-jitter-power 1.0` (top jitter quartile drawing 43.3% of each epoch
+instead of 25%) scored **76.93** on the full 2,250 — **worse than the 77.15 it
+started from**, and 0.61 below the plain completion of the same recipe:
+
+| | shipped | Arm A (plain) | Arm B (jitter-weighted) |
+|---|---:|---:|---:|
+| set A credit | 0.9758 | **0.9778** | 0.9735 |
+| set B credit | 0.8247 | **0.8302** | 0.8133 |
+| rejection F1 @0.18 | 0.9078 | **0.9198** | 0.9104 |
+| **total / 85** | 77.15 | **77.54** | **76.93** |
+
+Set B — the thing it was built to fix — got **worse** (0.8247 → 0.8133), and Set
+A regressed too (0.9758 → 0.9735). Over-exposing the high-jitter tail costs more
+on the rest of the distribution than it recovers on the tail. `--jitter-power -1`
+already extracts what is available from that axis; adding exposure on top is
+past the point of diminishing returns and into active harm.
+
+Logs: `.agents/train_jw.log`, `.agents/eval_jw.log`.
+
+**The flag stays in `train.py` at an inert default of 0.0** — the measurement is
+worth keeping reproducible, and someone will otherwise have this idea again.
+
+## The lever as it was reasoned before the measurement
 
 Training samples the pool **uniformly** (`train.py:265`,
 `RandomSampler(replacement=False)`), and the B shards are balanced 25/25/25/25
