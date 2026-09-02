@@ -166,10 +166,17 @@ following explicit amendment, argued from the evidence above:
    0.996; localisation P(> 0) = 0.964). There is no measured trade-off to
    refuse.
 3. **The risk this amendment buys down is the F1 bonus cliff, which the
-   original rule never priced.** The shipped model sat at 52.8% → with
-   this change 77.3% (staged model-risk rate, our pool) of clearing the
-   F1 ≥ 0.90 +4 gate; the expected-loss asymmetry (≈ 1.4 pts) dwarfs the
-   0.021-pt shortfall to the promotion gate.
+   original rule never priced.** Under ONE matched protocol — the v3
+   fixed-threshold staged model-risk bootstrap over our pool (§ above) —
+   the shipped weights clear the F1 ≥ 0.90 +4 gate on **63.5% of resampled
+   stages vs 77.3%** for this checkpoint, with asymmetric flips (+15.6%
+   candidate-only vs −1.7% base-only). (An earlier out-of-fold CV analysis
+   in `SETC_AB.txt` put the shipped model at 52.8% under a different
+   protocol — CV-fitted rejector decisions, N=20000, threshold 0.202 — and
+   is NOT comparable to these figures; do not mix the two.) The flip
+   asymmetry is protocol-independent evidence for the bonus-risk argument;
+   the derived expected-bonus/expected-loss wording is withdrawn in favour
+   of the matched rates above.
 4. **Reverting the weight swap** would keep the letter of the rule and
    give back +0.33 measured points plus the wider F1 margin, shipping a
    strictly worse expected-score configuration. That is the outcome the
