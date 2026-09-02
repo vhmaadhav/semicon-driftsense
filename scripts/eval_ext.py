@@ -38,6 +38,7 @@ sys.path.insert(0, HERE)
 # (driftsense.config) so a default run here decodes and gates exactly what
 # register.py ships -- pinned by tests/test_submission_parity.py.
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
+from driftsense.config import SHIPPED_SUBPIXEL_ROWS
 
 # Published Phase 2 credit tiers.
 LOC_TIERS = ((1.0, 1.00), (2.0, 0.80), (3.0, 0.60), (5.0, 0.40))
@@ -58,7 +59,7 @@ def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
     (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
      coarse, band, verification, denoise, tie_tol, features,
-     early_exit, rescue_margin, rescue_delta) = job
+     early_exit, rescue_margin, rescue_delta, subpixel_rows) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -85,6 +86,7 @@ def _worker(job):
                         verification=verification, denoise=denoise,
                         tie_tol=tie_tol, early_exit_zncc=early_exit,
                         rescue_margin=rescue_margin, rescue_delta=rescue_delta,
+                        subpixel_rows=subpixel_rows,
                         # --features: compute the rank/band feature maps and the
                         # winner margin WITHOUT changing the selector -- the
                         # hypothesis choice stays the shipped zncc winner, so the
@@ -152,7 +154,7 @@ def sample_pairs(df, n: int, seed: int = 0):
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         polish_scale, refit_xy, stride, coarse, band, verification, denoise,
         tie_tol, features=False, sample=0, seed=0, early_exit=None,
-        rescue_margin=None, rescue_delta=0.0):
+        rescue_margin=None, rescue_delta=0.0, subpixel_rows=False):
     import multiprocessing as mp
 
     tasks = []
@@ -166,7 +168,8 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
             tasks.append((d, r.to_dict(), weights, threads, hypotheses, polish,
                           polish_scale, refit_xy, coarse, band, verification,
                           denoise, tie_tol, features,
-                          early_exit, rescue_margin, rescue_delta))
+                          early_exit, rescue_margin, rescue_delta,
+                          subpixel_rows))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
     if sample:
         rng = np.random.RandomState(seed)
@@ -355,6 +358,14 @@ def main():
     ap.add_argument("--no-polish", action="store_true")
     ap.add_argument("--no-polish-scale", action="store_true")
     ap.add_argument("--refit-xy", action="store_true")
+    ap.add_argument("--subpixel-rows", action="store_true",
+                    default=SHIPPED_SUBPIXEL_ROWS,
+                    help="re-place x on the scan row the label is defined against "
+                         "(recovers the centre row's raster-drift sample; "
+                         "see driftsense.matching.drift_row_refine)")
+    ap.add_argument("--no-subpixel-rows", dest="subpixel_rows",
+                    action="store_false",
+                    help="force the row correction off regardless of the shipped default")
     ap.add_argument("--stride", type=int, default=1, help="take every Nth pair")
     ap.add_argument("--sample", type=int, default=0,
                     help="run inference on a deterministic random draw of this many "
@@ -412,7 +423,7 @@ def main():
                  a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed, a.early_exit,
-                 a.rescue_margin, a.rescue_delta)
+                 a.rescue_margin, a.rescue_delta, a.subpixel_rows)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")
