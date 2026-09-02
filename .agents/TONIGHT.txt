@@ -1,0 +1,9 @@
+[21:28] waiting on Arm A (setc completion, 22 epochs) pid 58242
+[02:03] Arm A finished after 22 epochs
+[02:03] eval Arm A (no-band, shipped decode)
+   set A (875 pairs)        0.9778  <=5px 99.1%  <=1px 92.8%
+   set B (875 pairs)        0.8302  <=5px 93.1%  <=1px 58.1%
+Rejection (15)              F1(reject) 0.9232 @fix 0.202     13.85
+                            [best-possible F1(reject) 0.9241 @ 0.2017]
+SUBTOTAL (85 measurable)                                   77.54
+[02:12] === Arm B: same recipe + jitter-weighted sampler (p=1) ===

@@ -24,7 +24,7 @@ import time
 import cv2
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 
 from driftsense.dataset import DriftSenseDataset, load_manifest
 from driftsense.stream_dataset import StreamingDriftSense
@@ -163,6 +163,12 @@ def parse_args():
                    help="exponential moving average decay for the weights, e.g. 0.999. "
                         "0 disables it. The averaged weights are what gets saved; the "
                         "raw ones are kept alongside as raw_model")
+    p.add_argument("--sampler-jitter-power", type=float, default=0.0,
+                   help="tilt the per-epoch SAMPLER toward high-drift pairs: "
+                        "weight ∝ (drift_jitter_px / median)^P. This is exposure, "
+                        "not loss weight -- --jitter-power reweights whatever "
+                        "batch arrives, this changes which pairs arrive. "
+                        "0 (default) keeps the uniform RandomSampler exactly.")
     p.add_argument("--jitter-power", type=float, default=1.0,
                    help="exponent on the label-noise weight for the offset head: "
                         "+1 down-weights high-drift pairs (their offset target is "
@@ -262,9 +268,38 @@ def main():
     sampler = None
     if not args.stream and args.samples_per_epoch:
         n = min(args.samples_per_epoch, len(train_ds))
-        sampler = RandomSampler(train_ds, replacement=False, num_samples=n)
-        print(f"sampling {n} of {len(train_ds)} pairs per epoch "
-              f"({args.epochs * n / max(len(train_ds), 1):.1f} passes over the pool)")
+        if args.sampler_jitter_power:
+            # Set B's credit loss tracks raster drift jitter almost perfectly
+            # (.agents/SETB_WHERE_THE_POINTS_ARE.md: <=1px runs 87.7% in the
+            # lowest jitter quartile and 35.6% in the highest). The pool is
+            # balanced 25/25/25/25 across severity, so the hard tail gets loss
+            # weight from --jitter-power but never extra *exposure*. This
+            # samples it more often instead.
+            j = np.array([float(r.get("drift_jitter_px") or "nan")
+                          for r in train_ds.rows], dtype=np.float64)
+            if not np.isfinite(j).any():
+                j = np.array([float(r.get("severity_continuous") or "nan")
+                              for r in train_ds.rows], dtype=np.float64)
+            med = np.nanmedian(j)
+            if not np.isfinite(med) or med <= 0:
+                raise SystemExit("--sampler-jitter-power: no usable drift_jitter_px "
+                                 "or severity_continuous column in the pool manifests")
+            j = np.where(np.isfinite(j), j, med)
+            w = np.power(np.maximum(j, 1e-6) / med, args.sampler_jitter_power)
+            # Cap the tilt so no pair can dominate an epoch: a 10x weight ratio
+            # is already a large distribution shift at 5.8 passes over the pool.
+            w = np.clip(w, 0.1, 10.0)
+            sampler = WeightedRandomSampler(torch.as_tensor(w, dtype=torch.double),
+                                            num_samples=n, replacement=True)
+            q = np.quantile(j, [0.25, 0.75])
+            share = w[j >= q[1]].sum() / w.sum()
+            print(f"sampling {n} of {len(train_ds)} pairs per epoch, "
+                  f"JITTER-WEIGHTED p={args.sampler_jitter_power} "
+                  f"(top jitter quartile draws {share:.1%} of each epoch vs 25% uniform)")
+        else:
+            sampler = RandomSampler(train_ds, replacement=False, num_samples=n)
+            print(f"sampling {n} of {len(train_ds)} pairs per epoch "
+                  f"({args.epochs * n / max(len(train_ds), 1):.1f} passes over the pool)")
 
     loader_kw = {}
     if device.type == "cuda" and args.workers > 0:
