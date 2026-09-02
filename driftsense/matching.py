@@ -282,7 +282,8 @@ COARSE_SCALES = 17
 # 0.5 keeps the gate conservative (only deep two-sample valleys are skipped);
 # the equality audit on the full 2,250 decides whether it is kept. Set to None
 # (or 0.0) to restore the exhaustive scan.
-E3_PRUNE_MARGIN = 0.5
+E3_PRUNE_MARGIN = None  # None = exhaustive scan (default) until the promised
+# full-2,250 equality/runtime audit passes; set to 0.5 to enable the gate.
 
 # How many rot=0 peaks enter the rotation re-rank, as a multiple of k. The
 # plan allows k or 2k: 2k covers the case where the true basin ranks between
@@ -378,7 +379,7 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
                     coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
                     refine_span_scales: int = 17, band: bool = True,
-                    prune_margin: float | None = E3_PRUNE_MARGIN) -> list:
+                    prune_margin: float | None = None) -> list:
     """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
 
     Correlation against a periodic layout is multi-peaked in *scale*: a wrong

@@ -14,7 +14,9 @@ same shipped config (0.18, band=False). This isolates the decoy-pitch effect:
 
 Reading: the pitch fix shrinks the worst tail (the 0.45-0.60 bucket empties,
 max −15%) but the false-accept rate at 0.18 only moves 16.0% -> 14.5%. The
-residual tail is NOT pitch-driven: pitch is one cue, and the learned score
+residual tail SUGGESTS non-pitch factors dominate the remaining risk (no
+paired bad->good / good->bad transition analysis was run to attribute it
+fully): pitch is one cue, and the learned score
 still fires on same-family same-preset texture. Implication for the blind
 set: the organizers' ~20% absent pairs will produce false accepts at a rate
 our ext_p2 F1 (0.908) understates, because our C decoys are still easier than
