@@ -1,0 +1,30 @@
+500 pairs over 1 shard(s), 6 workers
+  100/500  0.18s/pair wall  eta 1.2 min
+  200/500  0.16s/pair wall  eta 0.8 min
+  300/500  0.16s/pair wall  eta 0.5 min
+  400/500  0.16s/pair wall  eta 0.3 min
+  500/500  0.16s/pair wall  eta 0.0 min
+wrote /tmp/claude-1000/-home-pranesh-Documents-semicon/e5b9c978-7a0f-424d-99ce-b7d31954fdbc/scratchpad/hold_off.csv
+
+==========================================================================
+EXTERNAL TEST SET — 500 pairs (A 150, B 255, C 95, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8870     35.48
+   set A (150 pairs)        0.9453  <=5px 96.7%  <=1px 89.3%
+                                         median 0.31px
+   set B (255 pairs)        0.8392  <=5px 96.9%  <=1px 56.1%
+                                         median 0.88px
+Pose — scale (10)             credit 0.8198  med 0.66%      8.20
+Pose — rotation (10)        credit 0.8869  med 0.130deg      8.87
+Rejection (15)              F1(reject) 0.8958 @fix 0.180     13.44
+                            correct-rej 86  lost-real 11  missed-abs 9
+                            [lenient F1(present) 0.9752]
+                            [best-possible F1(reject) 0.9091 @ 0.2226]
+Calibration (10)                            AUC 0.9858      9.86
+   [submitted AUC (issue #27)           0.7894 -> 7.89]
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   75.84
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

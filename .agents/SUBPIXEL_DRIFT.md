@@ -333,3 +333,74 @@ PR #35. Sub-pixel work alone tops out near **81%** -- the quality the correction
 already reaches where it applies; the remainder is coverage on pairs whose rows
 are genuinely unreadable. **90%+ requires the rotation-aware pose fix merged
 alongside this**; the two address different halves and should compound.
+
+## 11. Fresh-holdout validation (2026-09-02, PR #41 review)
+
+The §6 and §9 numbers are **post-selection**: `min_corr`, the clamp, the lag and
+the iteration count were swept on all 1,750 present pairs of `data/ext_p2`, and
+the headline A/B was then run on that same pool. The reported CI therefore
+treated tuned-on examples as untouched evaluation data. Flagged in review; this
+section is the fix.
+
+**Protocol (single go/no-go, no further tuning).** The implementation was frozen
+first. A fresh 500-pair Phase 2 set was generated at the previously unused seed
+`20260902` (`scripts/gen_data.py --split holdout_p2 --num-samples 500 --seed
+20260902 --noise randomized --phase2 --absent-frac 0.2 --crops-per-canvas 1`),
+and the run was done on the **intended final stack** — `phase2` + #34 (its Set C
+checkpoint in `weights/driftsense.pt`) + #35 with `RERANK_ROTATION = False` —
+rather than on `phase2` alone, because #34 changes the checkpoint every decode
+depends on.
+
+**Independence, checked two ways and both non-vacuous:**
+
+| check | holdout | ext_p2 | overlap |
+|---|---:|---:|---:|
+| distinct `sample_entropy` | 500 | 2500 | **0** |
+| distinct search-image sha256 | 500 | 2500 | **0** |
+
+(The first attempt at this check used `pair_sha256` and returned "0 overlap"
+**vacuously** — `gen_data.py` writes a leaner manifest that has no such column,
+so the holdout side of the comparison was an empty set. Both checks above are
+confirmed populated on both sides.)
+
+**Result — 500 pairs, 405 present / 95 absent:**
+
+| component | off | on | delta |
+|---|---:|---:|---:|
+| localisation (40) | 35.48 | **36.48** | **+1.00** |
+| &nbsp;&nbsp;set A `<=1px` | 89.3% | 90.0% | +0.7 pp |
+| &nbsp;&nbsp;set A credit | 0.9453 | 0.9453 | **0.0000** |
+| &nbsp;&nbsp;set B `<=1px` | 56.1% | **72.9%** | **+16.8 pp** |
+| &nbsp;&nbsp;set B median err | 0.88 px | **0.48 px** | −0.40 px |
+| pose scale (10) | 8.198 | 8.199 | +0.001 |
+| pose rotation (10) | 8.869 | 8.889 | +0.020 |
+| rejection (15) | 13.44 | 13.44 | **0.0000** |
+| calibration (10) | 9.86 | 9.83 | −0.026 |
+| **TOTAL / 85** | **75.84** | **76.84** | **+1.00** |
+
+Paired bootstrap: median **+1.0045**, 95% CI **[+0.5184, +1.4780]**,
+P(delta > 0) = **1.0000**. 70 pairs improved a tier, 27 worsened, net +43.
+
+**The effect is larger on untouched data than on the tuned pool** (+1.00 vs
++0.63), so the post-selection concern does not reverse the sign — the tuned-pool
+estimate was, if anything, conservative. The holdout draws drift from
+`U(0.1, 2.0)` (median 1.01 px) rather than the severity ladder, so more of its
+pairs carry the drift the correction recovers; the two effect sizes are not
+expected to match.
+
+**Set A / set B here is our own drift-based labelling** (`<=0.80 px` = A, the
+`ext_p2` set A ceiling), not the organizer's set definition, since a
+`--noise randomized` split has no A/B structure. The pooled +1.00 is the
+headline; the split is reported for shape only.
+
+**Two components moved, both accounted for:**
+
+* **`<=5px` tier: 2 pairs pushed out, 0 rescued** (set B 96.9% -> 96.1%). Real,
+  small, and the honest cost of the change against +43 net tier improvements.
+* **Calibration AUC −0.0026.** `score` is byte-identical on all 500 pairs, so
+  this is not a confidence regression: AUC ranks confidence against
+  *correctness*, and correctness is defined by localisation, so improving
+  localisation reshuffles which pairs count as correct.
+
+`scale`, `theta`, `score` and `y` are identical on all 500 pairs; only `x`
+differs (310 pairs) — the same localisation-only property verified in §6.
