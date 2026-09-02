@@ -110,7 +110,35 @@ def load_model(weights_path: str):
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
-    return model.to(device), device
+    model = model.to(device)
+
+    # CPU is the graded configuration (4 cores, no GPU, 5 s median), and there
+    # the network is 90.6% of pair time -- measured with scripts/profile_pair.py
+    # on the CPU-only venv. NCHW forces oneDNN to reorder activations on every
+    # convolution; channels_last lets it keep the blocked layout across the
+    # whole stack.
+    #
+    # Measured on 6 set B pairs, 4 threads, CPU-only torch 2.13:
+    # 4.612 -> 1.769 s/pair, a 2.61x speedup, with x/y/scale/theta/score
+    # bit-identical. It is a memory-layout choice, not an algorithm change:
+    # the convolutions compute the same values in a different traversal order.
+    #
+    # Guarded because the win is CPU-specific and the layout is only defined
+    # for 4-D weights; a failure here must not cost the run. Set
+    # DRIFTSENSE_CHANNELS_LAST=0 to fall back to NCHW on a platform where the
+    # oneDNN path misbehaves.
+    #
+    # NOT bit-identical: re-association in the blocked kernels moves x/y by up
+    # to 5.4e-06 px and score by 2.3e-06 (30 pairs across sets A/B/C). That is
+    # ~200,000x below the 1 px credit tier, but it is a numerical difference,
+    # not an exact one, and is stated as such.
+    if device.type == "cpu" and os.environ.get("DRIFTSENSE_CHANNELS_LAST", "1") != "0":
+        try:
+            model = model.to(memory_format=torch.channels_last)
+        except Exception as e:  # noqa: BLE001
+            print(f"[warn] channels_last unavailable ({e}); using default layout",
+                  file=sys.stderr)
+    return model, device
 
 
 def read_gray(path: str) -> np.ndarray:
