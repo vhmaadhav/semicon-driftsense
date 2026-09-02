@@ -36,7 +36,7 @@ def test_no_unrestricted_pickle_loading_on_inference_paths():
         # walk, and torch uses weights_only=False in ~40 places of its own.
         dirnames[:] = [d for d in dirnames
                        if d not in (".git", "__pycache__", "graphify-out",
-                                    ".skill-port", ".dsh")
+                                    ".skill-port", ".dsh", ".sdd", ".venv")
                        and not d.startswith("venv")
                        and not os.path.exists(os.path.join(dirpath, d, "pyvenv.cfg"))]
         for name in filenames:
