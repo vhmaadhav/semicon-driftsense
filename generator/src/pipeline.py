@@ -125,12 +125,18 @@ def generate_fine_canvas_zoned(
     rng: np.random.Generator,
     params: GenerationParams,
     canvas_px: int | None = None,
+    pitch_factor: float = 1.0,
 ) -> dict:
     """`canvas_px` overrides the nominal 10x canvas extent. Phase 2 needs it:
     a 1000 px search frame at magnification m covers 1000*m fine pixels, so
     anything above 10x underfills a 10000 px canvas and the warp fills the
     shortfall with replicated border. Defaults to the nominal size, so the
-    Phase 1 path is unchanged."""
+    Phase 1 path is unchanged.
+
+    `pitch_factor` rescales the canvas's lattice-pitch pool (see
+    generate_zone_canvas); 1.0 reproduces the historical canvas. Only the
+    absent-pair branch in driftsense.generate passes anything else.
+    """
     preset = get_preset(architecture)
     return generate_zone_canvas(
         canvas_px or FINE_CANVAS_SIZE_PX,
@@ -142,6 +148,7 @@ def generate_fine_canvas_zoned(
         linewidth_bias_nm=params.linewidth_bias_nm,
         corner_rounding_px=params.corner_rounding_px,
         polygon_scale_fraction=params.polygon_scale_fraction,
+        pitch_factor=pitch_factor,
     )
 
 

@@ -160,3 +160,59 @@ def presets_for_kind(kind: str):
         raise ValueError(f"Unknown pattern kind '{kind}'. "
                          f"Available: {sorted(_KIND_PRESETS)}")
     return [get_preset(n) for n in _KIND_PRESETS[kind]]
+
+
+# ---------------------------------------------------------------------------
+# Decoy-pitch fidelity (Phase 2 Set C)
+#
+# Lattice pitch lives HERE, in the preset dicts -- the *_pitch_nm fields --
+# and a zoned canvas draws every mat's preset from the whole kind pool. So
+# "regenerate the same architecture with different randomness" (the absent-
+# pair decoy) also re-uses the same pitch support as the scene in frame: a
+# decoy mat whose pitch matches a mat inside the search frame correlates
+# ~0.9+ with it, which is why absent pairs used to score like weak matches.
+# The minimal honest mutation is to draw the decoy's whole pitch support a
+# multiplicative factor away from the reference's, clamped back into the
+# pitch envelope the family's presets actually span -- the decoy stays a
+# plausible die of the same family, but its repeat period no longer echoes
+# the one in the frame.
+
+# Pitch-driving fields per pattern kind. Widths / gate lengths / contacts are
+# CD, not pitch: scaling them too would shift the decoy's visual CD as well,
+# which is a different (and detectable) cue.
+PITCH_FIELDS = {
+    "dram": ("word_line_pitch_nm", "bit_line_pitch_nm"),
+    "finfet": ("fin_pitch_nm", "gate_pitch_nm"),
+}
+
+# The decoy's pitch is reference_pitch * factor, factor uniform in [0.5, 1.0)
+# -- always strictly below the reference's, by up to 2x.
+DECOY_PITCH_FACTOR_RANGE = (0.5, 1.0)
+
+
+def pitch_envelope(kind: str) -> dict:
+    """Legal [min, max] for every pitch-driving field of `kind`: the span the
+    family's own presets cover. Decoy pitches are clamped into this, so a
+    decoy never uses a pitch the architecture family never uses."""
+    presets = presets_for_kind(kind)
+    return {
+        f: (min(p[f] for p in presets), max(p[f] for p in presets))
+        for f in PITCH_FIELDS[kind]
+    }
+
+
+def scaled_pitch_presets(kind: str, factor: float) -> list[dict]:
+    """The kind's preset pool with every pitch-driving field multiplied by
+    `factor`, clamped into the family's pitch envelope. Same keys, same order,
+    same pool length as `presets_for_kind(kind)` -- only the pitch numbers
+    move -- so a zoned canvas generated from the scaled pool consumes its rng
+    exactly like one from the unscaled pool (same number of draws)."""
+    lo_hi = pitch_envelope(kind)
+    out = []
+    for p in presets_for_kind(kind):
+        q = dict(p)
+        for f in PITCH_FIELDS[kind]:
+            lo, hi = lo_hi[f]
+            q[f] = int(round(min(max(p[f] * factor, lo), hi)))
+        out.append(q)
+    return out

@@ -41,11 +41,59 @@ Baseline rows come from the current shipped configuration
 | shipped (band on) | 2.513 s | 3.014 s |
 | no-band (promoted) | 2.655 s | 3.218 s |
 | E1 cache off vs on (flag-based, corrected harness) | 2.533 s vs 2.563 s | — (1.00x, wash) |
+| E3 prune 0.5 vs exhaustive (audited 2026-09-02) | 1.47 s vs 1.44 s | — (0.98x, wash; **not shipped**) |
 
 Clock takeaway: the efficiency win of `band=False` is ~0 — `_band` on the
 half-res probe is cheap. Its value is the **+0.45 accuracy points**, which is
-why it promotes on the accuracy gate, not the clock gate. The remaining
-clock lever is the coarse sweep itself (66.8% of pair time) — E3 below.
+why it promotes on the accuracy gate, not the clock gate. The remaining clock
+lever is the coarse sweep itself (66.8% of pair time) — but E3 pruning of it
+is now MEASURED as a wash on the 200-pair seeded draw (below), so that
+lever is closed for the shipped default (the full-2,250 audit stays
+pending, required only before enabling the gate).
+
+## E3 pruning audit (2026-09-02) — 200-pair seeded-draw audit (full-2,250 equality audit stays pending)
+
+Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
+(2 workers x 2 threads for the A/B, single process for clocks):
+
+* **Equality: PASSED bit-exactly.** margin 0.5 vs exhaustive: x, y, scale,
+  theta, score 0.0e+00 delta on **200/200 pairs**; only `n_hyp` differs
+  (15/200 pairs report fewer offered grid points — instrumentation, not the
+  answer).
+* **Clock: WASH.** single process, 4 torch threads, 20 pairs x 3 interleaved
+  reps: exhaustive p50 1.44 s vs pruned 1.47 s (0.98x), means 1.41 vs 1.40
+  (1.00x). The skipped coarse evaluations are noise against the network
+  forward + refine + polish.
+* **Verdict: default stays `E3_PRUNE_MARGIN = None` (exhaustive).** Perfect
+  equality but nothing to gain; changing instrumentation semantics for a
+  1.00x clock fails the change bar. The 200-pair seeded-draw audit is
+  complete (the promised full-2,250 equality audit stays pending and is
+  only required before enabling the gate) — see the AUDITED note in
+  `driftsense/matching.py`.
+
+## Free regrades and closures (2026-09-02, no new inference)
+
+| check | result | verdict |
+|---|---|---|
+| early-exit CSVs rescored @ shipped 0.18 (corrected masking) | every gate breaks more than it rescues (0.55: −0.0121 paired loc, 1/9; 0.85: −0.0032, 1/3) | early-exit-off confirmed evidence-backed |
+| Set B denoise 3×3 A/B (300 pairs seed 200, fresh inference) | ≤5px 90.7→91.7%, paired loc +0.0140, 12 rescued / 9 broken | under the +0.35 gate — not shipped |
+| rejector round 2 (GBM + 7 engineered features, honest 4-fold CV) | best CV 75.72 vs shipped scalar 75.87; AUC 0.9882 vs 0.9876; in-sample oracle F1 1.000 = overfit | post-hoc rejection closed for nonlinear + engineered families too |
+| hyp-4 / coarse-29/43 sweeps rescored under masked semantics | Set B credit: hyp-4 0.7726 vs baseline 0.7692 (+0.0034); coarse monotone worse | prior verdicts hold |
+| threshold 0.18 vs sweep, held-out with FIXED threshold | full set 75.73 (fixed) vs 75.68 (per-fold fitted); 200-draw 74.87 vs 74.45 | shipped 0.18 confirmed optimal out-of-sample |
+| `refit_xy` | prior measurement stands (+0.04, wash) | stays off |
+
+Clock row for E3 added to the table above; the 200-pair seeded-draw E3
+audit is recorded in `driftsense/matching.py` (AUDITED note) and commit
+bde0c47 (full-2,250 equality audit: pending, not required while the
+default is exhaustive).
+
+Reference-sample validation (see `docs/VERIFIED_GROUND_TRUTH.md` §8):
+register.py on the 20 reference sample pairs — format exact, overall present loc
+credit 0.975 vs the naive reference baseline 0.800, theta sign +gt exact,
+scale=z semantics exact, 4/4 absent declined, median 3.12 s. Our own data's
+reference-baseline calibration: overall present 0.357 — inside the published
+0.30–0.55 band (the "~0.92" claim was our solver's Set A accuracy mistaken
+for the baseline's credit; refuted).
 
 ## Notes per tweak
 
