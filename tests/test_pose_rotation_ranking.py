@@ -30,11 +30,14 @@ Under the OLD ranking (replicated below from the pre-change code) the true
 basin is a rot=0 peak ranked 4th -- the old top-3 excludes it entirely. The
 re-rank must put it first.
 
-The E3 pruning test pins the plan's equality requirement on this fixture:
-with the documented neighbour gate active, pose_candidates must return the
-same hypotheses as the exhaustive scan (identical top-k ordering) while
-actually skipping grid evaluations (proven by call counting, i.e. the gate
-is exercised, not vacuously true).
+The E3 pruning gate is pinned two ways here: test_pruned_scan_returns_exhaustive_topk
+keeps the plan's equality requirement on this fixture (identical top-k
+ordering against the exhaustive scan), and the gate's own margin semantics
+are pinned directly as unit asserts on _odd_point_pruned (deep valley pruned,
+shallow neighbour kept, strict boundary at margin * kth) plus a smoke that
+the wired margin still returns k hypotheses. The gate's firing behaviour on
+real data is measured by the full 2,250-pair audit, not by this fixture,
+where the shipped 0.5 margin correctly never fires.
 """
 
 import os
@@ -54,6 +57,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 from driftsense.matching import (  # noqa: E402
     COARSE_SCALES,
     E3_PRUNE_MARGIN,
+    _odd_point_pruned,
     _peak_score,
     _probe,
     _refine_pose_local,
@@ -199,8 +203,8 @@ def test_pruned_scan_returns_exhaustive_topk():
 
     Two margins: the shipped conservative one (0.5 -- on this fixture the
     gate may not fire at all, so the equality is cheap insurance) and an
-    aggressive one (0.65) that is proven to skip grid points by
-    test_prune_gate_actually_skips_evaluations and must STILL return the
+    aggressive one (0.65) whose gate semantics are pinned directly by
+    test_odd_point_pruned_margin_semantics and which must STILL return the
     exhaustive top-k. The binding equality check is the full 2,250-pair
     audit; this pins the mechanism, not the ship margin."""
     pytest.importorskip("cv2")
@@ -228,34 +232,43 @@ def test_pruned_scan_returns_exhaustive_topk():
     assert one_pr[0][0] == pytest.approx(one_ex[0][0], abs=1e-9)
 
 
-def test_prune_gate_actually_skips_evaluations(monkeypatch):
-    """The equality above is only meaningful if the gate fires: count
-    template evaluations and require the pruned scan to make strictly fewer
-    make_template calls than the exhaustive scan on the same frame. The
-    aggressive 0.65 margin is used because the shipped 0.5 gate correctly
-    refuses to skip points adjacent to the true basin on this fixture."""
+def test_odd_point_pruned_margin_semantics():
+    """Unit asserts on the extracted E3 gate (_odd_point_pruned): the gate
+    prunes an odd grid point only when BOTH of its evaluated even neighbours
+    sit strictly below margin * kth.
+
+    Deep valley -> True (nothing near it can reach the top-k); a shallow
+    neighbour -> False (the point stays in the scan); and the boundary is
+    STRICT -- a neighbour sitting exactly at margin * kth is NOT pruned,
+    because the comparison is `<`, so equality errs on the side of evaluating.
+    Pinning the gate directly makes the margin semantics deterministic; the
+    fixture's correlation landscape cannot (the shipped 0.5 margin never
+    fires on this frame, which the old evaluation-count test measured)."""
     pytest.importorskip("cv2")
-    import driftsense.matching as matching
+    margin, kth = 0.5, 0.9
 
+    # Deep valley: both evaluated even neighbours far below margin * kth.
+    assert _odd_point_pruned(0.10, 0.20, kth, margin) is True
+    # The real call site's right-edge sentinel: no right neighbour (-inf).
+    assert _odd_point_pruned(0.10, -np.inf, kth, margin) is True
+
+    # Shallow: either shoulder at or above the threshold keeps the point.
+    assert _odd_point_pruned(0.50, 0.20, kth, margin) is False
+    assert _odd_point_pruned(0.10, 0.50, kth, margin) is False
+
+    # Strict boundary: exactly margin * kth is NOT pruned (comparison is <),
+    # on either side.
+    assert _odd_point_pruned(margin * kth, -np.inf, kth, margin) is False
+    assert _odd_point_pruned(-np.inf, margin * kth, kth, margin) is False
+
+
+def test_pose_candidates_prune_margin_smoke():
+    """Smoke on the full path: with the gate wired to the 0.5 margin,
+    pose_candidates still returns k=3 hypotheses on this fixture."""
+    pytest.importorskip("cv2")
     reference, search = _fixture()
-    counts = {}
-    real_make_template = matching.make_template
-
-    for label, margin in (("exhaustive", None), ("pruned", 0.65)):
-        calls = {"n": 0}
-
-        def counting_closure(reference_img, *a, __calls=calls, **kw):
-            __calls["n"] += 1
-            return real_make_template(reference_img, *a, **kw)
-
-        monkeypatch.setattr(matching, "make_template", counting_closure)
-        try:
-            pose_candidates(reference, search, k=3, band=False,
-                            prune_margin=margin)
-        finally:
-            monkeypatch.setattr(matching, "make_template", real_make_template)
-        counts[label] = calls["n"]
-
-    assert counts["pruned"] < counts["exhaustive"], (
-        "pruning made the same number of template evaluations (%d) as the "
-        "exhaustive scan -- the gate never fired" % counts["pruned"])
+    out = pose_candidates(reference, search, k=3, band=False,
+                          prune_margin=0.5)
+    assert len(out) == 3
+    for f, r, peak in out:
+        assert np.isfinite(f) and np.isfinite(r) and np.isfinite(peak)

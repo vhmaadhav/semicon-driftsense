@@ -374,12 +374,20 @@ def winner_margin(candidates: list, winner: dict) -> float:
     return float(w - best_other)
 
 
+def _odd_point_pruned(prev: float, nxt: float, kth: float,
+                      margin: float) -> bool:
+    """E3 gate for one odd grid point (see pose_candidates). True = skip it:
+    both evaluated even neighbours sit below margin * kth, so a hill here
+    could not reach the top-k without lifting its own shoulders first."""
+    return max(prev, nxt) < margin * kth
+
+
 def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
                     coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
                     refine_span_scales: int = 17, band: bool = True,
-                    prune_margin: float | None = None) -> list:
+                    prune_margin: float | None = E3_PRUNE_MARGIN) -> list:
     """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
 
     Correlation against a periodic layout is multi-peaked in *scale*: a wrong
@@ -442,8 +450,8 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
         evaluated = sorted(vals[i] for i in range(0, len(grid), 2))
         kth = evaluated[-min(int(k), len(evaluated))]
         for i in range(1, len(grid), 2):
-            if max(vals[i - 1], vals[i + 1] if i + 1 < len(grid) else -np.inf) \
-                    < prune_margin * kth:
+            nxt = vals[i + 1] if i + 1 < len(grid) else -np.inf
+            if _odd_point_pruned(vals[i - 1], nxt, kth, prune_margin):
                 vals[i] = -np.inf
             else:
                 vals[i] = coarse(float(grid[i]))
