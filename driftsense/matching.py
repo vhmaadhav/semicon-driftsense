@@ -302,6 +302,21 @@ E3_PRUNE_MARGIN = None
 # refine, and E3 pruning offsets them.
 RERANK_MULTIPLIER = 2
 
+# Rotation-aware re-ranking of the scale shortlist (issue #37). OFF by default.
+#
+# The mechanism is sound -- ranking every scale at rot=0 can discard a true
+# basin that only separates at its own rotation -- but enabling it changes the
+# *shipped decoder*, and the full-2,250 A/B for it has not been run. Turning it
+# on without that evidence would swap the final decode on argument alone right
+# before submission. With this False, `pose_candidates` reproduces the previous
+# `peaks[:k]` ranking exactly: the shortlist is sliced straight to k and no
+# rotation scan is cached, so the refine loop takes its original direct-scan
+# path (pinned by tests/test_pose_rotation_ranking.py).
+#
+# To enable: set this True, run the full 2,250-pair A/B, and record the paired
+# delta per component before changing the default.
+RERANK_ROTATION = False
+
 
 def _golden_max(f, lo: float, hi: float, iters: int = 8) -> tuple[float, float]:
     """Maximise a unimodal f on [lo, hi]. Returns (argmax, max).
@@ -397,7 +412,8 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
                     coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
                     refine_span_scales: int = 17, band: bool = True,
-                    prune_margin: float | None = E3_PRUNE_MARGIN) -> list:
+                    prune_margin: float | None = E3_PRUNE_MARGIN,
+                    rerank_rotation: bool = RERANK_ROTATION) -> list:
     """Up to `k` distinct (scale, rotation, peak) hypotheses, best first.
 
     Correlation against a periodic layout is multi-peaked in *scale*: a wrong
@@ -490,9 +506,11 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     # argmax) is cached here and the refine loop below reuses it: the marginal
     # cost is only the scans for peaks that fail to make the cut, and the E3
     # pruning above repays that.
-    ranked = peaks[:RERANK_MULTIPLIER * max(int(k), 1)]
+    # With `rerank_rotation` False this is `peaks[:k]` after the slice below,
+    # and `rot_best` stays empty -- i.e. byte-for-byte the pre-#37 behaviour.
+    ranked = peaks[:(RERANK_MULTIPLIER if rerank_rotation else 1) * max(int(k), 1)]
     rot_best: dict[int, tuple[float, float]] = {}
-    if len(ranked) > 1:
+    if rerank_rotation and len(ranked) > 1:
         for i in ranked:
             scores = [float(coarse(float(grid[i]), r)) for r in rots]
             j = int(np.argmax(scores))   # first max -- same tie rule as max()

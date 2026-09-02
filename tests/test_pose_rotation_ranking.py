@@ -191,7 +191,7 @@ def test_rerank_rescues_rotated_basin():
     pytest.importorskip("cv2")
     reference, search = _fixture()
     out = pose_candidates(reference, search, k=3, band=False,
-                          prune_margin=None)
+                          prune_margin=None, rerank_rotation=True)
     scales = [f for f, _, _ in out]
     assert any(abs(f - Z_TRUE) <= 0.35 for f in scales), (
         "re-ranked top-3 %s does not contain the true basin z=9.0" % scales)
@@ -225,7 +225,11 @@ def test_pruned_scan_returns_exhaustive_topk():
     pytest.importorskip("cv2")
     # The production default stays exhaustive: equality held, the clock did
     # not pay. If that default ever changes, re-run both audit legs.
-    assert pose_candidates.__defaults__[-1] is None, (
+    # Look the default up by NAME: a positional index into __defaults__ breaks
+    # the moment any parameter is appended, which silently re-points the
+    # assertion at an unrelated argument.
+    import inspect
+    assert inspect.signature(pose_candidates).parameters["prune_margin"].default is None, (
         "pose_candidates no longer defaults to prune_margin=None; the "
         "candidate margins audited below were chosen for the exhaustive-"
         "default regime -- re-run the equality AND clock audits before "
@@ -294,3 +298,34 @@ def test_pose_candidates_prune_margin_smoke():
     assert len(out) == 3
     for f, r, peak in out:
         assert np.isfinite(f) and np.isfinite(r) and np.isfinite(peak)
+
+
+def test_rerank_is_off_by_default_and_the_default_path_is_the_old_one():
+    """The shipped decoder must not change until the full-2,250 A/B is run.
+
+    `RERANK_ROTATION` is False, so `pose_candidates` must reproduce the
+    pre-#37 `peaks[:k]` ranking exactly. Pinning it by equality against an
+    explicit `rerank_rotation=False` call would be vacuous, so this asserts the
+    two things that actually define the old path: the default is off, and the
+    default result differs from the re-ranked one on the very fixture built to
+    make re-ranking change the answer.
+    """
+    pytest.importorskip("cv2")
+    from driftsense.matching import RERANK_ROTATION
+    assert RERANK_ROTATION is False, (
+        "enabling the rotation re-rank changes the shipped decode; it needs a "
+        "full 2,250-pair A/B first (issue #37 / PR #35 review)")
+
+    reference, search = _fixture()
+    default = pose_candidates(reference, search, k=3, band=False,
+                              prune_margin=None)
+    explicit_off = pose_candidates(reference, search, k=3, band=False,
+                                   prune_margin=None, rerank_rotation=False)
+    assert default == explicit_off, "the default no longer tracks RERANK_ROTATION"
+
+    reranked = pose_candidates(reference, search, k=3, band=False,
+                               prune_margin=None, rerank_rotation=True)
+    assert default != reranked, (
+        "on the p008-style fixture the re-rank must change the hypotheses; if "
+        "it does not, this test can no longer prove the default path is the "
+        "old one")
