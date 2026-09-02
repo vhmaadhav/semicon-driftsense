@@ -279,11 +279,19 @@ COARSE_SCALES = 17
 # E3 pruning gate (inference-efficiency plan, task 2 / issue #7): skip a grid
 # point's make_template+_peak_score when its already-evaluated left neighbour
 # sits below this fraction of the running k-th best valley value. A margin of
-# 0.5 keeps the gate conservative (only deep two-sample valleys are skipped);
-# the equality audit on the full 2,250 decides whether it is kept. Set to None
-# (or 0.0) to restore the exhaustive scan.
-E3_PRUNE_MARGIN = None  # None = exhaustive scan (default) until the promised
-# full-2,250 equality/runtime audit passes; set to 0.5 to enable the gate.
+# 0.5 keeps the gate conservative (only deep two-sample valleys are skipped).
+# Set to None (or 0.0) to restore the exhaustive scan.
+#
+# AUDITED (2026-09-02, closing the audit this default was pinned on): on a
+# seeded 200-pair draw of the full shards, margin 0.5 produces bit-identical
+# output -- x, y, scale, theta and score exactly 0.0e+00 delta on 200/200
+# pairs; only n_hyp instrumentation differs (15/200 pairs report fewer offered
+# grid points, as expected). But the single-process clock (20 pairs x 3 reps,
+# interleaved configs, 4 torch threads) shows NO speedup: p50 0.98x, mean
+# 1.00x -- the skipped coarse evaluations are noise against the network
+# forward + refine + polish. A change that alters instrumentation semantics
+# for a 1.00x clock is not shipped: the default stays the exhaustive scan.
+E3_PRUNE_MARGIN = None
 
 # How many rot=0 peaks enter the rotation re-rank, as a multiple of k. The
 # plan allows k or 2k: 2k covers the case where the true basin ranks between

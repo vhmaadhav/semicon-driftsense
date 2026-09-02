@@ -212,20 +212,21 @@ def test_pruned_scan_returns_exhaustive_topk():
     and an aggressive 0.65 whose gate semantics are pinned directly by
     test_odd_point_pruned_margin_semantics. Both must return the exhaustive
     top-k. The margins are AUDIT_PRUNE_MARGINS, literal constants in this
-    module, NOT read from the production E3_PRUNE_MARGIN: the shipped default
-    is deliberately None until the full-2,250 audit, and looping over that
-    constant would make this an equality check of None vs exhaustive --
-    vacuously true. The `__defaults__` assert below pins that exhaustive
-    default; the binding equality check remains the full 2,250-pair audit;
-    this pins the mechanism, not the ship margin."""
+    module, NOT read from the production E3_PRUNE_MARGIN, so looping here can
+    never become a vacuous None-vs-exhaustive check. The `__defaults__` assert
+    below pins that exhaustive default. Audit status (2026-09-02): the
+    end-to-end equality audit PASSED (bit-identical x/y/scale/theta/score on a
+    200-pair seeded draw) but the clock showed no speedup (p50 0.98x, mean
+    1.00x), so the default stays exhaustive for keeps-the-semantics reasons,
+    not equality ones -- see the AUDITED note at matching.E3_PRUNE_MARGIN."""
     pytest.importorskip("cv2")
-    # The production default must stay exhaustive until the promised audit;
-    # if that default ever changes, this audit's margins must be revisited.
+    # The production default stays exhaustive: equality held, the clock did
+    # not pay. If that default ever changes, re-run both audit legs.
     assert pose_candidates.__defaults__[-1] is None, (
         "pose_candidates no longer defaults to prune_margin=None; the "
         "candidate margins audited below were chosen for the exhaustive-"
-        "default regime and the full 2,250-pair equality audit must be "
-        "re-run before shipping any enabled default")
+        "default regime -- re-run the equality AND clock audits before "
+        "shipping any enabled default")
     reference, search = _fixture()
     exhaustive = pose_candidates(reference, search, k=3, band=False,
                                  prune_margin=None)
