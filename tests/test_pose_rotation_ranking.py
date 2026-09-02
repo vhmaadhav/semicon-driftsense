@@ -56,7 +56,6 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 
 from driftsense.matching import (  # noqa: E402
     COARSE_SCALES,
-    E3_PRUNE_MARGIN,
     _odd_point_pruned,
     _peak_score,
     _probe,
@@ -73,6 +72,13 @@ ALIAS_SCALES = [8.0, 10.25, 11.25, 11.75]
 ALIAS_BLUR = 2.6          # places the aliases between the true basin's
 # rot-0 score and its best-rotation score
 CANVAS_PX = 9000
+
+# Candidate prune margins for the equality audit below. Deliberately literal
+# constants in the test, NOT the production E3_PRUNE_MARGIN: the shipped
+# default is None (exhaustive) until the full-2,250 audit, so auditing that
+# constant would compare None against itself. 0.5 is the conservative margin
+# earmarked for the audit; 0.65 is aggressive enough to exercise the gate.
+AUDIT_PRUNE_MARGINS = (0.5, 0.65)
 
 
 @lru_cache(maxsize=1)
@@ -201,17 +207,29 @@ def test_pruned_scan_returns_exhaustive_topk():
     """E3 pruning (equality-audit requirement, plan task 2): the neighbour
     gate must not change the returned hypotheses on this fixture.
 
-    Two margins: the shipped conservative one (0.5 -- on this fixture the
-    gate may not fire at all, so the equality is cheap insurance) and an
-    aggressive one (0.65) whose gate semantics are pinned directly by
-    test_odd_point_pruned_margin_semantics and which must STILL return the
-    exhaustive top-k. The binding equality check is the full 2,250-pair
-    audit; this pins the mechanism, not the ship margin."""
+    Two explicit margins: the conservative candidate margin 0.5 (on this
+    fixture the gate may not fire at all, so the equality is cheap insurance)
+    and an aggressive 0.65 whose gate semantics are pinned directly by
+    test_odd_point_pruned_margin_semantics. Both must return the exhaustive
+    top-k. The margins are AUDIT_PRUNE_MARGINS, literal constants in this
+    module, NOT read from the production E3_PRUNE_MARGIN: the shipped default
+    is deliberately None until the full-2,250 audit, and looping over that
+    constant would make this an equality check of None vs exhaustive --
+    vacuously true. The `__defaults__` assert below pins that exhaustive
+    default; the binding equality check remains the full 2,250-pair audit;
+    this pins the mechanism, not the ship margin."""
     pytest.importorskip("cv2")
+    # The production default must stay exhaustive until the promised audit;
+    # if that default ever changes, this audit's margins must be revisited.
+    assert pose_candidates.__defaults__[-1] is None, (
+        "pose_candidates no longer defaults to prune_margin=None; the "
+        "candidate margins audited below were chosen for the exhaustive-"
+        "default regime and the full 2,250-pair equality audit must be "
+        "re-run before shipping any enabled default")
     reference, search = _fixture()
     exhaustive = pose_candidates(reference, search, k=3, band=False,
                                  prune_margin=None)
-    for margin in (E3_PRUNE_MARGIN, 0.65):
+    for margin in AUDIT_PRUNE_MARGINS:
         pruned = pose_candidates(reference, search, k=3, band=False,
                                  prune_margin=margin)
         assert len(exhaustive) == len(pruned) == 3
