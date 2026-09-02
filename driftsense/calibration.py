@@ -55,6 +55,8 @@ Only numpy + stdlib. No sklearn.
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 # Frozen feature list — the 9-feature artefact (6 shipped + issue-#6
@@ -204,8 +206,33 @@ def calibrate_shipped(features: dict) -> float:
     ignored). Matched against driftsense.config.SHIPPED_THRESHOLD = 0.4870
     (downward-biased re-tune on the 2,250 holdout, same convention as the
     historical 0.18 on the legacy min() statistic).
+
+    **Non-finite features are imputed to 0.0, matching the fit exactly.**
+    `locate_phase2` deliberately sets `pose_peak = NaN` for explicit-pose
+    candidates (`pose=` supplied, matching.py:1187) and for rescue-generated
+    candidates (matching.py:1244), because neither came from a coarse pose
+    sweep and so has no sweep peak to report. Without this guard `z` becomes
+    NaN, the sigmoid returns NaN, and `NaN >= threshold` evaluates False --
+    silently forcing `found=0` on a pair the decode may have located perfectly.
+
+    Imputing 0.0 is not a guess: `scripts/fit_calibration.py` builds every
+    design matrix with `np.nan_to_num(..., nan=0.0)` (lines 132, 178, 197, 268,
+    325), so a NaN feature contributed exactly 0.0 during fitting too. The
+    inference path now reproduces the training preprocessing rather than
+    diverging from it.
+
+    Infinities are also mapped to 0.0. That is a deliberate *divergence*: the
+    fit's `nan_to_num` would have mapped +/-inf to +/-1.8e308 and saturated the
+    logistic, but no feature in the fit data was ever infinite, so there is no
+    trained behaviour to preserve -- and saturating to a confident PRESENT on a
+    corrupt statistic is the worst available failure.
     """
     z = SHIPPED_INTERCEPT
     for f in SHIPPED_FEATURES:
-        z += SHIPPED_COEFS[f] * float(features[f])
-    return float(_sigmoid(np.asarray(z)))
+        v = float(features[f])
+        z += SHIPPED_COEFS[f] * (v if math.isfinite(v) else 0.0)
+    out = float(_sigmoid(np.asarray(z)))
+    # A non-finite z can only come from a non-finite coefficient or intercept,
+    # which would be a corrupted constant table; fail closed rather than emit
+    # NaN into the found decision.
+    return out if math.isfinite(out) else 0.0

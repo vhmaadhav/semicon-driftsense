@@ -44,7 +44,7 @@ from driftsense.matching import locate_phase2  # noqa: E402
 # name for backwards compatibility -- every caller in this repo imports it
 # from here.
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
-from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402,F401
+from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402,F401
 
@@ -109,8 +109,14 @@ def main():
     ap.add_argument("--output", required=True, help="predictions.csv")
     ap.add_argument("--weights", default=I.DEFAULT_WEIGHTS)
     ap.add_argument("--threshold", type=float, default=DEFAULT_FOUND_THRESHOLD,
-                    help="score at or above which a pair is reported found")
-    ap.add_argument("--verification", default="zncc",
+                    help="confidence at or above which a pair is reported found. "
+                         "Applies to the LEARNED path only: the statistic and the "
+                         "threshold are one unit system, so when the weights cannot "
+                         "load and the ZNCC fallback runs, this value is ignored and "
+                         "the fallback uses its own calibrated "
+                         "LEGACY_FALLBACK_THRESHOLD instead -- a fused6 threshold "
+                         "applied to a raw NCC would decide nothing meaningful")
+    ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
                     help="hypothesis selector: zncc (default) | consensus | majority. "
                          "consensus overrides the native-ZNCC winner only when the rank "
                          "and band scores pick the same different hypothesis; it was "
@@ -119,7 +125,12 @@ def main():
                          "spans zero, 5 broken / 6 rescued -- real but under the "
                          "promotion gate, so zncc stays the default")
     ap.add_argument("--threads", type=int, default=0,
-                    help="torch threads; 0 leaves the default")
+                    help="torch/OpenCV thread cap. 0 (default) auto-caps to "
+                         "min(4, CPU cores) to match the 4-core reference "
+                         "machine -- it does NOT leave the library defaults, "
+                         "because an uncapped pool oversubscribes the grader's "
+                         "box and inflates every per-pair time. Pass a positive "
+                         "value to override.")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
 

@@ -439,3 +439,79 @@ Sign caveat (unchanged): pose_peak's raw-space coefficient is negative although
 pose_peak correlates positively with presence unconditionally — a joint ranker
 over correlated features (pose_peak ≈ zncc duplicate); the shipped property is
 held-out AUC, not single-coefficient signs.
+
+---
+
+## PR #48 review addendum (2026-09-03): fused6 does not ship
+
+### The measurement that decides it
+
+One decode, both statistics recomputed offline from the `--features` columns, so
+coordinates are **identical** and every delta belongs to the statistic. Scored
+with `scripts/eval_ext.py` (the parity-pinned scorer), not a reimplementation.
+
+| | fused6 @0.4870 | legacy_min @0.18 | delta |
+|---|---:|---:|---:|
+| FULL 2,500 (constants fitted here) | 78.09 | 77.91 | **+0.18** |
+| HOLDOUT 500 (untouched, seed 20260902) | 76.41 | 76.84 | **−0.43** |
+
+Paired bootstrap, 4,000 resamples, on (localisation + 15·F1) — the two
+components that move; pose and calibration are near-identical:
+
+| | delta | 95% CI | P(fused better) |
+|---|---:|---|---:|
+| full | +0.141 | [−0.105, +0.389] | 0.860 — not significant |
+| **holdout** | **−0.443** | **[−0.947, +0.000]** | **0.011** |
+
+Positive but not significant on the pool its constants were fitted on;
+significantly negative on data it never saw. That is the overfitting signature.
+
+### Three reasons this is worse than the raw −0.43
+
+1. **It moves away from the +4 bonus.** Rejection F1 on untouched data goes
+   0.8958 → 0.8663. The bonus gate is F1 ≥ 0.90, and 4 points dwarfs ±0.4.
+2. **The AUC gain is nearly worthless in points.** legacy_min already scores
+   **AUC 0.9882** on the full 2,500 against a 10-point component, so 0.9929 buys
+   **+0.05 points**. The PR's headline "0.9689 → 0.9927" is a 500-pair
+   subsample under the lenient present-only convention, not the ground-truth
+   "AUC of the score column against per-pair correctness" that `eval_ext`
+   reports separately (0.77–0.81).
+3. **The threshold was never the problem.** Swept with the pinned scorer,
+   0.4870 is near-optimal for fused6 on both sets (full best 78.12 @0.55 vs
+   78.09; holdout best *is* 0.4870). The statistic is what fails to generalise.
+
+**Shipped default reverted to `legacy_min` / 0.18.** The implementation,
+constants and tests are retained: set `SHIPPED_CONFIDENCE = "fused6"` and
+`SHIPPED_THRESHOLD = 0.4870` together to re-enable after a refit on the Set-C
+feature distributions.
+
+## Bonus analysis (2026-09-03)
+
+### +6 (Set D ≥ 0.40 AND Sets A–C ≥ 0.50) — safe, no action
+
+| gate | value | margin |
+|---|---:|---:|
+| Set D credit | **0.984** | +0.584 |
+| min(A, B, C) | **0.848** | +0.348 |
+
+### +4 (rejection F1 ≥ 0.90) — the marginal one, and 0.18 is the right bet
+
+Expected score = localisation + 15·F1 + 4·P(F1 ≥ 0.90), where P is estimated by
+the stratified draw the rubric actually grades on (A70/B70/C40, 3,000 draws):
+
+| threshold | FULL expected | HOLDOUT loc / F1 |
+|---|---:|---|
+| 0.170 | 53.20 | 36.48 / 0.8958 |
+| **0.180 (shipped)** | **53.14** | 36.48 / 0.8958 |
+| 0.190 | 53.09 | 36.48 / 0.8958 |
+| 0.200 | **53.31** | 36.48 / 0.8958 |
+| 0.205 | 53.23 | 36.29 / 0.8866 |
+| 0.210 | 52.62 | 36.29 / 0.8923 |
+
+0.200 scores +0.17 higher on the fitted pool. **It is not taken**, because it is
+a narrow peak 0.01 away from a −0.7 cliff at 0.210, while 0.180 sits on a flat
+plateau (0.170/0.180/0.190 span 53.20–53.09). The external CPU benchmark at
+`75c4572` is direct evidence the score distribution shifts substantially on
+organizer-like data — correct matches scored 0.20–0.43 there against 0.83–0.95
+on ours — so a threshold chosen on a narrow peak of *our* distribution is a bad
+bet for 4 points. Robustness beats +0.17 of pool-fitted expected value here.

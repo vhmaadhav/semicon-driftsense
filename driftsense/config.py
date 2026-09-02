@@ -38,7 +38,7 @@ from __future__ import annotations
 #             0.9915. Zero inference cost, no decode change.
 #   "legacy_min": the historical min(network score, native ZNCC).
 # The parity test pins register.py and eval_ext.py to this module's values.
-SHIPPED_CONFIDENCE = "fused6"
+SHIPPED_CONFIDENCE = "legacy_min"
 
 # Found threshold. UNITS CHANGE (2026-09-03): with SHIPPED_CONFIDENCE="fused6"
 # the score column is a calibrated P(present) and this threshold lives in
@@ -47,8 +47,35 @@ SHIPPED_CONFIDENCE = "fused6"
 # localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b). The
 # historical 0.18 gated the legacy min() statistic and is kept ONLY for the
 # no-weights ZNCC fallback path in register.py, whose score is raw ZNCC.
-SHIPPED_THRESHOLD = 0.4870
+SHIPPED_THRESHOLD = 0.18
 LEGACY_FALLBACK_THRESHOLD = 0.18
+
+# 2026-09-03, PR #48 review: fused6 was measured against legacy_min on ONE
+# decode (features recorded with --features, both statistics recomputed
+# offline, so coordinates are identical and every delta is the statistic's).
+#
+#                                fused6@0.4870   legacy@0.18    delta
+#   FULL 2,500 (fitted here)        78.09           77.91       +0.18
+#   HOLDOUT 500 (untouched)         76.41           76.84       -0.43
+#
+# Paired bootstrap on (localisation + 15*F1), 4,000 resamples:
+#   full     delta +0.141  95% CI [-0.105, +0.389]  P(fused better) 0.860
+#   holdout  delta -0.443  95% CI [-0.947, +0.000]  P(fused better) 0.011
+#
+# Positive but not significant on the pool its constants were fitted on;
+# significantly NEGATIVE on data it never saw. That is the overfitting
+# signature, and it is driven by rejection F1 (holdout 0.8958 -> 0.8663),
+# which is also the metric carrying the +4 bonus at F1 >= 0.90 -- fused6 moves
+# AWAY from that gate on untouched data.
+#
+# The calibration AUC gain that motivated fused6 is real but nearly worthless
+# in points: legacy already scores AUC 0.9882 on the full set against a
+# 10-point component, so 0.9929 buys +0.05 points.
+#
+# The fused6 implementation, constants and tests are retained; set
+# SHIPPED_CONFIDENCE = "fused6" and SHIPPED_THRESHOLD = 0.4870 together (they
+# are ONE unit system) to re-enable after a refit on the Set-C feature
+# distributions.
 
 SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"

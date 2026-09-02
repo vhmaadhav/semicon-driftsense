@@ -81,12 +81,23 @@ def _argparse_defaults(main_fn):
 def test_register_threshold_default_is_the_shared_shipped_value():
     import register
     assert register.DEFAULT_FOUND_THRESHOLD == SHIPPED_THRESHOLD
-    # Units change (2026-09-03): the score column is now the fused 6-feature
-    # calibrated P(present) (driftsense.calibration.calibrate_shipped), so the
-    # threshold lives in probability units, not the legacy min() scale of 0.18
-    # (kept only for the no-weights ZNCC fallback; see driftsense/config.py).
-    assert SHIPPED_THRESHOLD == pytest.approx(0.4870)
-    assert SHIPPED_CONFIDENCE == "fused6"
+    # The statistic and its threshold are ONE unit system: a fused6 threshold
+    # applied to a legacy min() score (or vice versa) decides nothing
+    # meaningful. Pin the COUPLING rather than a bare literal, so flipping
+    # SHIPPED_CONFIDENCE without moving the threshold fails loudly.
+    #
+    # Shipped default reverted to legacy_min on 2026-09-03 (PR #48 review):
+    # fused6 measured -0.443 on an untouched holdout, P(better) = 0.011, and
+    # moved rejection F1 away from the +4 bonus gate. See driftsense/config.py.
+    assert SHIPPED_CONFIDENCE in ("legacy_min", "fused6")
+    if SHIPPED_CONFIDENCE == "legacy_min":
+        assert SHIPPED_THRESHOLD == pytest.approx(0.18), (
+            "legacy min(score, zncc) is gated at 0.18")
+    else:
+        assert SHIPPED_THRESHOLD == pytest.approx(0.4870), (
+            "fused6 emits calibrated P(present); its gate is 0.4870, not the "
+            "legacy 0.18 -- shipping the legacy threshold against the fused "
+            "statistic would decline almost nothing")
 
 
 def test_eval_ext_effective_defaults_match_register():

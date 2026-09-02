@@ -76,6 +76,37 @@ def zncc_fallback(reference: np.ndarray, search: np.ndarray) -> dict:
     return best
 
 
+def _fuse_conv_bn(model):
+    """Fold Conv2d -> BatchNorm2d pairs into single convolutions (eval only).
+
+    Exact: in eval mode BatchNorm applies fixed per-channel scale and shift from
+    its running statistics, which composes into the convolution's weight and
+    bias. The pass walks children in declaration order and only fuses a
+    BatchNorm whose immediately preceding sibling is the Conv2d that feeds it --
+    the pattern this model uses throughout. Anything else is left alone, so a
+    layout the pass does not understand degrades to no fusion rather than to a
+    wrong graph.
+    """
+    import torch.nn as nn
+    from torch.nn.utils.fusion import fuse_conv_bn_eval
+
+    model.eval()
+
+    def walk(mod):
+        prev_name, prev = None, None
+        for name, child in list(mod.named_children()):
+            if isinstance(child, nn.BatchNorm2d) and isinstance(prev, nn.Conv2d):
+                setattr(mod, prev_name, fuse_conv_bn_eval(prev, child))
+                setattr(mod, name, nn.Identity())
+                prev_name, prev = None, None
+            else:
+                walk(child)
+                prev_name, prev = name, child
+
+    walk(model)
+    return model
+
+
 def load_model(weights_path: str):
     """Return (model, device) or None if the learned path is unavailable."""
     try:
@@ -133,6 +164,17 @@ def load_model(weights_path: str):
     # ~200,000x below the 1 px credit tier, but it is a numerical difference,
     # not an exact one, and is stated as such.
     if device.type == "cpu" and os.environ.get("DRIFTSENSE_CHANNELS_LAST", "1") != "0":
+        # Fold every BatchNorm2d into the convolution feeding it. In eval mode a
+        # BatchNorm is a fixed affine map, so this is an algebraic identity --
+        # the folded weights produce the same function with 17 fewer kernel
+        # launches and 17 fewer passes over the activations. Measured on the
+        # 924x924 search branch, 4 threads: 979.8 -> 706.3 ms, 1.39x, max output
+        # difference 5.25e-06 (float re-association only).
+        if os.environ.get("DRIFTSENSE_FUSE_BN", "1") != "0":
+            try:
+                model = _fuse_conv_bn(model)
+            except Exception as e:  # noqa: BLE001
+                print(f"[warn] conv/bn fusion skipped ({e})", file=sys.stderr)
         try:
             model = model.to(memory_format=torch.channels_last)
         except Exception as e:  # noqa: BLE001

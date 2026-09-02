@@ -130,8 +130,7 @@ def refine_bicubic(search: np.ndarray, template: np.ndarray,
 def refine_upsampled_dft(search: np.ndarray, template: np.ndarray,
                          cx: float, cy: float,
                          radius: int = REFINE_RADIUS,
-                         up_factor: int = UP_FACTOR,
-                         up_half: int = 2) -> tuple[float, float, float]:
+                         up_factor: int = UP_FACTOR) -> tuple[float, float, float]:
     """Refine (cx, cy) with Guizar-Sicairos upsampled-DFT cross-correlation.
 
     The ZNCC peak of a window/template pair sits where the (mean-removed)

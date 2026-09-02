@@ -28,7 +28,7 @@ reference box per the Compute protocol.
 3. **D3 — driftsense/coarse_fft.py spectral coarse scorer** (status: done,
    flag off by default, not wired into the decode — integrator wires after
    audit)
-   - [x] tests/test_coarse_fft.py (TDD, 8 tests)
+   - [x] tests/test_coarse_fft.py (TDD, 8 tests) -- REMOVED before merge, see D3
    - [x] .agents/coarse_fft_ab.py A/B: value parity 4.8e-08 (25x inside the
          1e-6 bar), argmax 0/150 disagreements, x1.15 vs matchTemplate
    - [x] Net win is honest but small: ~48 ms/pair ≈ 1.5% of pair median
@@ -128,7 +128,16 @@ locate_phase2 on p001–p003):**
    ~6.95 ms/call × 50 ≈ 347 ms/pair**, which no search-side FFT change can
    touch.
 
-### D3 — driftsense/coarse_fft.py (2026-09-03, dev machine)
+### D3 — spectral coarse scorer (2026-09-03, dev machine) — **CODE REMOVED**
+
+> **Removed before merge (PR #48 review).** `driftsense/coarse_fft.py`,
+> `tests/test_coarse_fft.py` and the A/B harness were deleted. The module was
+> never wired into `locate_phase2`, it measured out at ~1.5% net, and its parity
+> test failed on the CI image (OpenCV 5: 16x16 template, spectral
+> 0.9999999999999997 vs cv2 0.999978244304657, diff 2.18e-05 against a 1e-06
+> assertion). Loosening a parity assertion to green up CI for an unshipped
+> module is the wrong trade before submission. The measurement below is kept as
+> the record of *why* the approach does not pay.
 
 **Built (flag-gated, default OFF, NOT wired into locate_phase2 — integrator
 wires after audit):**
@@ -209,3 +218,76 @@ on the table is the ~347 ms/pair of make_template+_probe construction
 | `.agents/fft_ceiling_tmp.py` | NEW — D2 microbenchmark |
 | `.agents/coarse_fft_ab.py` | NEW — D3 A/B validation |
 | `.agents/A_EFFICIENCY_REPORT.md` | NEW — this report |
+
+---
+
+## CPU campaign, round 2 (2026-09-03, PR #48 review)
+
+All measured on `./venv` (CPU-only torch 2.13, 4 threads) — the graders'
+configuration. **Every number below was taken on an idle machine**; a runtime
+figure measured while another job holds cores is fiction (one intermediate
+reading of 3.49 s median in this session was exactly that, and is discarded).
+
+### Where the time is
+
+Re-measured on CPU rather than the CUDA-capable venv, because the two disagree
+about which stage dominates:
+
+| stage | CPU (graded) | issue #7 (GPU venv) |
+|---|---:|---:|
+| locate (network) | **90.6%** | 21.3% |
+| pose_candidates | 8.2% | 66.8% |
+
+Issue #7's SEA-elimination spec therefore targets ~8% of the graded cost. That
+also explains the E1 embedding cache measuring as "a clock dud" and the
+early-exit sweep looking cheap: both were clocked where the network was not the
+bottleneck.
+
+### What paid
+
+| change | end-to-end median | exactness |
+|---|---:|---|
+| `channels_last` (PR #42) | 4.97 s -> 1.82 s, **2.73x** | 3.6e-05 px, 0 decision changes over 252 pairs |
+| **conv+BN folding** | 2.04 s -> 1.91 s, **1.07x** | 1.2e-05 px, 0 decision changes over 252 pairs |
+
+**Correction worth recording.** An isolated forward-pass benchmark put BN folding
+at **1.39x** (979.8 -> 706.3 ms on a synthetic 924x924 input), which would imply
+~1.26x end-to-end at a 74% network share. The paired pipeline measurement on an
+idle machine gives **1.07x** (median 2.04 -> 1.91 s, mean 1.92 -> 1.79 s, p90
+2.18 -> 2.05 s, n=10 each). The isolated number is the one to distrust: a
+synthetic tensor in a tight loop has different cache behaviour from the real
+decode, which interleaves OpenCV work between forwards. Only the pipeline figure
+is quoted anywhere else in this PR.
+
+The two profiles above were taken back to back on an idle machine in one run, so
+they are directly comparable; the 1.82 s figure in the `channels_last` row comes
+from an earlier session and should not be differenced against the 2.04 s
+baseline here.
+
+BN folding is an algebraic identity in eval mode: BatchNorm applies a fixed
+per-channel scale and shift from its running statistics, which composes into the
+preceding convolution's weight and bias. 17 BatchNorm2d layers fold away, so the
+network makes 17 fewer kernel launches and 17 fewer passes over the 924x924
+activations. Guarded by `DRIFTSENSE_FUSE_BN=0`, and the pass only fuses a
+BatchNorm whose immediately preceding sibling is the Conv2d feeding it — an
+unrecognised layout degrades to no fusion rather than to a wrong graph.
+
+### What did not pay — measured, not assumed
+
+| idea | result | why |
+|---|---:|---|
+| Batch the 3 pose hypotheses into one forward | **0.97x** | The 924x924 search input already saturates 4 threads; there is no underutilisation to recover. Outputs bit-identical (0.00e+00), so the idea was sound and simply has no headroom here. |
+| Dynamic INT8 quantisation | **0.88x** | The model is 19 Conv2d and **0 Linear**; `quantize_dynamic` covers Linear/LSTM only, so it adds observer overhead and quantises nothing. |
+| `torch.jit.trace` + `freeze` | **fails** | `TracingCheckError: Graphs differed across invocation` — `model.py:245` branches on a tensor shape, so the trace does not generalise. |
+| Hand-written C / SIMD kernels | **not attempted, and should not be** | Every hot path is already compiled SIMD: 19 convolutions execute in oneDNN's hand-tuned AVX kernels, and `make_template`/`matchTemplate` are OpenCV's C++ SIMD. Beating oneDNN in hand-written C is not a realistic use of the remaining time, and a C extension adds a compile step to a submission that must run unmodified on the graders' machine. The remaining levers here are algorithmic, not low-level. |
+
+### Algorithmic levers deliberately NOT taken
+
+* **Crop the search around the coarse estimate.** 924^2 -> ~400^2 would be
+  ~3-5x, and `pose_candidates` already yields `coarse_x_native`. But
+  `ContextBranch` exists precisely to see the whole lattice and decide *which*
+  repeat is correct; cropping would remove that evidence on exactly the
+  wrong-basin pairs that are the dominant failure mode. Needs a full A/B before
+  anyone ships it.
+* **Static INT8 PTQ.** Plausibly ~2x, but it changes numerics, needs a
+  calibration set, and `torch.ao.quantization` is deprecated in torch 2.13.
