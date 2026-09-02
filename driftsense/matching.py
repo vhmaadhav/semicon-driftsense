@@ -251,6 +251,15 @@ def uncanonicalize_point(M: np.ndarray, x: float, y: float) -> tuple[float, floa
 PHASE2_SCALE_BOUNDS = (8.0, 12.0)
 PHASE2_ROTATION_BOUNDS = (-5.0, 5.0)
 
+# Sub-pixel drift recovery (see `drift_row_refine`). The lag covers 3 sigma of
+# the severity-4 drift jitter (sd up to ~2.1 px); a narrower window clips the
+# peak exactly where the points are. Both other values are measured optima on
+# the full 1,750 present pairs -- see the A/B table in `.agents/SUBPIXEL_DRIFT.md`.
+DRIFT_ROW_LAG = 12
+DRIFT_ROW_MIN_CORR = 0.30
+DRIFT_MAX_SHIFT = 5.0      # upper bound; the effective clamp is drift-scaled
+DRIFT_CLAMP_K = 2.0        # clamp = clip(K * measured drift sd, 2.0, DRIFT_MAX_SHIFT)
+
 # Samples in the coarse scale sweep. This is a *sampling* parameter, not a
 # ranking one, and it was undersampling its own objective: 17 points across
 # [8, 12] is a 2.5% step at m=10, while the correlation-vs-scale peak is only
@@ -772,6 +781,186 @@ def refine_zncc(search: np.ndarray, template: np.ndarray,
     return (x0c + pj + dx) + tw / 2.0, (y0c + pi + dy) + th / 2.0, float(score)
 
 
+# --- Sub-pixel: the centre row's raster-drift sample ------------------------
+#
+# Raster drift shifts each scan row of the search frame horizontally by its own
+# amount, and only horizontally: `generator/src/sem_imaging.py` perturbs `map_x`
+# with `row_shift[:, None]` and leaves `map_y` alone. The jitter inside
+# `row_shift` is drawn i.i.d. per row. The label then takes the shift of the
+# single row the target centre falls on -- `generate.correct_gt` reads
+# `row_shift[round(py)]` -- while `refine_zncc` correlates the whole ~100-row
+# template and so recovers the row *average*. The residual localisation error
+# is therefore exactly `row_shift[centre] - mean(row_shift)`, which no rigid fit
+# can remove because the jitter is white.
+#
+# Measured on the 1,750 present pairs of `data/ext_p2` (shipped weights):
+# the error is one-dimensional -- median |dx| 0.793 px against median |dy|
+# 0.081 px on set B -- and `std(dx) / drift_jitter_px` is 1.08 (set B) and 1.11
+# (set A) across a 14x range of drift. A row-lag scan of the correction peaks
+# sharply at the labelled row and sits at ~0.05 on every neighbouring row: the
+# signature of a per-row white process.
+#
+# Correcting x post-hoc from the measured row offset is only worth ~0.5
+# correlation, because the same wobble also degrades the rigid match that
+# produced x. Dewarping the rows first and re-matching on the flattened patch
+# fixes both, and is what this pair of functions does.
+
+
+def row_pitch(template: np.ndarray) -> float | None:
+    """Dominant horizontal period of the layout, from the template's own
+    mean row autocorrelation.
+
+    The search frame's lattice pitch is ~10 px, while raster drift has sd <=
+    2.1 px. A row whose correlation peak sits a whole pitch off the field is
+    therefore a repeat error, not a 5-sigma drift sample -- which is what
+    `drift_row_refine` uses this for. Measured on 900 pairs: resolvable on 94%,
+    median 9.9 px.
+    """
+    t = template.astype(np.float32)
+    t = t - t.mean(axis=1, keepdims=True)
+    f = np.fft.rfft(t, axis=1)
+    ac = np.fft.irfft(f * np.conj(f), axis=1, n=t.shape[1]).mean(axis=0)
+    ac = ac[:min(40, len(ac))]
+    if ac.size < 6 or ac[0] <= 0:
+        return None
+    ac = ac / ac[0]
+    for k in range(3, len(ac) - 1):
+        if ac[k] > ac[k - 1] and ac[k] >= ac[k + 1] and ac[k] > 0.25:
+            return float(k + parabolic(ac[k - 1], ac[k], ac[k + 1]))
+    return None
+
+
+def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
+                lag: int = DRIFT_ROW_LAG, return_corr: bool = False):
+    """Per-row horizontal offset between the search frame and the posed template.
+
+    `make_template` returns the reference already rotated and scaled into the
+    search frame, so template row i lines up with exactly one search row --
+    which is the granularity raster drift acts on.
+
+    Returns `(offset, peak)`, each of length `template.shape[0]`, with NaN where
+    the 1-D correlation peak landed on the window edge and cannot be
+    interpolated.
+    """
+    th, tw = template.shape
+    y0 = int(round(cy - th / 2.0))
+    x0 = int(round(cx - tw / 2.0))
+    h, w = search.shape
+    if y0 < 0 or y0 + th > h or x0 - lag < 0 or x0 + tw + lag > w:
+        return (None, None, None) if return_corr else (None, None)
+
+    win = search[y0:y0 + th, x0 - lag:x0 + tw + lag].astype(np.float32)
+    tpl = template.astype(np.float32)
+    tpl = tpl - tpl.mean(axis=1, keepdims=True)
+    tn = np.sqrt((tpl ** 2).sum(axis=1))
+    tn[tn < 1e-6] = 1e-6
+
+    nlag = 2 * lag + 1
+    corr = np.empty((th, nlag), np.float32)
+    for i in range(nlag):
+        seg = win[:, i:i + tw]
+        seg = seg - seg.mean(axis=1, keepdims=True)
+        sn = np.sqrt((seg ** 2).sum(axis=1))
+        sn[sn < 1e-6] = 1e-6
+        corr[:, i] = (seg * tpl).sum(axis=1) / (sn * tn)
+
+    k = np.argmax(corr, axis=1)
+    off = np.full(th, np.nan)
+    peak = np.full(th, np.nan)
+    for i, ki in enumerate(k):
+        if ki == 0 or ki == nlag - 1:
+            continue                      # peak on the edge: the true one is outside
+        off[i] = (ki - lag) + parabolic(corr[i, ki - 1], corr[i, ki], corr[i, ki + 1])
+        peak[i] = corr[i, ki]
+    if return_corr:
+        return off, peak, corr
+    return off, peak
+
+
+def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
+                     radius: int = 3, lag: int = DRIFT_ROW_LAG,
+                     min_corr: float = DRIFT_ROW_MIN_CORR,
+                     max_shift: float = DRIFT_MAX_SHIFT) -> tuple[float, float] | None:
+    """Re-place a match at the drift row the label is defined on.
+
+    Returns the corrected `(x, y)`, or None to decline -- the caller then keeps
+    the rigid estimate. Declining is deliberate and common (~19% of pairs):
+    loosening `min_corr` to correct more pairs was measured *worse* on the full
+    set, because a badly measured row is worse than no correction at all.
+    """
+    off, peak, corr = row_offsets(search, template, cx, cy, lag=lag, return_corr=True)
+    if off is None:
+        return None
+    ok = np.isfinite(off) & (peak > min_corr)
+    if ok.sum() < 12:
+        return None
+
+    # Unwrap rows that locked onto the neighbouring lattice repeat. Accept the
+    # shifted candidate only where the correlation there is still competitive,
+    # so a genuinely large drift sample is never rewritten. Measured on 900
+    # pairs: coverage 69% -> 77%, set B <=1px 67.8% -> 70.0%, set A 94.1% ->
+    # 94.8% -- every component moves the right way at once.
+    pitch = row_pitch(template)
+    if pitch is not None and 4.0 <= pitch <= 30.0:
+        centre = float(np.median(off[ok]))
+        nlag = 2 * lag + 1
+        for i in range(len(off)):
+            if not np.isfinite(off[i]):
+                continue
+            best = off[i]
+            for n in (-2, -1, 1, 2):
+                cand = off[i] + n * pitch
+                if abs(cand - centre) < abs(best - centre) - 1e-9 and abs(cand) <= lag:
+                    j = int(round(cand + lag))
+                    if 0 < j < nlag - 1 and corr[i, j] > 0.6 * peak[i]:
+                        best = cand
+            off[i] = best
+        ok = np.isfinite(off) & (peak > min_corr)
+
+    th, tw = template.shape
+    y0 = int(round(cy - th / 2.0))
+    ci = int(round(cy)) - y0              # the search row `correct_gt` labels against
+    if not (0 <= ci < th) or not ok[ci]:
+        return None                       # the row that decides the answer is unusable
+
+    # Gaps are interpolated only to flatten the patch; the centre row itself is
+    # never interpolated (see the `ok[ci]` guard) because drift is white and an
+    # interpolated value carries none of its neighbours' information.
+    dense = np.interp(np.arange(th), np.arange(th)[ok], off[ok])
+
+    # Scale the runaway guard to the drift this pair actually shows: at severity
+    # 4 (sd ~2 px) a 3 px correction is an ordinary sample, while on a quiet
+    # frame it is a mis-read. Fixed 3.0 px scored 36.33 against 36.50 here.
+    idx = np.arange(th)[ok]
+    resid_sd = float(np.std(off[ok] - np.polyval(np.polyfit(idx, off[ok], 3), idx)))
+    max_shift = float(np.clip(DRIFT_CLAMP_K * resid_sd, 2.0, max_shift))
+
+    h, w = search.shape
+    pad = 2 * radius + tw // 8
+    ya, yb = max(y0, 0), min(y0 + th, h)
+    xa = max(int(round(cx - tw / 2.0)) - pad, 0)
+    xb = min(int(round(cx + tw / 2.0)) + pad, w)
+    if yb - ya < th or xb - xa < tw + 2:
+        return None
+
+    patch = search[ya:yb, xa:xb].astype(np.float32)
+    shift = np.zeros(patch.shape[0], np.float32)
+    n = min(th, patch.shape[0])
+    shift[:n] = dense[:n]
+    map_x = np.arange(patch.shape[1], dtype=np.float32)[None, :] + shift[:, None]
+    map_y = np.tile(np.arange(patch.shape[0], dtype=np.float32)[:, None],
+                    (1, patch.shape[1]))
+    flat = cv2.remap(patch, map_x, map_y, interpolation=cv2.INTER_LINEAR,
+                     borderMode=cv2.BORDER_REPLICATE)
+
+    rx, ry, _ = refine_zncc(standardize(flat / 255.0), standardize(template / 255.0),
+                            cx - xa, cy - ya, radius=radius)
+    nx, ny = rx + xa + float(dense[ci]), ry + ya
+    if not np.isfinite(nx) or abs(nx - cx) > max_shift:
+        return None                       # runaway re-match; keep the rigid answer
+    return float(nx), float(ny)
+
+
 def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
     """Classical multi-scale ZNCC. Used as the fallback path when no trained
     weights are available, so the inference script always returns a result."""
@@ -860,7 +1049,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   band: bool = False, return_hypotheses: bool = False,
                   early_exit_zncc: float | None = None,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
-                  verification: str = "zncc", denoise: int = 0, **kw) -> dict:
+                  verification: str = "zncc", denoise: int = 0,
+                  subpixel_rows: bool = True, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     band=False is the measured default (full 2,250-pair A/B, 2026-08-31):
@@ -1081,6 +1271,24 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                                      best["x"], best["y"], radius=2)
             if np.hypot(rx - best["x"], ry - best["y"]) <= 3.0:
                 best.update({"x": rx, "y": ry, "zncc": float(zn)})
+
+    # Re-place the match on the scan row the label is actually defined against.
+    # Runs after every pose decision is final, so it can only move x -- it never
+    # feeds back into scale, rotation or the confidence, and a decline leaves the
+    # rigid answer untouched. Measured on all 1,750 present pairs of
+    # `data/ext_p2` (shipped weights, full-set A/B):
+    #
+    #   localisation 35.71 -> 36.29 / 40   (+0.58)
+    #   set A credit 0.9758 -> 0.9806, <=1px 92.7% -> 95.1%
+    #   set B credit 0.8247 -> 0.8471, <=1px 57.6% -> 67.0%
+    #
+    # y is deliberately left alone: it is already at 0.081 px median error on
+    # set B because raster drift has no vertical component.
+    if subpixel_rows:
+        tpl = make_template(reference, best["scale"], best["theta"])
+        moved = drift_row_refine(search, tpl, best["x"], best["y"])
+        if moved is not None:
+            best["x"] = moved[0]
 
     # The statement guarantees the true pose lies in these boxes and the rules
     # explicitly permit hard-coding them, so clipping a reported value into the

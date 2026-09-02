@@ -45,6 +45,7 @@ from driftsense.matching import locate_phase2  # noqa: E402
 # from here.
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
 from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402,F401
+from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
@@ -142,7 +143,8 @@ def main():
                     # eval_ext.py so the evaluator decodes identically.
                     res = locate_phase2(model, ref, sea, device, refine=True,
                                         verification=a.verification,
-                                        band=SHIPPED_BAND)
+                                        band=SHIPPED_BAND,
+                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
                 # min(network score, full-resolution ZNCC); see locate_phase2.
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= a.threshold)

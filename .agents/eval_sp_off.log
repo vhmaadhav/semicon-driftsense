@@ -1,0 +1,53 @@
+2500 pairs over 6 shard(s), 6 workers
+  100/2500  0.17s/pair wall  eta 7.0 min
+  200/2500  0.16s/pair wall  eta 6.1 min
+  300/2500  0.15s/pair wall  eta 5.7 min
+  400/2500  0.15s/pair wall  eta 5.2 min
+  500/2500  0.15s/pair wall  eta 5.0 min
+  600/2500  0.15s/pair wall  eta 4.8 min
+  700/2500  0.15s/pair wall  eta 4.5 min
+  800/2500  0.15s/pair wall  eta 4.3 min
+  900/2500  0.15s/pair wall  eta 4.1 min
+  1000/2500  0.15s/pair wall  eta 3.9 min
+  1100/2500  0.15s/pair wall  eta 3.6 min
+  1200/2500  0.15s/pair wall  eta 3.3 min
+  1300/2500  0.15s/pair wall  eta 3.1 min
+  1400/2500  0.15s/pair wall  eta 2.8 min
+  1500/2500  0.16s/pair wall  eta 2.6 min
+  1600/2500  0.16s/pair wall  eta 2.3 min
+  1700/2500  0.15s/pair wall  eta 2.1 min
+  1800/2500  0.15s/pair wall  eta 1.8 min
+  1900/2500  0.16s/pair wall  eta 1.6 min
+  2000/2500  0.16s/pair wall  eta 1.3 min
+  2100/2500  0.16s/pair wall  eta 1.0 min
+  2200/2500  0.16s/pair wall  eta 0.8 min
+  2300/2500  0.16s/pair wall  eta 0.5 min
+  2400/2500  0.16s/pair wall  eta 0.3 min
+  2500/2500  0.16s/pair wall  eta 0.0 min
+wrote .agents/cand_sp_off.csv
+
+==========================================================================
+EXTERNAL TEST SET — 2500 pairs (A 875, B 875, C 500, D 250)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8865     35.46
+   set A (875 pairs)        0.9737  <=5px 98.9%  <=1px 92.7%
+                                         median 0.32px
+   set B (875 pairs)        0.8151  <=5px 92.6%  <=1px 57.6%
+                                         median 0.83px
+Pose — scale (10)             credit 0.8964  med 0.42%      8.96
+Pose — rotation (10)        credit 0.9020  med 0.102deg      9.02
+Rejection (15)              F1(reject) 0.9078 @fix 0.180     13.62
+                            correct-rej 453  lost-real 45  missed-abs 47
+                            [lenient F1(present) 0.9737]
+                            [best-possible F1(reject) 0.9100 @ 0.2017]
+Calibration (10)                            AUC 0.9883      9.88
+   [submitted AUC (issue #27)           0.7638 -> 7.64]
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   76.94
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9808  <=5px 99.6%
+                            +6 needs D>=0.40 and A-C>=0.50
