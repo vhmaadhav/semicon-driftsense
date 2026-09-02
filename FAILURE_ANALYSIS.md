@@ -29,9 +29,9 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 - **Remaining limitation:** organizer hardware differs; final package still requires a clean 4-core CPU timing pass with p50/p90/max recorded.
 
 ### 5. Generator / label fidelity
-- **Observed:** Phase 2 requires labels to survive all geometric operations and absent decoys to remain same-family but genuinely absent. Earlier generator variants could create overly similar Set-C decoys and post-pose geometry can shift labels by scoring-relevant pixels.
-- **Mitigation:** decoy-pitch fidelity fix, explicit pose geometry, post-write verification, and official-material traceability are part of the release path.
-- **Remaining limitation:** the repository still needs the final Phase-2 generator-assignment package and its `REPORT.md`/verification evidence integrated into the release tree.
+- **Observed:** the Issue 45 audit measured a maximum realised-raster label correction of **4.903 px**. All 16 present pairs passed raw-intensity and independent gradient verification; Set-C same-family absent NCC scores ranged **0.3254–0.8658**.
+- **Mitigation:** fixed pose geometry, post-write dual verification, explicit semantic absence labels, Set-C similarity auditing, and supersampled anti-aliasing comparisons are integrated in `generator/`.
+- **Remaining limitation:** the coarse NCC baseline's error is not monotone at severity level 4 because periodic structure can create a harder wrong basin at a lower nominal degradation level. This is retained in the report rather than hidden by relabelling.
 
 ## Release rule
 

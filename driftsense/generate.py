@@ -780,7 +780,8 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
 
 
 def make_pairs(entropy: int, architectures: list[str], noise: str,
-               crops: int = 8, pose: "PoseSpec | PoseParams | None" = None) -> list[dict]:
+               crops: int = 8, pose: "PoseSpec | PoseParams | None" = None,
+               preset_name: str | None = None) -> list[dict]:
     """In-memory version of build_one: one canvas -> one search frame and
     `crops` (reference, ground-truth) pairs, returned as arrays.
 
@@ -812,7 +813,8 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
     params = GenerationParams(**overrides)
 
     canvas_px = spec.required_canvas_px()
-    zone_result = generate_fine_canvas_zoned(architecture, rng, params, canvas_px)
+    zone_result = generate_fine_canvas_zoned(
+        architecture, rng, params, canvas_px, preset_name=preset_name)
     fine_canvas = zone_result["canvas"]
 
     # Same absent-pair construction as build_one: a different die region of the
@@ -862,6 +864,7 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
             salt_pepper_prob=params.salt_pepper_prob,
         )
         if not present:
+            raw_gx = raw_gy = float(ABSENT_GT)
             gx = gy = float(ABSENT_GT)
         else:
             if affine is None:
@@ -872,9 +875,14 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
                     affine, x0 + REFERENCE_SIZE_PX / 2.0, y0 + REFERENCE_SIZE_PX / 2.0)
                 gt_x += area_convention_offset(pose_params.magnification)
                 gt_y += area_convention_offset(pose_params.magnification)
+            raw_gx, raw_gy = gt_x, gt_y
             gx, gy = correct_gt(gt_x, gt_y, row_shift, k)
         out.append({"reference": reference_img, "search": search_img,
-                    "gt_x": gx, "gt_y": gy, "architecture": architecture,
+                    "gt_x": gx, "gt_y": gy,
+                    "gt_x_raw": raw_gx, "gt_y_raw": raw_gy,
+                    "label_shift_px": float(np.hypot(gx - raw_gx, gy - raw_gy))
+                    if present else 0.0,
+                    "architecture": architecture,
                     "found": int(present),
                     "magnification": pose_params.magnification,
                     "rotation_deg": pose_params.rotation_deg})

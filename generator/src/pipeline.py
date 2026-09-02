@@ -126,6 +126,7 @@ def generate_fine_canvas_zoned(
     params: GenerationParams,
     canvas_px: int | None = None,
     pitch_factor: float = 1.0,
+    preset_name: str | None = None,
 ) -> dict:
     """`canvas_px` overrides the nominal 10x canvas extent. Phase 2 needs it:
     a 1000 px search frame at magnification m covers 1000*m fine pixels, so
@@ -149,6 +150,7 @@ def generate_fine_canvas_zoned(
         corner_rounding_px=params.corner_rounding_px,
         polygon_scale_fraction=params.polygon_scale_fraction,
         pitch_factor=pitch_factor,
+        preset_name=preset_name,
     )
 
 
