@@ -80,17 +80,49 @@ CANVAS_PX = 9000
 # earmarked for the audit; 0.65 is aggressive enough to exercise the gate.
 AUDIT_PRUNE_MARGINS = (0.5, 0.65)
 
+# Issue #37 acceptance criterion: "Verify endpoint rotations near +/-5 deg and
+# off-grid rotations between coarse angle samples."
+#
+# The coarse rotation grid is np.linspace(-5, 5, 11) -- the eleven integer
+# degrees. Two distinct risks live at its edges:
+#
+#   * ENDPOINTS. At +/-5.0 the golden-section refine has no room on one side
+#     (its window is clamped to rotation_bounds), so a basin promoted at an
+#     endpoint must already be seeded at the endpoint -- the refine cannot
+#     walk it there. 4.9 is the "near +/-5" case the issue names: the true
+#     angle sits just inside the bound but its best GRID sample is the bound
+#     itself, so the re-rank must score the basin at the clamped sample and
+#     still promote it.
+#   * OFF-GRID. 2.5 is exactly midway between two samples -- the worst case
+#     for the re-rank, because NEITHER neighbouring sample sees the basin at
+#     its true angle, so the promotion has to survive the largest possible
+#     grid-quantisation penalty. -3.7 is an arbitrary off-grid angle in the
+#     other direction, so the coverage is not accidentally symmetric.
+#
+# Every angle here is checked twice: test_fixture_exhibits_p008_structure_at
+# asserts the OLD rot=0-only ranking really does drop the true basin at that
+# angle (otherwise the case proves nothing), and
+# test_rerank_rescues_rotated_basin_at asserts the new ranking keeps it.
+ENDPOINT_THETAS = (5.0, -5.0, 4.9, -4.9)
+OFF_GRID_THETAS = (2.5, -3.7)
+ROTATION_CASES = ENDPOINT_THETAS + OFF_GRID_THETAS
 
-@lru_cache(maxsize=1)
-def _fixture():
-    """Return (reference, search) for the p008-shaped synthetic frame."""
+
+@lru_cache(maxsize=None)
+def _fixture(theta: float = THETA_TRUE):
+    """Return (reference, search) for the p008-shaped synthetic frame, with
+    the true instance planted at `theta` degrees.
+
+    Cached per angle: the 9000x9000 canvas generation dominates the fixture
+    cost and the parameterised cases below reuse it across tests.
+    """
     rng = np.random.default_rng(26)
     canvas = generate_dram_canvas(CANVAS_PX, get_preset("dram_1x"), 10.0, rng)
 
     # p_search = (1/z) R(theta) (p_canvas - c_canvas) + c_search, solved for
     # the canvas centre mapping to the frame centre (the same construction
     # tests/test_scale_semantics.py pins).
-    t = np.deg2rad(THETA_TRUE)
+    t = np.deg2rad(theta)
     A = np.array([[np.cos(t), np.sin(t)], [-np.sin(t), np.cos(t)]]) / Z_TRUE
     M = np.zeros((2, 3))
     M[:, :2] = A
@@ -291,3 +323,115 @@ def test_pose_candidates_prune_margin_smoke():
     assert len(out) == 3
     for f, r, peak in out:
         assert np.isfinite(f) and np.isfinite(r) and np.isfinite(peak)
+
+
+def _shortlist_seeds(reference, search, monkeypatch, k=3):
+    """The (scale, rotation) seeds pose_candidates actually hands to the
+    refine -- i.e. the candidate shortlist itself, read before any polish.
+
+    Issue #37 requires the regression to assert that the true pose basin
+    SURVIVES CANDIDATE GENERATION, not merely that a refined x/y happened to
+    come out right. Spying on _refine_pose_local is the direct reading: it is
+    the single call site the shortlist flows into, so whatever is recorded
+    here is exactly what candidate generation offered downstream, with the
+    golden-section polish taken out of the picture entirely.
+    """
+    import driftsense.matching as M
+
+    seeds = []
+
+    def _spy(reference, search, f0, r0, span_s, span_r,
+             scale_bounds, rotation_bounds, rounds=2):
+        seeds.append((float(f0), float(r0)))
+        return float(f0), float(r0), 0.0
+
+    monkeypatch.setattr(M, "_refine_pose_local", _spy)
+    M.pose_candidates(reference, search, k=k, band=False, prune_margin=None)
+    return seeds
+
+
+@pytest.mark.parametrize("theta", ROTATION_CASES)
+def test_fixture_exhibits_p008_structure_at(theta):
+    """Case validity: at every audited angle the OLD rot=0-only ranking must
+    still drop the true basin.
+
+    Without this the rescue assertions below would be vacuous -- a case where
+    the old code already succeeded proves nothing about the fix.
+    """
+    pytest.importorskip("cv2")
+    reference, search = _fixture(theta)
+    old = _old_ranking_topk(reference, search, k=3)
+    old_scales = [f for f, _, _ in old]
+    assert not any(abs(f - Z_TRUE) <= 0.25 for f in old_scales), (
+        "case theta=%.2f is not a regression case: the old rot=0-only "
+        "ranking already keeps the true basin (top-3 scales %s)"
+        % (theta, old_scales))
+
+
+@pytest.mark.parametrize("theta", ROTATION_CASES)
+def test_rerank_rescues_rotated_basin_at(theta, monkeypatch):
+    """Issue #37 acceptance: at endpoint (+/-5) and off-grid rotations the
+    true basin must survive CANDIDATE GENERATION under the new ranking.
+
+    The assertion is on the shortlist handed to the refine, not on a refined
+    pose: a hypothesis that was never offered cannot be recovered by any
+    later stage, which is the whole point of the defect.
+    """
+    pytest.importorskip("cv2")
+    reference, search = _fixture(theta)
+    seeds = _shortlist_seeds(reference, search, monkeypatch, k=3)
+    assert len(seeds) == 3, "expected k=3 shortlisted hypotheses, got %d" % len(seeds)
+    scales = [f for f, _ in seeds]
+    assert any(abs(f - Z_TRUE) <= 0.35 for f in scales), (
+        "theta=%.2f: candidate generation dropped the true basin z=9.0; "
+        "shortlisted scales %s" % (theta, scales))
+    # The seed rotation for the true basin must be a coarse GRID sample
+    # within one grid step of the planted angle, so the refine (whose window
+    # is exactly one step wide, and is clamped at the +/-5 bounds) can reach
+    # the truth from it. Not the *nearest* sample: at theta=2.5 the two
+    # neighbouring samples are equidistant and the correlation landscape,
+    # not the arithmetic, decides which wins -- either is a valid seed.
+    grid = [-5.0 + i for i in range(11)]
+    step = 1.0
+    r_seed = next(r for f, r in seeds if abs(f - Z_TRUE) <= 0.35)
+    assert any(r_seed == pytest.approx(g, abs=1e-9) for g in grid), (
+        "theta=%.2f: true basin seeded at rotation %.3f, which is not a "
+        "coarse grid sample" % (theta, r_seed))
+    assert abs(r_seed - theta) <= step + 1e-9, (
+        "theta=%.2f: true basin seeded at rotation %.2f, more than one grid "
+        "step (%.1f deg) from the planted angle -- the refine window cannot "
+        "reach the truth from there" % (theta, r_seed, step))
+
+
+@pytest.mark.parametrize("theta", ROTATION_CASES)
+def test_rerank_recovers_pose_at(theta):
+    """End-to-end on the same cases: the promoted basin refines to the
+    planted scale and angle, including at the clamped +/-5 endpoints (where
+    the golden-section window has no room on one side) and at the off-grid
+    angles (where no coarse sample sits on the truth)."""
+    pytest.importorskip("cv2")
+    reference, search = _fixture(theta)
+    out = pose_candidates(reference, search, k=3, band=False, prune_margin=None)
+    f_best, r_best, _ = out[0]
+    assert abs(f_best - Z_TRUE) <= 0.35, (
+        "theta=%.2f: winner scale %.3f is not the true basin" % (theta, f_best))
+    assert abs(r_best - theta) <= 0.4, (
+        "theta=%.2f: winner rotation %.3f missed the planted angle"
+        % (theta, r_best))
+
+
+def test_shortlist_survival_is_what_changed(monkeypatch):
+    """The nominal (3.0 deg) case, read at the same shortlist level: the true
+    basin is absent from the OLD rot=0-only top-k and present in the new one.
+
+    This is the paired statement issue #37 asks for -- same frame, same k,
+    the only difference being whether the scale shortlist was ranked with
+    rotation evidence.
+    """
+    pytest.importorskip("cv2")
+    reference, search = _fixture()
+    old_scales = [f for f, _, _ in _old_ranking_topk(reference, search, k=3)]
+    assert not any(abs(f - Z_TRUE) <= 0.35 for f in old_scales)
+    new_scales = [f for f, _ in _shortlist_seeds(reference, search, monkeypatch, k=3)]
+    assert any(abs(f - Z_TRUE) <= 0.35 for f in new_scales), (
+        "rotation-aware shortlist %s still drops the true basin" % new_scales)

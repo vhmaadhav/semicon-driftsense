@@ -42,6 +42,7 @@ Baseline rows come from the current shipped configuration
 | no-band (promoted) | 2.655 s | 3.218 s |
 | E1 cache off vs on (flag-based, corrected harness) | 2.533 s vs 2.563 s | — (1.00x, wash) |
 | E3 prune 0.5 vs exhaustive (audited 2026-09-02) | 1.47 s vs 1.44 s | — (0.98x, wash; **not shipped**) |
+| rotation-aware scale ranking (issue #37, 2026-09-02) | stage `pose_candidates` 12.69 s vs 13.57 s / 20 pairs (**1.069x**) | pair p50 5.93 s vs 6.34 s — **inside noise**, see below |
 
 Clock takeaway: the efficiency win of `band=False` is ~0 — `_band` on the
 half-res probe is cheap. Its value is the **+0.45 accuracy points**, which is
@@ -88,6 +89,132 @@ scale=z semantics exact, 4/4 absent declined, median 3.12 s. Our own data's
 reference-baseline calibration: overall present 0.357 — inside the published
 0.30–0.55 band (the "~0.92" claim was our solver's Set A accuracy mistaken
 for the baseline's credit; refuted).
+
+## Issue #37 — rotation-aware scale ranking, full 2,250 A/B (2026-09-02)
+
+Closes the measurement issue #37 asked for. **Arms differ in `matching.py`
+only**; both decode the identical, already-generated `data/ext_p2` shards, so
+the generator-side decoy change on this branch cannot touch the comparison.
+Shipped config throughout (`band=False`, `hypotheses=3`, `coarse_scales=17`,
+`verification=zncc`, threshold 0.18). Per-pair CSVs:
+`.agents/ext_rot37_{base,fix}.csv` (decode) and
+`.agents/cand_rot37_{base,fix}.csv` (candidate trace).
+
+### Rubric: a wash
+
+| component | base | fix | Δ |
+|---|---:|---:|---:|
+| Set A credit | 0.9737 | 0.9746 | **+0.0009** |
+| Set B credit | 0.8151 | 0.8130 | **−0.0021** |
+| localisation (40) | 35.459 | 35.430 | −0.029 |
+| pose (20) | 17.984 | 17.983 | −0.001 |
+| rejection F1 @0.18 | 0.9078 | 0.9096 | +0.0018 |
+| calibration AUC | 0.9883 | 0.9882 | −0.0000 |
+| **subtotal (85 measurable)** | **76.942** | **76.939** | **−0.003** |
+
+Paired bootstrap on per-pair localisation credit (submission-masked):
+set A **+0.00091** CI [+0.00000, +0.00274]; set B **−0.00206** CI [−0.00526,
++0.00000]; A+B −0.00057 CI [−0.00229, +0.00091]. 2179/2250 pairs are
+byte-identical. Absent-pair (Set C) scores are unmoved: mean 0.0508 → 0.0507,
+max 0.5073 both, 47 above the 0.18 gate in both arms.
+
+**Far under the +0.35 promotion gate.** On the rubric alone this is a dud.
+
+### Candidate generation: a real, one-directional improvement
+
+The rubric is not the metric issue #37 is about. The defect is that the true
+basin is *discarded before anything can evaluate it*, so the honest metric is
+candidate-recall — measured by `scripts/trace_candidates.py`, which records
+the shortlist `pose_candidates` offers, with no network and no selector.
+
+| candidate-generation metric (1750 present pairs) | base | fix | Δ |
+|---|---:|---:|---:|
+| recall@1, near-GT basin | 80.23% | **84.06%** | **+3.83** |
+| recall@2 | 91.03% | 92.00% | +0.97 |
+| recall@3 | 92.17% | 92.57% | +0.40 |
+| basin **never offered** | 137 | **130** | **−7** |
+| set B recall@3 | 85.14% | 85.83% | +0.69 |
+| tight (1% / 0.5°) recall@1 | 63.66% | 67.20% | +3.54 |
+
+Measured on the coarse grid directly (2,250 cached scale×rotation score
+matrices, tolerance one grid step in each axis): rotation-aware ranking
+**gains the true basin on 8 pairs and loses it on 0**. The shortlist *set*
+differs from the rot=0 rule on 140/1750 pairs, and every one of those changes
+is neutral-or-better at the candidate level. This is the acceptance criterion
+issue #37 actually states, and it is met.
+
+### Where the points went instead: the selector, not the shortlist
+
+Attribution of every >5 px wrong tile, from the trace:
+
+| | base | fix |
+|---|---:|---:|
+| wrong tiles | 75 | 76 |
+| ..basin **never offered** (candidate generation, #37) | **17** | **13** |
+| ..basin **offered then lost** (selection, #5) | 58 | **63** |
+
+Rotation-aware ranking cuts candidate-generation failures by 24% (17 → 13).
+The wrong tiles do not disappear — they *migrate* into the selection bucket,
+because once a wrong-scale basin is offered, native ZNCC sometimes prefers it.
+83% of the remaining wrong tiles (63/76) are now selector failures.
+
+The five pairs whose outcome changed, read at shortlist level:
+
+| pair | GT z / θ | basin rank base → fix | outcome |
+|---|---|---|---|
+| `test_A_00000580` | 9.301 / **+5.00** | never offered → **0** | 91.5 px → **1.01 px** |
+| `test_B_00000547` | 8.269 / +3.24 | never offered → **0** | 247.8 px → **0.45 px** |
+| `test_B_00000363` | 10.706 / −4.73 | 0 → **0** | 0.27 px → 403.9 px |
+| `test_B_00000662` | 9.759 / −2.67 | 1 → **0** | 1.02 px → 773.5 px |
+| `test_B_00000287` | 11.235 / −3.14 | never → never | 3.19 px → 273.4 px |
+
+Both rescues are candidate-generation rescues (2/2), and `test_A_00000580` is
+the textbook case: GT rotation sits exactly on the **+5° endpoint**, where the
+rot=0 probe sees nothing. **None of the three regressions lost a basin**
+(0/3): two had the true basin still in the shortlist — one of them ranked
+*first* — and the decode chose a wrong-scale hypothesis whose native ZNCC was
+higher (0.3261 vs 0.2739; 0.3512 vs 0.3388), even though the *network* score
+preferred the truth (0.4015 vs 0.2997; 0.7803 vs 0.6293). The third never had
+the basin offered in either arm; its baseline 3.19 px was a lucky near-miss.
+Per-failure trace: `.agents/rot37_failures.csv`.
+
+### Ranking statistic: `max` is not the problem
+
+`max` over 11 rotation samples is upward-biased, and the bias is larger for
+noisier (small-scale) basins — the suspected cause of the promoted decoys. So
+five statistics were scored offline against candidate-recall on all 2,250
+cached matrices: `max`, `top2mean`, `top3mean`, `second`-best, and a
+`coherent` variant (peak averaged with its two rotation neighbours).
+
+**All five are recall-equivalent** — recall@3 88.69% and 198 never-offered,
+identical to the digit; they differ from `max` on only 12–28 of 1750
+shortlists and only at @1 (80.23–80.97%). The gain comes from being
+rotation-aware *at all* (rot=0: 88.23%, 206 never-offered), not from the
+choice of reduction. **No statistic change is warranted**; `max` stays.
+
+### Clock (single process, 4 threads, interleaved, B_0000 n=20)
+
+Stage `pose_candidates` 12.69 s → 13.57 s per 20 pairs (**1.069x**, +0.044 s
+per pair). That stage is ~11% of a pair, so the added rotation work is
+**~0.7% of pair time**. The end-to-end p50 (5.93 s → 6.34 s) is NOT resolvable
+at this n: the arms' ranges overlap and one fix rep (5.34 s) beat every
+baseline rep. Both arms read ~2.4x slower than the clocks recorded earlier in
+this file under the same protocol, so **absolute** budget claims from this
+bench are machine-specific — both arms miss ≤5 s here, so the change does not
+alter budget status. The reference-sample median on record is 3.12 s.
+
+### Verdict
+
+* Issue #37's defect is **real and reduced**: candidate-generation failures
+  17 → 13, basin never-offered 137 → 130, zero basins lost, +3.83 recall@1.
+* Rubric effect is **neutral** (−0.003 of 85), Set A slightly up, Set B
+  slightly down with a CI touching zero.
+* The binding constraint has moved to the **native-ZNCC selector** (issue #5):
+  63 of 76 remaining wrong tiles are pairs whose true basin *was* offered.
+* Cost ~0.7% of pair time.
+
+Promote on defect-elimination grounds (the structural bug is gone and cannot
+be recovered downstream when it fires), not on a points claim — there is none.
 
 ## Notes per tweak
 
