@@ -74,6 +74,13 @@ on the rest of the distribution than it recovers on the tail. `--jitter-power -1
 already extracts what is available from that axis; adding exposure on top is
 past the point of diminishing returns and into active harm.
 
+**Scope of this negative (review-flagged):** Arm B's weighted sampler ran
+with replacement, so the A/B changes two variables at once - jitter weighting
+and repeated-sample exposure semantics. The conclusion is therefore a
+weighted-with-replacement negative: it rules out this exact configuration,
+not jitter-weighted sampling in general. A no-replacement weighted sampler is
+the clean follow-up if anyone revisits the lever.
+
 Logs: `.agents/train_jw.log`, `.agents/eval_jw.log`.
 
 **The flag stays in `train.py` at an inert default of 0.0** — the measurement is
