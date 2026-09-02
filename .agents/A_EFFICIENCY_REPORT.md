@@ -1,0 +1,211 @@
+# Workstream A (CPU efficiency) — efficiency report
+
+**Agent:** workstream A · **Machine:** dev Mac (ARM), venv313 · All timings below
+are **dev machine, indicative** — the integrator re-times on an idle 4-core x86
+reference box per the Compute protocol.
+
+## Outline (updated as work lands)
+
+1. **D1 — register.py thread sanity + timing emission** (status: in progress)
+   - [x] Read INFERENCE_TWEAKS.md + RUBRIC_ROADMAP.md Compute protocol
+   - [ ] Pre-edit baseline of official-20 saved (`/tmp/reg_before.csv` + `.err`)
+   - [ ] tests/test_register_runtime_meta.py (TDD: watched fail first)
+   - [ ] Thread caps: torch.set_num_threads(min(4, cpu_count)) default,
+         cv2.setNumThreads same, before heavy cv2 work; --threads flag still
+         overrides; torch.set_flush_denormal(True) in try/except
+   - [ ] stderr timing emission: `# per-pair seconds` header,
+         `# t,<pair_id>,<seconds>` per row, final `# runtime: median X p90 Y max Z n=N`;
+         stdout/CSV byte-identical
+   - [ ] Verification: pytest fresh output; official-20 diff before/after
+
+2. **D2 — redundant-FFT ceiling microbenchmark** (status: done)
+   - [x] .agents/fft_ceiling_tmp.py on 3 official pairs
+   - [x] Go/no-go: GO by the letter (15.6% projected coarse-stage saving;
+         19.8% with the full 207-call count) → D3 attempted
+   - [x] BUT two premise corrections recorded (50 probe calls not ~100–207;
+         template construction ~47% of coarse stage) — see findings
+
+3. **D3 — driftsense/coarse_fft.py spectral coarse scorer** (status: done,
+   flag off by default, not wired into the decode — integrator wires after
+   audit)
+   - [x] tests/test_coarse_fft.py (TDD, 8 tests)
+   - [x] .agents/coarse_fft_ab.py A/B: value parity 4.8e-08 (25x inside the
+         1e-6 bar), argmax 0/150 disagreements, x1.15 vs matchTemplate
+   - [x] Net win is honest but small: ~48 ms/pair ≈ 1.5% of pair median
+
+## Findings
+
+### D1 — register.py thread caps + stderr timing (2026-09-03, dev machine)
+
+**Changed (`register.py` only):**
+- New `cap_threads(requested=0)`: `torch.set_num_threads(min(4, os.cpu_count() or 4))`
+  by default, `--threads` overrides; `torch.set_flush_denormal(True)` best-effort
+  in try/except (x86 only; ARM raises, swallowed); `cv2.setNumThreads(same)`
+  called before any heavy work (before `I.load_model`).
+- stderr emission: `# per-pair seconds` header, `# t,<pair_id>,<seconds>` after
+  each row, final `# runtime: median X p90 Y max Z n=N`. stdout untouched.
+
+**Verification (fresh output):**
+- TDD: watched `test_stderr_contains_per_pair_timing_lines` FAIL first
+  (`'# per-pair seconds' in ''`), then pass.
+- `pytest tests/test_register_runtime_meta.py tests/test_submission_parity.py`:
+  8 passed. Full suite (excluding 3 PRE-EXISTING broken untracked files
+  `test_subpixel.py`/`test_calibration.py`/`test_zip_audit_checkpoint.py`,
+  unrelated): **261 passed**.
+- Official-20 before/after: the FIRST post-edit run was byte-identical to the
+  pre-edit baseline (`cmp` clean, 20 rows + header); baseline stderr empty,
+  after stderr carries the 20 `# t,` lines + summary.
+- **Cross-process nondeterminism finding (pre-existing, NOT caused by this
+  change):** a second post-edit run differed from the baseline in the
+  `score` column only (bimodal, up to 0.52 on some pairs). Root-caused as
+  pre-existing by stashing the register.py edit and re-running the ORIGINAL
+  code: it reproduced the second run's output BIT-EXACTLY. Across all four
+  runs (baseline / after-run-1 / after-run-2 / original-code-rerun), `found`,
+  `x`, `y`, `theta`, `scale` are identical on all 20 pairs — only the
+  network-head score fluctuates (likely nondeterministic reduction order in
+  the conv reductions under a many-core thread pool; two output clusters:
+  {baseline, after-1} and {after-2, original-rerun}). Conclusion: the edit is
+  output-neutral (first post-edit run byte-matched the baseline), and the
+  score bimodality is an environment property the integrator should know
+  about — it does not affect found/coords, hence no scoring impact under the
+  grader's found/pose semantics.
+
+**Official-20 stderr timing summary (dev machine, indicative, no other load):**
+```
+# runtime: median 3.09 p90 3.49 max 6.14 n=20
+```
+(baseline run before the edit had stdout `median 3.15s p90 3.55s max 6.19s` —
+same noise band, confirming no regression.)
+
+**cv2.setNumThreads caveat (dev Mac only):** the macOS opencv wheel uses the
+**GCD parallel framework** (`cv2.getBuildInformation()` → "Parallel framework:
+GCD"), which IGNORES `cv2.setNumThreads` — `getNumThreads()` keeps reporting 10
+on this 10-core machine no matter what is set. On Linux x86 (the grader box)
+the pthreads/TBB backend honors the cap, so the call is correct and required
+there; on dev Mac it is a harmless no-op. torch.set_num_threads DOES work here
+(verified 4 after cap). Measured microcheck: `cv2.gemm` 4k² 10-thread vs 2-thread
+≈126 vs 118 ms — mild oversubscription penalty on this box, but cv2 work here is
+DFT-based matchTemplate, not gemm; the grader-box effect (7.08 vs 1.58 s/pair)
+is where the real oversubscription damage lives.
+
+### D2 — redundant-FFT ceiling microbenchmark (2026-09-03, dev machine)
+
+**Script:** `.agents/fft_ceiling_tmp.py` (3 official pairs p001–p003,
+100 calls each, plain FFT cross-correlation, ZNCC normalization excluded as
+instructed).
+
+**Correctness of the harness itself** (worth recording — two FFT-correlation
+conventions were refuted before the working one):
+- `conjB=True` correlation with the template at the TOP-LEFT of the canvas
+  gives `cc[y, x] = Σ s[y+u, x+v]·t[u, v]` at offset (y, x) directly.
+- The classic "flip + no conjB" route needs a (th−1, tw−1) extraction offset
+  and caused the large mismatches in the first two attempts.
+- Working route verified: 3e-6 absolute (2e-7 relative) vs a naive sliding
+  dot on a random toy; then exact argmax agreement with
+  `cv2.matchTemplate(TM_CCORR)` on all three real probes.
+
+**Timing (mean of 3 pairs):**
+```
+matchTemplate   : 7.638 ms/call
+precomputed-FFT : 4.673 ms/call  (search dft ~2.1 ms amortized; loop 4.65 ms)
+per-call saving : 2.966 ms (38.8% of the call)
+```
+**Projection per the brief's model** (~100-call coarse sweep, coarse = 61.4%
+of the 3.09 s median → 1897 ms): **297 ms/pair = 15.6% of the coarse stage →
+GO by the letter** (a second projection with the full ~207-call count gives
+19.8%). **Verdict: GO at the ≥15% threshold → D3 built.**
+
+**Two premise corrections found while instrumenting the real decode
+(matchTemplate patched with a counting/timing wrapper, full
+locate_phase2 on p001–p003):**
+1. The real decode makes **214 matchTemplate calls/pair, of which only 50 use
+   the 500x500 probe** (the brief's "~207-call coarse sweep" actually spends
+   most of its calls on the refine crops: 331², 386², 409x499…). The probe
+   correlation time is 337–393 ms/pair (6–13% of pair time), and probe-search
+   DFT redundancy is at most ~40% of that (~2 ms × 50) ≈ **100 ms/pair ≈
+   3.4% of pair median** — an order of magnitude below the brief's model.
+2. Correlation is only ~53% of a coarse call: **make_template+_probe costs
+   ~6.95 ms/call × 50 ≈ 347 ms/pair**, which no search-side FFT change can
+   touch.
+
+### D3 — driftsense/coarse_fft.py (2026-09-03, dev machine)
+
+**Built (flag-gated, default OFF, NOT wired into locate_phase2 — integrator
+wires after audit):**
+- `driftsense/coarse_fft.py`: `prepare_search(search) -> SpectralSearchIndex`;
+  `index.peak_score(template)` returns the same peak ZNCC
+  cv2.matchTemplate(TM_CCOEFF_NORMED) would report. Search DFT + float64
+  integral moment tables computed once; per call: template DFT +
+  mulSpectrums(conjB) + idft + O(1)-per-window moments from the integrals.
+- `tests/test_coarse_fft.py`: 8 tests (TDD: watched the module-import failure,
+  then the 1e-5 value test fail, then pass). Full contract in the test
+  docstring.
+- `.agents/coarse_fft_ab.py`: 50 random (scale, rot) templates × 3 official
+  pairs, values + wall-clock.
+
+**Three measured engineering findings folded into the implementation:**
+1. **Mean-subtract the template before the DFT.** The raw-correlation float32
+   DFT carries ~±1.0 absolute error on DC-dominated values ~1.6e7 → 1e-5 ZNCC
+   error (fails 1e-6). With centering, the spectral map IS the ZNCC numerator
+   exactly (identity: corr(s, t−t̄) = Σs·t − SX·Σt/n since Σ(t−t̄)=0), and
+   magnitudes drop to ~1e5 → ~1e-8 ZNCC error.
+2. **float64 DFT required.** Even centered, the float32 DFT roundoff is ~2e-6
+   relative on the numerator. f64 costs ~18% more (4.44 vs 3.75 ms measured).
+3. **CCS-packed spectra** (`DFT_REAL_OUTPUT`, what templmatch uses internally)
+   are bit-equivalent (9e-10 vs the complex route) and another ~1.2 ms/call
+   cheaper.
+
+**A/B result (official p001–p003, 150 templates total, dev machine indicative):**
+```
+worst |value diff| : 4.8e-08   (tolerance 1e-6)   PASS
+argmax disagreement: 0/150
+index setup (once) : 3.02 ms/pair
+spectral           : 6.786 ms/call
+cv2.matchTemplate  : 7.809 ms/call   (x1.15)
+projected coarse-stage saving (50 calls): 48 ms/pair (net win)
+```
+
+**Honest bottom line for the integrator:** value parity is solid (25x tighter
+than the 1e-6 bar, zero peak disagreements), but the net win is **~48 ms/pair
+(≈1.5% of pair median)** — the D2 "15.6–19.8% of coarse stage" projection did
+NOT survive contact with (a) the precision requirement (f64 + centering eat
+the 38.8% raw per-call saving down to x1.15) and (b) the corrected call
+accounting (50 probe calls, not ~100–207). The bigger coarse-stage lever left
+on the table is the ~347 ms/pair of make_template+_probe construction
+(~47% of probe-stage cost), which is a separate work item.
+
+## What was skipped and why
+
+- **Wiring coarse_fft into locate_phase2 / register.py decode:** explicitly
+  out of scope — matching.py and config.py are owned by the integrator, and
+  the deliverable says "flag-gated, default off, no wiring into the shipped
+  decode". The integrator audits the A/B above and wires it (worth ~48 ms
+  per pair ≈ 1.5% of pair median; consider bundling with a make_template
+  fast-path or caching, the bigger lever at ~347 ms/pair).
+- **FFT rewrite of the refine-stage correlations** (the 331²–409² crops,
+  ~160 calls/pair): each crop is a DIFFERENT image per candidate, so there is
+  no shared DFT to hoist — cv2 is already optimal there.
+- **float32 spectral path:** would be ~1.3 ms/call faster but caps at ~2e-6
+  ZNCC error — fails the 1e-6 parity bar; measured and rejected.
+- **D3 "peak score" cache reuse of window-moment maps across template
+  sizes:** moments depend on (th, tw); the sweep touches ~12–13 sizes × 50
+  calls so a per-size (sx, sxx) memo could save ~0.8 of the 1.3 ms/call the
+  moment maps cost (≈6% of the call) at ~44 MB for 13 sizes. Measured the
+  breakdown (template dft 2.43 + mul 0.33 + idft 2.26 + moments 0.92 +
+  assembly 0.38 ms) and left the memo out: sub-millisecond upside, real
+  memory cost, and the integrator may prefer restructuring the sweep
+  loop-size-first instead.
+- **Full 2,250-pair runs / training:** per instructions, nothing beyond the
+  official 20 pairs and small tests was run.
+
+## Files created/changed (summary)
+
+| file | change |
+|---|---|
+| `register.py` | cap_threads() + stderr timing emission (only edits) |
+| `tests/test_register_runtime_meta.py` | NEW — 3 tests, TDD |
+| `driftsense/coarse_fft.py` | NEW — spectral precomputed-search scorer |
+| `tests/test_coarse_fft.py` | NEW — 8 tests, TDD |
+| `.agents/fft_ceiling_tmp.py` | NEW — D2 microbenchmark |
+| `.agents/coarse_fft_ab.py` | NEW — D3 A/B validation |
+| `.agents/A_EFFICIENCY_REPORT.md` | NEW — this report |

@@ -40,7 +40,8 @@ sys.path.insert(0, REPO_ROOT)
 # tests/conftest.py); the synthetic-pair builder imports src.* from there.
 sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 
-from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
+from driftsense.config import (SHIPPED_BAND, SHIPPED_THRESHOLD,
+                               SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE)
 
 
 def _load_eval_ext():
@@ -80,7 +81,12 @@ def _argparse_defaults(main_fn):
 def test_register_threshold_default_is_the_shared_shipped_value():
     import register
     assert register.DEFAULT_FOUND_THRESHOLD == SHIPPED_THRESHOLD
-    assert SHIPPED_THRESHOLD == 0.18
+    # Units change (2026-09-03): the score column is now the fused 6-feature
+    # calibrated P(present) (driftsense.calibration.calibrate_shipped), so the
+    # threshold lives in probability units, not the legacy min() scale of 0.18
+    # (kept only for the no-weights ZNCC fallback; see driftsense/config.py).
+    assert SHIPPED_THRESHOLD == pytest.approx(0.4870)
+    assert SHIPPED_CONFIDENCE == "fused6"
 
 
 def test_eval_ext_effective_defaults_match_register():
@@ -216,8 +222,11 @@ def test_end_to_end_submission_parity(tmp_path):
     row = _run_register_batch(tmp_path, rp, sp)
     res = _eval_decode(rp, sp)
 
-    # Both sides must report min(network score, native ZNCC) -- the column
-    # register.py writes and eval_ext's _worker records.
+    # Both sides must report the SHIPPED confidence statistic (the fused
+    # 6-feature calibrated P(present); formerly min(network score, native
+    # ZNCC)) -- the column register.py writes and eval_ext's _worker records.
+    # Parity holds by construction: both read res["confidence"], which
+    # locate_phase2 fills via driftsense.config.SHIPPED_CONFIDENCE.
     score_eval = float(res.get("confidence", res.get("score")))
     found_eval = int(score_eval >= SHIPPED_THRESHOLD)
     found_csv = int(row["found"])

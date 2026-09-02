@@ -24,6 +24,7 @@ import torch
 import torch.nn.functional as F
 
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
+from driftsense.config import SHIPPED_CONFIDENCE
 from driftsense.verification import (
     common_band,
     dog_feature,
@@ -756,9 +757,17 @@ def refine_zncc(search: np.ndarray, template: np.ndarray,
                 cx: float, cy: float, radius: int = REFINE_RADIUS) -> tuple[float, float, float]:
     """Snap a coarse centre to the local ZNCC optimum at full resolution.
 
-    Searches +/- `radius` px around the coarse box position and fits a
-    parabola through the correlation peak for sub-pixel placement.
+    Searches +/- `radius` px around the coarse box position. The placement
+    rule is the shipped config (driftsense.config.SHIPPED_SUBPIXEL, ONE
+    definition): "bicubic" upsamples the correlation surface around the peak
+    (driftsense.subpixel.refine_bicubic; rescues the 1px-tier boundary pairs,
+    Debella-Gilo & Kaab 2011), "parabola" is the historical 1-D parabolic
+    fit through the peak. Both share this function's contract and window.
     """
+    from driftsense.config import SHIPPED_SUBPIXEL
+    if SHIPPED_SUBPIXEL == "bicubic":
+        from driftsense.subpixel import refine_bicubic
+        return refine_bicubic(search, template, cx, cy, radius=radius)
     h, w = search.shape
     th, tw = template.shape
     bx, by = cx - tw / 2.0, cy - th / 2.0
@@ -1314,26 +1323,38 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     best["scale"] = float(np.clip(best["scale"], *PHASE2_SCALE_BOUNDS))
     best["theta"] = float(np.clip(best["theta"], *PHASE2_ROTATION_BOUNDS))
 
-    # Reported confidence: the *weaker* of the network's peak probability and
-    # the full-resolution ZNCC at the chosen location. Both are already
-    # computed; the ZNCC was previously thrown away.
+    # Reported confidence. TWO definitions exist, selected by
+    # driftsense.config.SHIPPED_CONFIDENCE (the ONE definition; the parity
+    # test pins register.py and eval_ext.py to it):
     #
-    # They fail differently, which is the whole point of taking the minimum.
-    # The network can be confident on a plausible wrong repeat -- it is a
-    # relative judgement between candidates and something always wins. ZNCC
-    # can be respectable on a heavily degraded frame that contains no true
-    # instance at all. Requiring both to be high is what separates present
-    # from absent; requiring either alone does not.
+    # "fused6" (shipped): a 6-feature logistic over statistics this decode
+    # already computes -- score, zncc, peak_ratio, pose_peak, psr, apce
+    # (driftsense.calibration.calibrate(), frozen constants, zero inference
+    # cost). Held-out 4-fold CV on the 2,250-pair holdout: AUC 0.9877 ->
+    # 0.9915 vs the legacy scalar (.agents/B_CALIBRATION_REPORT.md, protocol
+    # identical to REJECTOR_FINDINGS.md). A monotone map of the legacy scalar
+    # provably cannot move AUC (Guo et al., arXiv:1706.04599); the gain comes
+    # from recombining the six signals, not from rescaling one.
     #
-    # Measured on the full 2500-pair external set, swapping the reported
-    # statistic from the raw network score to this minimum (and retuning the
-    # threshold against the total rubric) was worth **+1.45 points**: present
-    # pairs wrongly declined fell 179 -> 88, localisation credit rose
-    # 0.7907 -> 0.8168, rejection F1 0.7961 -> 0.8193 and calibration AUC
-    # 0.9743 -> 0.9791. The held-out estimate matched in-sample exactly, so
-    # this is not a threshold fitted to the test set.
-    best["confidence"] = float(min(float(best.get("score", 0.0)),
-                                   float(best.get("zncc", best.get("score", 0.0)))))
+    # "legacy_min": the historical min(). They fail differently, which is why
+    # the minimum was chosen originally: the network can be confident on a
+    # plausible wrong repeat -- it is a relative judgement and something
+    # always wins -- while ZNCC can be respectable on a degraded frame with no
+    # true instance. The fused statistic subsumes both heights plus four
+    # peak-quality/contest signals, and measured better on held-out AUC.
+    if SHIPPED_CONFIDENCE == "fused6":
+        from driftsense.calibration import calibrate_shipped
+        best["confidence"] = float(calibrate_shipped({
+            "score": float(best.get("score", 0.0)),
+            "zncc": float(best.get("zncc", best.get("score", 0.0))),
+            "peak_ratio": float(best.get("peak_ratio", np.nan)),
+            "pose_peak": float(best.get("pose_peak", np.nan)),
+            "psr": float(best.get("psr", np.nan)),
+            "apce": float(best.get("apce", np.nan)),
+        }))
+    else:
+        best["confidence"] = float(min(float(best.get("score", 0.0)),
+                                       float(best.get("zncc", best.get("score", 0.0)))))
 
     if return_hypotheses:
         best["hypotheses"] = [{

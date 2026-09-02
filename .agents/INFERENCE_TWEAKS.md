@@ -143,3 +143,48 @@ compatibility). 200-pair draw: 75.70 vs 75.29 baseline.
 - Remaining levers: **E3 SEA-style coarse-sweep elimination** (the 66.8%
   clock share — the actual judged-efficiency lever), **E4 hypothesis
   pruning**, and **#5 margin-gated rescue pass** (accuracy).
+
+## Campaign 2026-09-03 — inference-only score & CPU pass (no weight changes)
+
+| tweak | evidence | verdict |
+|---|---|---|
+| fused 6-feature confidence (calibrated P(present), threshold 0.4870) | 4-fold CV on the 2,250 holdout: held-out AUC 0.9877 -> **0.9915**; in-sample total 75.71 vs scalar 75.35; margin/derived/9-feat all measured out (B_CALIBRATION_REPORT.md ADDENDUM 2); official-20 coordinates byte-identical, found decisions unchanged | **SHIPPED** (`SHIPPED_CONFIDENCE="fused6"`, `driftsense/calibration.py::calibrate_shipped`) |
+| register.py thread caps (torch+cv2 = min(4, cores)) + stderr per-pair timings | untuned 2.98 s vs tuned-env 1.58 s median on the same 20 pairs (dev Mac); macOS GCD ignores cv2 caps (no-op here) — effect lands on the Linux x86 grader box; official-20 output byte-identical; resolves the "per-pair timing unproven" report gap | **SHIPPED** |
+| bicubic sub-pixel placement (C workstream) | official-20 +0.40 credit (rescues p019/p020) but 60-pair holdout p95 shift 0.271 px > 0.15 gate (my leg) and gate-a break + credit −0.01 (C's independent leg); does not rescue p014 (the loc-tie pair — its error is upstream of sub-pixel) | **NOT SHIPPED** — flag `SHIPPED_SUBPIXEL="parabola"` retained; module flag-gated |
+| upsampled-DFT sub-pixel (C workstream) | credit-neutral on holdout, gate-c fail (0.255 px), moved p019 the wrong way on official-20 | **NOT SHIPPED** |
+| raw-surface rotation cross-check (integrator probe) | fixes p010 (+0.4), breaks p020 (−0.4): net 0.00 on official-20 | **NOT SHIPPED** (probe: `.agents/rot_crosscheck_tmp.py`) |
+| coarse-sweep FFT search-DFT reuse (A workstream D3) | value parity 4.8e-08, 0/150 argmax disagreements, but net ~48 ms/pair ≈ 1.5% — 50 of 214 matchTemplate calls share the probe DFT; template construction (~47% of coarse cost) is FFT-immune | **NOT SHIPPED** — `driftsense/coarse_fft.py` flag-off instrumentation |
+
+Full-suite state after the campaign: **314 passed, 0 failed**. Official-20 end-to-end
+(graded entry point, subprocess): loc 39.27, pose 19.71, F1 1.000 (both
+conventions), subtotal 73.98 — coordinates byte-identical to pre-campaign; the
+score column now carries the calibrated statistic. AUC on the 20-pair sample
+remains not estimable (single correctness class); the calibration evidence is
+the 2,250-pair held-out CV. Known pre-existing property: cross-process score
+bimodality (found/x/y/theta/scale never move; root-caused by A).
+
+### Campaign rebase addendum (2026-09-03, onto origin/phase2 @ b3949a5)
+
+The campaign branch was rebased onto the new phase2 tip (Set C fine-tune
+weights, channels_last CPU, SHIPPED_SUBPIXEL_ROWS). Consequences, all measured:
+
+* Fresh 500-pair holdout (seed 200, --features, NEW checkpoint): shipped fused
+  config totals **78.45/85**, AUC **0.9927**. Same-pair comparison: legacy
+  min() AUC **0.9689** vs fused **0.9561->0.9927?** — the paired figure is
+  fused 0.9561 vs min 0.9227 on present pairs with err computed from gt_x/gt_y
+  (see the CSV analysis); eval_ext's scored AUC (correctness-based) is
+  0.9689 -> 0.9927. The fusion delta on the new checkpoint is ~9x the old one.
+* Threshold: totals flat 78.45 (0.4870) / 78.50 (0.54) / 78.51 (0.6057) but
+  lost-real present pairs double 3 -> 6; downward-bias instruction +
+  noise-flat totals keep **0.4870 shipped**.
+* Frozen constants kept (not re-fit): already validated on the new checkpoint;
+  honest refit needs the full 2,250 re-decode (post-freeze).
+* Official-20 attribution: merged-tree coordinates are IDENTICAL under
+  fused vs legacy_min for 19/20 pairs (p012's single diff is a threshold-units
+  artifact of forcing 0.487 onto legacy scores). Upstream-equivalent
+  (legacy @ 0.18) reproduces the merged tree's totals exactly (loc 38.82,
+  pose 19.71, F1 1.000): the p007 0.554->1.100 regression and the p020
+  1.018->0.763 gain belong to origin/phase2's new checkpoint/row-drift, NOT
+  to this campaign. This PR is metric-neutral on the official 20 and delivers
+  the holdout AUC gain + runtime determinism.
+* Full suite on the merged tree: **324 passed, 0 failed**.

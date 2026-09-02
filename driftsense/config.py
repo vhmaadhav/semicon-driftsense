@@ -29,7 +29,45 @@ SHIPPED_SUBPIXEL_ROWS = True: the native-ZNCC winner; consensus/majority
 
 from __future__ import annotations
 
-SHIPPED_THRESHOLD = 0.18
+# Confidence statistic shipped in the `score` column (ONE definition).
+#   "fused6": 6-feature logistic over outputs locate() already computes
+#             (score, zncc, peak_ratio, pose_peak, psr, apce) via
+#             driftsense.calibration.calibrate(). Frozen constants were fit
+#             offline on the 2,250-pair holdout AFTER 4-fold CV
+#             (.agents/B_CALIBRATION_REPORT.md); held-out AUC 0.9877 ->
+#             0.9915. Zero inference cost, no decode change.
+#   "legacy_min": the historical min(network score, native ZNCC).
+# The parity test pins register.py and eval_ext.py to this module's values.
+SHIPPED_CONFIDENCE = "fused6"
+
+# Found threshold. UNITS CHANGE (2026-09-03): with SHIPPED_CONFIDENCE="fused6"
+# the score column is a calibrated P(present) and this threshold lives in
+# those units (0.4870; re-tuned on the 2,250 holdout against the total rubric
+# with the downward bias convention -- declined present pairs forfeit
+# localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b). The
+# historical 0.18 gated the legacy min() statistic and is kept ONLY for the
+# no-weights ZNCC fallback path in register.py, whose score is raw ZNCC.
+SHIPPED_THRESHOLD = 0.4870
+LEGACY_FALLBACK_THRESHOLD = 0.18
+
 SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True
+
+# Sub-pixel placement rule for the final ZNCC snap (ONE definition; applied
+# at the refine_zncc site in matching.py).
+#   "parabola" (SHIPPED): the historical 1-D parabolic fit through the peak.
+#   "bicubic": bicubic upsampling of the correlation surface around the peak
+#             (driftsense.subpixel.refine_bicubic; Debella-Gilo & Kaab 2011,
+#             DOI 10.1016/j.rse.2010.08.012).
+# MEASURED 2026-09-03, bicubic NOT shipped -- gate (c) failed on the 60-pair
+# holdout draw (RandomState(200), A/B shards): net loc credit +0.20 with
+# 1 rescue / 0 breaks, but p95 coordinate shift 0.271 px against the 0.15 px
+# stability gate, including one 2.62 px jump (tier-neutral by luck). On the
+# official-20 it rescued both Set D boundary pairs (p019 1.004 -> 0.898,
+# p020 1.077 -> 0.993; +0.40 credit, 0 breaks) but does NOT rescue Set B's
+# p014 -- its ~1.03-1.10 px error is upstream of sub-pixel refinement -- so
+# it cannot break the 39.27 localisation tie. Synthetic accuracy tests are
+# mixed. Revisit only with the full 2,250-pair paired bootstrap
+# (.agents/C_LOCALIZATION_REPORT.md, .agents/integrator_ext60_tmp.py output).
+SHIPPED_SUBPIXEL = "parabola"
