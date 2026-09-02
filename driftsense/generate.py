@@ -86,6 +86,35 @@ SEVERITY_MARGIN = 0.12
 SEVERITY_FLOOR = {"astigmatism_ratio": 1.0}
 
 
+# --- Phase 2 Set C decoy fidelity ------------------------------------------
+
+# The decoy's lattice pitch is reference_pitch * factor with factor drawn
+# uniformly from this band -- always strictly below the reference's, by up to
+# 2x -- then clamped into the pitch envelope the architecture family's own
+# presets span. Rationale: a zoned canvas draws each mat's preset from the
+# family pool, so a decoy canvas built with the SAME params shares the
+# reference's pitch support; whichever mats happen to land near the reference
+# pitch correlate ~0.9+ with the search frame and the absent pair decodes as
+# a weak match. Shifting the whole decoy pool off the reference's pitch is
+# the minimal honest fix: the decoy stays a plausible die of the same
+# architecture family (same kind, same CD envelope, same zoning), but its
+# repeat period no longer echoes the one in the frame.
+DECOY_PITCH_FACTOR_RANGE = (0.5, 1.0)
+
+
+def draw_decoy_pitch_factor(decoy_rng: np.random.Generator) -> float:
+    """Draw the decoy's pitch factor from the dedicated decoy stream.
+
+    Takes the stream (not a bare float) so every decoy draw is reproducible
+    from the same seed that reproduces everything else, and so the draw cannot
+    perturb the reference scene's random stream (pose_rng / rng are untouched).
+    The factor is applied by generate_zone_canvas via scaled_pitch_presets,
+    which clamps the result into the family's own pitch envelope.
+    """
+    lo, hi = DECOY_PITCH_FACTOR_RANGE
+    return float(decoy_rng.uniform(lo, hi))
+
+
 def sample_severity_params(rng: np.random.Generator,
                            severity_range: tuple[float, float] = (0.0, 1.0)) -> dict:
     """Draw one coherent point on the Set B severity ladder.
@@ -530,7 +559,16 @@ def build_one(job: tuple) -> list[dict]:
         decoy_seed = int(pose_rng.integers(0, 2**62))
         decoy_rng = np.random.Generator(np.random.PCG64(
             np.random.SeedSequence(decoy_seed)))
-        ref_zone_result = generate_fine_canvas_zoned(architecture, decoy_rng, params, canvas_px)
+        # Set C decoy fidelity: draw the decoy's lattice pitch a multiplicative
+        # factor in [0.5, 1.0) away from the reference scene's (the scene in
+        # frame draws from the family pool, so an unmutated decoy shares its
+        # pitch support and decodes as a weak match). factor comes from
+        # decoy_rng, so the same --seed reproduces the pair byte-identically.
+        # The presets are clamped to the family envelope; zoning, CD and the
+        # rng consumption order are unchanged.
+        ref_zone_result = generate_fine_canvas_zoned(
+            architecture, decoy_rng, params, canvas_px,
+            pitch_factor=draw_decoy_pitch_factor(decoy_rng))
         ref_canvas = ref_zone_result["canvas"]
 
     search_img, row_shift, k = image_search_traced(fine_canvas, params, rng, pose)
@@ -778,13 +816,18 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
     fine_canvas = zone_result["canvas"]
 
     # Same absent-pair construction as build_one: a different die region of the
-    # same architecture under the same imaging parameters.
+    # same architecture under the same imaging parameters -- with the decoy's
+    # lattice pitch drawn away from the reference scene's by the same Set C
+    # fidelity rule (factor in [0.5, 1.0) from decoy_rng, family-envelope
+    # clamped), so the decoy does not echo the pitch in the search frame.
     if present:
         ref_zone_result, ref_canvas = zone_result, fine_canvas
     else:
         decoy_rng = np.random.Generator(np.random.PCG64(
             np.random.SeedSequence(int(pose_rng.integers(0, 2**62)))))
-        ref_zone_result = generate_fine_canvas_zoned(architecture, decoy_rng, params, canvas_px)
+        ref_zone_result = generate_fine_canvas_zoned(
+            architecture, decoy_rng, params, canvas_px,
+            pitch_factor=draw_decoy_pitch_factor(decoy_rng))
         ref_canvas = ref_zone_result["canvas"]
 
     search_img, row_shift, k = image_search_traced(fine_canvas, params, rng, pose_params)

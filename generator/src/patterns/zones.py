@@ -23,7 +23,7 @@ import numpy as np
 
 from src.patterns.dram import generate_dram_canvas
 from src.patterns.finfet import generate_finfet_canvas
-from src.presets import presets_for_kind
+from src.presets import presets_for_kind, scaled_pitch_presets
 
 _GENERATORS = {"dram": generate_dram_canvas, "finfet": generate_finfet_canvas}
 
@@ -78,13 +78,21 @@ def generate_zone_canvas(
     linewidth_bias_nm: float = 0.0,
     corner_rounding_px: float = 0.0,
     polygon_scale_fraction: float = 0.0,
+    pitch_factor: float = 1.0,
 ) -> dict:
     """Tile independently-generated mats of `kind` across the canvas,
     separated by strip material. Returns dict with the canvas plus mat/strip
     rectangles in px for crop-placement logic downstream.
+
+    `pitch_factor` rescales every pitch-driving preset field of the mat pool
+    (clamped into the family's legal pitch envelope). 1.0 -- the default --
+    reproduces the historical canvas byte-for-byte; it exists so an absent-
+    pair decoy can draw its lattice pitch away from the reference scene's
+    (Phase 2 Set C) without reusing the same pitch support.
     """
     generator = _GENERATORS[kind]
-    presets = presets_for_kind(kind)
+    presets = (presets_for_kind(kind) if pitch_factor == 1.0
+               else scaled_pitch_presets(kind, pitch_factor))
 
     canvas = _strip_routing_texture(size_px, rng)
 
