@@ -17,6 +17,8 @@ search frame that is not exactly 1000 px still localises correctly.
 from __future__ import annotations
 
 import cv2
+import warnings
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -1285,10 +1287,21 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     # y is deliberately left alone: it is already at 0.081 px median error on
     # set B because raster drift has no vertical component.
     if subpixel_rows:
-        tpl = make_template(reference, best["scale"], best["theta"])
-        moved = drift_row_refine(search, tpl, best["x"], best["y"])
-        if moved is not None:
-            best["x"] = moved[0]
+        # Never let the refinement cost a pair. register.py zero-fills the whole
+        # row on any exception, so a throw here would turn a correctly located
+        # pair into found=0 with score 0.0 -- indistinguishable, in the output
+        # contract, from a confident rejection. `np.polyfit` can raise
+        # LinAlgError on a degenerate fit, and cv2.remap can reject an
+        # unexpected dtype/shape; both are recoverable by simply keeping the
+        # rigid answer, which is what the pipeline produced before this stage.
+        try:
+            tpl = make_template(reference, best["scale"], best["theta"])
+            moved = drift_row_refine(search, tpl, best["x"], best["y"])
+            if moved is not None:
+                best["x"] = moved[0]
+        except Exception as e:  # noqa: BLE001
+            warnings.warn(f"sub-pixel row refinement skipped: "
+                          f"{type(e).__name__}: {e}", RuntimeWarning, stacklevel=2)
 
     # The statement guarantees the true pose lies in these boxes and the rules
     # explicitly permit hard-coding them, so clipping a reported value into the
