@@ -158,8 +158,10 @@ equivalent gate — keep it on.
     says and the baseline locked onto a decoy, which is the intended
     difficulty (prompt §5.1: reference ambiguity is the lever).
 
-Efficiency note: the one open latency lever — E3 coarse-grid pruning — was
-audited and **not shipped** (equality bit-exact on 200/200 pairs, but the
+Efficiency note: the one open latency lever — E3 coarse-grid pruning — had
+a 200-pair seeded-draw audit and was **not shipped** (equality bit-exact
+on 200/200 pairs of that draw — the full-2,250 equality audit stays
+pending and is required only before enabling the gate — but the
 single-process clock reads 1.00x; the skipped work is noise against the
 network forward + refine + polish). Median runtime on the reference sample is
 3.12 s (max 6.19 s) against the ≤5 s median budget on local hardware; a slow

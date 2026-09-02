@@ -36,7 +36,8 @@ ordering against the exhaustive scan), and the gate's own margin semantics
 are pinned directly as unit asserts on _odd_point_pruned (deep valley pruned,
 shallow neighbour kept, strict boundary at margin * kth) plus a smoke that
 the wired margin still returns k hypotheses. The gate's firing behaviour on
-real data is measured by the full 2,250-pair audit, not by this fixture,
+real data is measured by the full 2,250-pair audit (still pending; the
+completed evidence is a 200-pair seeded-draw audit), not by this fixture,
 where the shipped 0.5 margin correctly never fires.
 """
 
@@ -214,11 +215,13 @@ def test_pruned_scan_returns_exhaustive_topk():
     top-k. The margins are AUDIT_PRUNE_MARGINS, literal constants in this
     module, NOT read from the production E3_PRUNE_MARGIN, so looping here can
     never become a vacuous None-vs-exhaustive check. The `__defaults__` assert
-    below pins that exhaustive default. Audit status (2026-09-02): the
-    end-to-end equality audit PASSED (bit-identical x/y/scale/theta/score on a
-    200-pair seeded draw) but the clock showed no speedup (p50 0.98x, mean
+    below pins that exhaustive default. Audit status (2026-09-02): a
+    200-pair seeded-draw audit PASSED (bit-identical x/y/scale/theta/score
+    on that draw) but the clock showed no speedup (p50 0.98x, mean
     1.00x), so the default stays exhaustive for keeps-the-semantics reasons,
-    not equality ones -- see the AUDITED note at matching.E3_PRUNE_MARGIN."""
+    not equality ones -- see the AUDITED note at matching.E3_PRUNE_MARGIN.
+    The full-2,250 equality audit stays pending (required before any
+    enabled default)."""
     pytest.importorskip("cv2")
     # The production default stays exhaustive: equality held, the clock did
     # not pay. If that default ever changes, re-run both audit legs.

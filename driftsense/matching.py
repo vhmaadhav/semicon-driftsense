@@ -282,7 +282,9 @@ COARSE_SCALES = 17
 # 0.5 keeps the gate conservative (only deep two-sample valleys are skipped).
 # Set to None (or 0.0) to restore the exhaustive scan.
 #
-# AUDITED (2026-09-02, closing the audit this default was pinned on): on a
+# AUDITED (2026-09-02, 200-pair seeded-draw audit -- NOT the full-2,250
+# equality audit this default was pinned on; that stays pending and is
+# required before any enabled default): on a
 # seeded 200-pair draw of the full shards, margin 0.5 produces bit-identical
 # output -- x, y, scale, theta and score exactly 0.0e+00 delta on 200/200
 # pairs; only n_hyp instrumentation differs (15/200 pairs report fewer offered
@@ -436,7 +438,9 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     rots = np.linspace(lo_r, hi_r, coarse_rotations)
 
     grid = np.linspace(lo_s, hi_s, coarse_scales)
-    # E3 grid pruning (issue #7; equality-audited on the full 2,250). Two
+    # E3 grid pruning (issue #7; audited on a seeded 200-pair draw -- the
+    # full-2,250 equality audit stays pending and is required before any
+    # enabled default). Two
     # passes: even grid points are always evaluated, then odd points are
     # evaluated only when at least one of their two (now evaluated) even
     # neighbours is within prune_margin of the running k-th best value -- a
@@ -447,9 +451,11 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     # vs-scale is multi-peaked, a skipped point that would have been a
     # hill's first sample leaves that hill represented by its shoulder, and
     # a skipped point can itself change the k-th best reference for later
-    # points. The full 2,250-pair equality audit (identical found/x/y, or
-    # paired delta CI within [-0.1, +0.1]) decides whether the pruning is
-    # kept. `prune_margin=None` (or 0.0) restores the exhaustive scan.
+    # points. Enabling the pruning (setting E3_PRUNE_MARGIN) requires the
+    # full 2,250-pair equality audit (identical found/x/y, or paired delta
+    # CI within [-0.1, +0.1]) -- it has not been run; the 200-pair draw is
+    # the only equality evidence so far. `prune_margin=None` (or 0.0)
+    # restores the exhaustive scan.
     vals: list[float] = []
     if prune_margin:
         vals = [0.0] * len(grid)

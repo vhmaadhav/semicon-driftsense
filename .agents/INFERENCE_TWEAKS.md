@@ -47,9 +47,11 @@ Clock takeaway: the efficiency win of `band=False` is ~0 — `_band` on the
 half-res probe is cheap. Its value is the **+0.45 accuracy points**, which is
 why it promotes on the accuracy gate, not the clock gate. The remaining clock
 lever is the coarse sweep itself (66.8% of pair time) — but E3 pruning of it
-is now MEASURED as a wash (below), so that lever is closed as specified.
+is now MEASURED as a wash on the 200-pair seeded draw (below), so that
+lever is closed for the shipped default (the full-2,250 audit stays
+pending, required only before enabling the gate).
 
-## E3 pruning audit (2026-09-02) — closes the audit the default was pinned on
+## E3 pruning audit (2026-09-02) — 200-pair seeded-draw audit (full-2,250 equality audit stays pending)
 
 Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
 (2 workers x 2 threads for the A/B, single process for clocks):
@@ -64,8 +66,10 @@ Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
   forward + refine + polish.
 * **Verdict: default stays `E3_PRUNE_MARGIN = None` (exhaustive).** Perfect
   equality but nothing to gain; changing instrumentation semantics for a
-  1.00x clock fails the change bar. The "pending audit" state is closed with
-  evidence — see the AUDITED note in `driftsense/matching.py`.
+  1.00x clock fails the change bar. The 200-pair seeded-draw audit is
+  complete (the promised full-2,250 equality audit stays pending and is
+  only required before enabling the gate) — see the AUDITED note in
+  `driftsense/matching.py`.
 
 ## Free regrades and closures (2026-09-02, no new inference)
 
@@ -78,8 +82,10 @@ Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
 | threshold 0.18 vs sweep, held-out with FIXED threshold | full set 75.73 (fixed) vs 75.68 (per-fold fitted); 200-draw 74.87 vs 74.45 | shipped 0.18 confirmed optimal out-of-sample |
 | `refit_xy` | prior measurement stands (+0.04, wash) | stays off |
 
-Clock row for E3 added to the table above; the E3 audit is closed in
-`driftsense/matching.py` (AUDITED note) and commit bde0c47.
+Clock row for E3 added to the table above; the 200-pair seeded-draw E3
+audit is recorded in `driftsense/matching.py` (AUDITED note) and commit
+bde0c47 (full-2,250 equality audit: pending, not required while the
+default is exhaustive).
 
 Reference-sample validation (see `docs/VERIFIED_GROUND_TRUTH.md` §8):
 register.py on the 20 reference sample pairs — format exact, overall present loc
