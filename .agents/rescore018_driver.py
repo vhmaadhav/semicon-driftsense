@@ -41,7 +41,10 @@ _spec = importlib.util.spec_from_file_location(
 ee = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ee)
 
-T = 0.18                     # shipped SHIPPED_THRESHOLD, the point in dispute
+T = ee.SHIPPED_THRESHOLD     # bound to driftsense.config (the point in
+                             # dispute); the totals assert in main() pins the
+                             # audited value so a config bump cannot silently
+                             # rescore a different threshold
 N_BOOT = 10000
 SEED = 0
 BASE_CSV = os.path.join(HERE, ".agents", "feat_base_nb.csv")
@@ -81,6 +84,13 @@ def load_aligned() -> tuple[pd.DataFrame, pd.DataFrame]:
         .rename(columns=lambda c: c[:-2])
     a_al.insert(0, "pair_id", merged["pair_id"].values)
     b_al.insert(0, "pair_id", merged["pair_id"].values)
+    # The paired bootstrap differences row i of one frame against row i of
+    # the other; C1-C4 are order-invariant aggregates, so this tautology is
+    # the only guard that would trip a refactor building the frames
+    # separately (review 5087501487: set equality proves membership, not
+    # row order -- the merge above is what guarantees shared order).
+    assert (a_al["pair_id"].values == b_al["pair_id"].values).all(), \
+        "aligned frames lost shared pair order"
     return a_al, b_al
 
 
@@ -143,18 +153,21 @@ def _auc(a_w: np.ndarray, b_w: np.ndarray, scores: np.ndarray) -> float:
     return conc / (A * B)
 
 
-def total_from_weights(d: dict, w: np.ndarray) -> float:
-    """85-pt subtotal of a resample in which original pair i was drawn
-    exactly w[i] times. w[i] MUST be indexed by original row position --
-    the review-5087501487 bug was passing the draw-order vector m[take]
+def _components(d: dict, w: np.ndarray) -> dict:
+    """Per-component points for a resample in which original pair i was
+    drawn exactly w[i] times. w[i] MUST be indexed by original row position
+    -- the review-5087501487 bug was passing the draw-order vector m[take]
     here instead of the multiplicity vector bincount(take).
 
-    w need not be integral (fractional draws average correctly); weights are
-    normalised to per-pair shares so denominators read like counts."""
+    Exposed so the C1/C2 cross-validation can assert EACH graded component
+    against score(): asserting only the 85-pt sum would let a compensating
+    error (e.g. +loc/-pose) survive. w need not be integral (fractional
+    draws average correctly); weights are normalised to per-pair shares so
+    denominators read like counts."""
     n = len(w)
     s = w.sum()
     if s <= 0:
-        return float("nan")
+        return {k: float("nan") for k in COMPONENTS}
     w = w * (n / s)
 
     def wmean(values, mask):
@@ -175,13 +188,18 @@ def total_from_weights(d: dict, w: np.ndarray) -> float:
 
     auc = _auc(d["a_auc"] * w, d["b_auc"] * w, d["scores"])
 
-    comps = {
+    return {
         "localisation": 40 * loc,
         "scale": 10 * sc,
         "rotation": 10 * rc,
         "rejection": 15 * f1,
         "calibration": 10 * auc,
     }
+
+
+def total_from_weights(d: dict, w: np.ndarray) -> float:
+    """85-pt subtotal of one resample = sum of _components()."""
+    comps = _components(d, w)
     return sum(comps[k] for k in COMPONENTS)
 
 
@@ -297,30 +315,46 @@ def brute_auc(a_w: np.ndarray, b_w: np.ndarray, scores: np.ndarray) -> float:
 
 
 def validate(a: pd.DataFrame, b: pd.DataFrame, da: dict, db: dict) -> None:
-    total_a, _ = subtotal(a)
-    total_b, _ = subtotal(b)
-    fast_a = total_from_weights(da, np.ones(len(a)))
-    fast_b = total_from_weights(db, np.ones(len(b)))
-    assert abs(fast_a - total_a) < 1e-9 and abs(fast_b - total_b) < 1e-9, (
-        f"C1 full-frame mismatch: base {fast_a} vs {total_a}, "
-        f"cand {fast_b} vs {total_b}")
+    # C1: full frame, PER COMPONENT (not just the 85-pt sum -- a
+    # compensating +loc/-pose error must not survive the check).
+    total_a, pts_a = subtotal(a)
+    total_b, pts_b = subtotal(b)
+    for tag, d, pts in (("base", da, pts_a), ("cand", db, pts_b)):
+        fast = _components(d, np.ones(len(d["scores"])))
+        worst = max((k, abs(fast[k] - pts[k])) for k in COMPONENTS)
+        assert worst[1] < 1e-9, (
+            f"C1 full-frame per-component mismatch ({tag}): "
+            f"{worst[0]} fast {fast[worst[0]]} vs score() {pts[worst[0]]}")
 
+    # C2: random resamples via multiplicity weights, again per component.
     rng = np.random.RandomState(123)
     for i in range(6):
         src = a if i % 2 == 0 else b
         take = rng.randint(0, len(src), size=len(src))
         w = np.bincount(take, minlength=len(src)).astype(float)  # multiplicities
         expanded = src.iloc[take].reset_index(drop=True)
-        exact, _ = subtotal(expanded)
-        fast = total_from_weights(prep(src), w)
-        assert abs(fast - exact) < 1e-9, (
-            f"C2 resample {i}: vectorised weights {fast} != score() {exact}")
+        exact, pts = subtotal(expanded)
+        fast = _components(prep(src), w)
+        worst = max((k, abs(fast[k] - pts[k])) for k in COMPONENTS)
+        assert worst[1] < 1e-9, (
+            f"C2 resample {i} per-component mismatch: {worst[0]} "
+            f"fast {fast[worst[0]]} vs score() {pts[worst[0]]}")
 
+    # C3: vectorised == explicit reference loop over the SAME draws.
     ref = bootstrap_reference(da, db, draws=200, seed=777)
     vec = bootstrap_from_weights(draw_weights(len(a), 200, 777), da, db)
     assert np.max(np.abs(ref - vec)) < 1e-9, (
         f"C3 vectorised vs reference loop diverge: max {np.max(np.abs(ref - vec))}")
+    # C3b: the production entry point (block loop, seed+s plumbing, ragged
+    # last block) must reproduce the same deltas as independently recomposed
+    # blocks -- ref2 recomposes them without the out[s:e] scatter.
+    vec2 = bootstrap_vectorised(da, db, draws=200, seed=777, block=67)
+    ref2 = np.concatenate([bootstrap_from_weights(
+        draw_weights(len(a), e - s, 777 + s), da, db)
+        for s, e in ((0, 67), (67, 134), (134, 200))])
+    assert np.max(np.abs(vec2 - ref2)) < 1e-9, "C3b block plumbing diverges"
 
+    # C4: weighted AUC vs the independent O(n^2) pairwise reference.
     rs = np.random.RandomState(99)
     for i in range(30):
         m = 40 + int(rs.randint(0, 60))
@@ -331,9 +365,10 @@ def validate(a: pd.DataFrame, b: pd.DataFrame, da: dict, db: dict) -> None:
         brute = brute_auc(a_w, b_w, scores)
         assert abs(fast - brute) < 1e-9, f"C4 AUC case {i} diverges"
     print("cross-validation PASSED: "
-          "C1 full-frame == score(); "
-          "C2 6 resamples == score() on expanded frames; "
+          "C1 full-frame per-component == score(); "
+          "C2 6 resamples per-component == score() on expanded frames; "
           "C3 vectorised == reference loop over 200 identical draws; "
+          "C3b production block plumbing == recomposed blocks; "
           "C4 weighted AUC == brute-force on 30 tie-forcing cases (1e-9)")
 
 

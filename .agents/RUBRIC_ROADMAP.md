@@ -11,7 +11,7 @@ an unmasked scorer) · **200-pair grade draws:** 75.8 ± 1.2 (own-generator test
 |---|---|---|
 | **Model evaluation & accuracy prototyping** (full-set evals, sweeps, retraining experiments) | **GPU** — RTX 4060 local venv or Kaggle TPU-VM host | a full 2,250-pair eval drops from ~12 min (Air, 5 workers) to ~1–2 min; sweeps and retrains become interactive instead of overnight. Rapid iteration is worth more than clock purity here. |
 | **Efficiency / clock measurements** (any number quoted for the judged 5 pts) | **4-core CPU reference method** — single process, 4 threads, idle, interleaved A/B reps (`scripts/bench_existing_vs_optimized.py`) | the judge clocks CPU. GPU numbers are meaningless for this component; thermals and thread counts must be controlled exactly as the bench harness does. |
-| **Rapid development loop** | either | every change lands behind a flag; `eval_ext --sample 200 --seed 200` gives a 2-minute read; the paired full-set run is the only promotion gate. Scorecard of record: `.agents/INFERENCE_TWEAKS.md`. |
+| **Rapid development loop** | either | every change lands behind a flag; `eval_ext --sample 200 --seed 200` gives a 2-minute read; the paired full-set run is the only promotion gate. Scorecard of record: `.agents/INFERENCE_TWEAKS.md` (2026-08-31 campaign; current PR-34 records: `.agents/RESCORE_SHIPPED_T018.md`, `.agents/SETB_WHERE_THE_POINTS_ARE.md`). |
 
 Never compare clocks across machines or across thermal states; never promote
 accuracy from a 200-pair draw alone (σ = 1.2).

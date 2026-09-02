@@ -67,9 +67,14 @@ N=20000), using out-of-fold binary decisions so nothing is fitted in-sample:
 | GBT | 0.9046 | 0.0324 | 59.4% | 2.37 |
 | paired delta | +0.0038 | | P(GBT better) **54.5%** | |
 
-For reference, the actual shipped configuration (`score` column at the fixed
-0.202) sits at mean F1 0.9083 / **P(gate) 64.7%** — better than either CV-swept
-variant above, because sweeping the threshold for *total points* sacrifices F1.
+For reference, the shipped decode's rejection column (`score`, fixed
+threshold) sits at mean F1 0.9083 / **P(gate) 64.7%** in this sweep — better
+than either CV-swept variant above, because sweeping the threshold for *total
+points* sacrifices F1. Threshold note (2026-09-02): this sweep ran at the
+then-in-use 0.202; the shipped operating point is `SHIPPED_THRESHOLD = 0.18`
+(`driftsense/config.py`, rescore evidence in
+`.agents/RESCORE_SHIPPED_T018.md`), and the 0.18 staged-200 gate rates are in
+`.agents/STAGED_BOOTSTRAP_T018.md`.
 
 ## Conclusion
 
