@@ -18,12 +18,27 @@ paired bootstrap the +0.35 promotion gate is defined on
   weighted set A/B aggregation as a real decode; no inference re-run is
   needed because the threshold acts at scoring time.
 - Paired bootstrap of the 85-pt subtotal delta (candidate − shipped), 10,000
-  resamples, seed 0, resampling pair ids with replacement and differencing
-  the two checkpoints on the identical resample. A multiplicity fast path
-  (each graded quantity in the subtotal is linear in per-pair draw counts)
-  was validated **bit-identical (1e-9) to `score()` on the full frame and
-  ten random resamples** before use; the validation aborts on any mismatch.
-- Driver (committed for auditability): `.agents/rescore018_driver.py`.
+  resamples, seed 0, resampling pair indices with replacement and
+  differencing the two checkpoints on the identical resample. Both frames
+  are aligned row-for-row by `pair_id` before resampling (set equality
+  proves membership only, not row order). The resamples evaluate through a
+  multiplicity-weighted fast path (every graded quantity in the subtotal is
+  linear in per-pair draw counts), cross-validated against independent
+  implementations before use — see below.
+- **v2 correction (review 5087501487):** the first committed bootstrap
+  computed `np.bincount(take)[take]` — the weight of the *drawn* pair at
+  each draw-order position, not the multiplicity of original row i — which
+  produced an invalid CI ([+0.1177, +0.5434], too narrow). The v2 driver
+  uses the multiplicity vector `np.bincount(take, minlength=n)` directly and
+  replaces the per-resample Python loop with a vectorised, block-bounded
+  bootstrap (no per-resample loop; ~18 MB per 1,000-resample block).
+- Cross-validation suite (any mismatch aborts before CIs are printed):
+  **C1** full-frame fast path == `score()` (1e-9); **C2** six random
+  resamples == `score()` on the expanded frames (1e-9); **C3** vectorised
+  bootstrap == an explicit per-resample reference loop over 200 identical
+  draws (1e-9); **C4** weighted AUC == brute-force pairwise AUC on 30
+  tie-forcing cases (1e-9).
+- Driver (committed): `.agents/rescore018_driver.py`.
   Raw logs: `.agents/rescore_base_nb_t018.log`, `.agents/rescore_setcfull_t018.log`.
 
 ## Result — full 2,250 pairs, `SHIPPED_THRESHOLD = 0.18`
@@ -41,8 +56,10 @@ Rejection F1 at 0.18: **0.9078 -> 0.9198** (matches the PR body's 0.18 table
 exactly — that part was right; the *totals* quoted in the headline table were
 not scored at this threshold).
 
-**Paired bootstrap (N=10,000, seed 0):** point delta **+0.3289**, median
-+0.3295, **95% CI [+0.1177, +0.5434]**, P(paired delta ≥ +0.35) = 0.421.
+**Paired bootstrap (N=10,000, seed 0, v2 corrected):** point delta
+**+0.3289**, median +0.3276, **95% CI [+0.0692, +0.5999]**, P(paired delta
+≥ +0.35) = 0.429. (The v1 CI [+0.1177, +0.5434] was produced by the
+weighting bug above and is superseded.)
 
 ## Gate verdict at 0.18: NOT CLEARED
 
@@ -68,7 +85,7 @@ What changes at 0.18 is the **promotion-gate claim**: +0.39 -> +0.33. Honest
 framings, in order of preference:
 
 1. **Keep the checkpoint, restate the claim**: it is promoted as the best
-   shipped-config checkpoint (+0.33, CI [+0.12, +0.54]), NOT as a cleared
+   shipped-config checkpoint (+0.33, CI [+0.07, +0.60]), NOT as a cleared
    +0.35 promotion gate. The gate is a cadence rule for spending further
    compute on a lever, not a ship/no-ship bar for a checkpoint that wins
    every component.
