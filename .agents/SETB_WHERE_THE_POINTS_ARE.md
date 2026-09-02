@@ -58,18 +58,26 @@ loss and the gross failures. Severity level is a proxy; jitter is the mechanism.
 
 Result first, reasoning below. A 22-epoch fine-tune on the identical recipe with
 `--sampler-jitter-power 1.0` (top jitter quartile drawing 43.3% of each epoch
-instead of 25%) scored **76.93** on the full 2,250 — **worse than the 77.15 it
-started from**, and 0.61 below the plain completion of the same recipe:
+instead of 25%) scored **76.93** on the full 2,250 — a wash against shipped
+(76.94) and 0.34 below the plain completion of the same recipe (77.27).
+
+Threshold note (2026-09-02 rescore): the totals below were originally mixed —
+shipped and Arm A came from logs scored `@fix 0.202` (77.15 / 77.54) while Arm
+B was scored at the shipped 0.18 (76.93) — which overstated Arm B's loss as
+0.61. Every number in this table is now rescored through the shipped
+evaluator at `SHIPPED_THRESHOLD = 0.18`; see
+`.agents/RESCORE_SHIPPED_T018.md`. The conclusion is unchanged in direction:
+the plain completion beats the jitter arm by 0.34.
 
 | | shipped | Arm A (plain) | Arm B (jitter-weighted) |
 |---|---:|---:|---:|
-| set A credit | 0.9758 | **0.9778** | 0.9735 |
-| set B credit | 0.8247 | **0.8302** | 0.8133 |
+| set A credit | **0.9737** | 0.9726 | 0.9735 |
+| set B credit | 0.8151 | **0.8233** | 0.8133 |
 | rejection F1 @0.18 | 0.9078 | **0.9198** | 0.9104 |
-| **total / 85** | 77.15 | **77.54** | **76.93** |
+| **total / 85** | 76.94 | **77.27** | **76.93** |
 
-Set B — the thing it was built to fix — got **worse** (0.8247 → 0.8133), and Set
-A regressed too (0.9758 → 0.9735). Over-exposing the high-jitter tail costs more
+Set B — the thing it was built to fix — got **worse** (0.8151 → 0.8133), and Set
+A washed (0.9737 → 0.9735). Over-exposing the high-jitter tail costs more
 on the rest of the distribution than it recovers on the tail. `--jitter-power -1`
 already extracts what is available from that axis; adding exposure on top is
 past the point of diminishing returns and into active harm.

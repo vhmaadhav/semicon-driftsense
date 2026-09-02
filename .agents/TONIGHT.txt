@@ -20,3 +20,10 @@ SUBTOTAL (85 measurable)                                   76.93
 --- feat_setc_nb ---
    shipped min(score,zncc) |          77.22 |  0.9156 |  0.9879
 --- feat_setcfull ---
+
+[09-02 addendum] Threshold-consistency rescore (review 5086839305): the Arm A
+total above was @fix 0.202, not the shipped 0.18. Rescored through score() at
+SHIPPED_THRESHOLD: shipped 76.94, Arm A 77.27 (+0.3289), Arm B 76.93. Paired
+bootstrap of the Arm A delta: 95% CI [+0.1177, +0.5434], P(>= +0.35) = 0.421 —
+the +0.35 promotion gate is NOT cleared at the shipped threshold. Full detail:
+.agents/RESCORE_SHIPPED_T018.md.

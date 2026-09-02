@@ -1,0 +1,23 @@
+
+==========================================================================
+EXTERNAL TEST SET — 2250 pairs (A 875, B 875, C 500, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8865     35.46
+   set A (875 pairs)        0.9737  <=5px 98.9%  <=1px 92.7%
+                                         median 0.32px
+   set B (875 pairs)        0.8151  <=5px 92.6%  <=1px 57.6%
+                                         median 0.83px
+Pose — scale (10)             credit 0.8964  med 0.42%      8.96
+Pose — rotation (10)        credit 0.9020  med 0.102deg      9.02
+Rejection (15)              F1(reject) 0.9078 @fix 0.180     13.62
+                            correct-rej 453  lost-real 45  missed-abs 47
+                            [lenient F1(present) 0.9737]
+                            [best-possible F1(reject) 0.9100 @ 0.2017]
+Calibration (10)                            AUC 0.9883      9.88
+   [submitted AUC (issue #27)           0.7638 -> 7.64]
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   76.94
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
