@@ -48,9 +48,11 @@ Clock takeaway: the efficiency win of `band=False` is ~0 — `_band` on the
 half-res probe is cheap. Its value is the **+0.45 accuracy points**, which is
 why it promotes on the accuracy gate, not the clock gate. The remaining clock
 lever is the coarse sweep itself (66.8% of pair time) — but E3 pruning of it
-is now MEASURED as a wash (below), so that lever is closed as specified.
+is now MEASURED as a wash on the 200-pair seeded draw (below), so that
+lever is closed for the shipped default (the full-2,250 audit stays
+pending, required only before enabling the gate).
 
-## E3 pruning audit (2026-09-02) — closes the audit the default was pinned on
+## E3 pruning audit (2026-09-02) — 200-pair seeded-draw audit (full-2,250 equality audit stays pending)
 
 Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
 (2 workers x 2 threads for the A/B, single process for clocks):
@@ -65,8 +67,10 @@ Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
   forward + refine + polish.
 * **Verdict: default stays `E3_PRUNE_MARGIN = None` (exhaustive).** Perfect
   equality but nothing to gain; changing instrumentation semantics for a
-  1.00x clock fails the change bar. The "pending audit" state is closed with
-  evidence — see the AUDITED note in `driftsense/matching.py`.
+  1.00x clock fails the change bar. The 200-pair seeded-draw audit is
+  complete (the promised full-2,250 equality audit stays pending and is
+  only required before enabling the gate) — see the AUDITED note in
+  `driftsense/matching.py`.
 
 ## Free regrades and closures (2026-09-02, no new inference)
 
@@ -79,8 +83,10 @@ Both legs, on the seeded 200-pair draw (A/B/C seed 200), light footprint
 | threshold 0.18 vs sweep, held-out with FIXED threshold | full set 75.73 (fixed) vs 75.68 (per-fold fitted); 200-draw 74.87 vs 74.45 | shipped 0.18 confirmed optimal out-of-sample |
 | `refit_xy` | prior measurement stands (+0.04, wash) | stays off |
 
-Clock row for E3 added to the table above; the E3 audit is closed in
-`driftsense/matching.py` (AUDITED note) and commit bde0c47.
+Clock row for E3 added to the table above; the 200-pair seeded-draw E3
+audit is recorded in `driftsense/matching.py` (AUDITED note) and commit
+bde0c47 (full-2,250 equality audit: pending, not required while the
+default is exhaustive).
 
 Reference-sample validation (see `docs/VERIFIED_GROUND_TRUTH.md` §8):
 register.py on the 20 reference sample pairs — format exact, overall present loc
@@ -92,8 +98,11 @@ for the baseline's credit; refuted).
 
 ## Issue #37 — rotation-aware scale ranking, full 2,250 A/B (2026-09-02)
 
-Closes the measurement issue #37 asked for. **Arms differ in `matching.py`
-only**; both decode the identical, already-generated `data/ext_p2` shards, so
+Closes the measurement issue #37 asked for, and the one the `RERANK_ROTATION`
+gate names as its unblocking condition. The **fix arm is `rerank_rotation=True`**
+(the re-rank as PR #35 wired it); the **base arm is the pre-#37 rot=0-only
+path**, which is what the gate restores when False. **Arms differ in
+`matching.py` only**; both decode the identical, already-generated `data/ext_p2` shards, so
 the generator-side decoy change on this branch cannot touch the comparison.
 Shipped config throughout (`band=False`, `hypotheses=3`, `coarse_scales=17`,
 `verification=zncc`, threshold 0.18). Per-pair CSVs:
@@ -203,18 +212,36 @@ this file under the same protocol, so **absolute** budget claims from this
 bench are machine-specific — both arms miss ≤5 s here, so the change does not
 alter budget status. The reference-sample median on record is 3.12 s.
 
-### Verdict
+### Verdict: `RERANK_ROTATION` stays False
+
+This A/B is the evidence the `RERANK_ROTATION` gate was waiting on. That
+constant's own comment sets the bar: *"To enable: set this True, run the full
+2,250-pair A/B, and record the paired delta per component before changing the
+default."* Done — the per-component deltas are the tables above. They do not
+clear the bar.
 
 * Issue #37's defect is **real and reduced**: candidate-generation failures
-  17 → 13, basin never-offered 137 → 130, zero basins lost, +3.83 recall@1.
-* Rubric effect is **neutral** (−0.003 of 85), Set A slightly up, Set B
-  slightly down with a CI touching zero.
-* The binding constraint has moved to the **native-ZNCC selector** (issue #5):
-  63 of 76 remaining wrong tiles are pairs whose true basin *was* offered.
+  17 → 13, basin never-offered 137 → 130, **zero basins lost, 8 gained**,
+  recall@1 +3.83.
+* Rubric effect is **neutral**: −0.003 of 85. Set A +0.0009, Set B −0.0021
+  with a CI touching zero. Against the campaign's **+0.35 promotion gate**
+  this is a clear no.
+* Net tile count is **−1** (2 rescued, 3 broken) and the three regressions
+  raise, not lower, their confidence — they are new *high-confidence* wrong
+  tiles.
 * Cost ~0.7% of pair time.
 
-Promote on defect-elimination grounds (the structural bug is gone and cannot
-be recovered downstream when it fires), not on a points claim — there is none.
+**So the default stays OFF, on the campaign's own rules** — the same standard
+that kept the E1 cache and E3 pruning unshipped. The mechanism is kept, gated
+and tested, because the defect it removes is unrecoverable downstream when it
+fires, and because a different selector would change this verdict.
+
+The finding that matters more than the gate decision: **the binding constraint
+is now the native-ZNCC selector** (issue #5). 63 of 76 remaining wrong tiles
+are pairs whose true basin *was* offered and rejected, and on two of the three
+regressions the network score preferred the truth while ZNCC did not. Widening
+or re-ranking the shortlist cannot pay until that is addressed; this A/B is the
+strongest evidence yet for prioritising #5.
 
 ## Notes per tweak
 

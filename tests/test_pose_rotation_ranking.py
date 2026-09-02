@@ -36,7 +36,8 @@ ordering against the exhaustive scan), and the gate's own margin semantics
 are pinned directly as unit asserts on _odd_point_pruned (deep valley pruned,
 shallow neighbour kept, strict boundary at margin * kth) plus a smoke that
 the wired margin still returns k hypotheses. The gate's firing behaviour on
-real data is measured by the full 2,250-pair audit, not by this fixture,
+real data is measured by the full 2,250-pair audit (still pending; the
+completed evidence is a 200-pair seeded-draw audit), not by this fixture,
 where the shipped 0.5 margin correctly never fires.
 """
 
@@ -222,7 +223,7 @@ def test_rerank_rescues_rotated_basin():
     pytest.importorskip("cv2")
     reference, search = _fixture()
     out = pose_candidates(reference, search, k=3, band=False,
-                          prune_margin=None)
+                          prune_margin=None, rerank_rotation=True)
     scales = [f for f, _, _ in out]
     assert any(abs(f - Z_TRUE) <= 0.35 for f in scales), (
         "re-ranked top-3 %s does not contain the true basin z=9.0" % scales)
@@ -246,15 +247,21 @@ def test_pruned_scan_returns_exhaustive_topk():
     top-k. The margins are AUDIT_PRUNE_MARGINS, literal constants in this
     module, NOT read from the production E3_PRUNE_MARGIN, so looping here can
     never become a vacuous None-vs-exhaustive check. The `__defaults__` assert
-    below pins that exhaustive default. Audit status (2026-09-02): the
-    end-to-end equality audit PASSED (bit-identical x/y/scale/theta/score on a
-    200-pair seeded draw) but the clock showed no speedup (p50 0.98x, mean
+    below pins that exhaustive default. Audit status (2026-09-02): a
+    200-pair seeded-draw audit PASSED (bit-identical x/y/scale/theta/score
+    on that draw) but the clock showed no speedup (p50 0.98x, mean
     1.00x), so the default stays exhaustive for keeps-the-semantics reasons,
-    not equality ones -- see the AUDITED note at matching.E3_PRUNE_MARGIN."""
+    not equality ones -- see the AUDITED note at matching.E3_PRUNE_MARGIN.
+    The full-2,250 equality audit stays pending (required before any
+    enabled default)."""
     pytest.importorskip("cv2")
     # The production default stays exhaustive: equality held, the clock did
     # not pay. If that default ever changes, re-run both audit legs.
-    assert pose_candidates.__defaults__[-1] is None, (
+    # Look the default up by NAME: a positional index into __defaults__ breaks
+    # the moment any parameter is appended, which silently re-points the
+    # assertion at an unrelated argument.
+    import inspect
+    assert inspect.signature(pose_candidates).parameters["prune_margin"].default is None, (
         "pose_candidates no longer defaults to prune_margin=None; the "
         "candidate margins audited below were chosen for the exhaustive-"
         "default regime -- re-run the equality AND clock audits before "
@@ -325,6 +332,36 @@ def test_pose_candidates_prune_margin_smoke():
         assert np.isfinite(f) and np.isfinite(r) and np.isfinite(peak)
 
 
+def test_rerank_is_off_by_default_and_the_default_path_is_the_old_one():
+    """The shipped decoder must not change until the full-2,250 A/B is run.
+
+    `RERANK_ROTATION` is False, so `pose_candidates` must reproduce the
+    pre-#37 `peaks[:k]` ranking exactly. Pinning it by equality against an
+    explicit `rerank_rotation=False` call would be vacuous, so this asserts the
+    two things that actually define the old path: the default is off, and the
+    default result differs from the re-ranked one on the very fixture built to
+    make re-ranking change the answer.
+    """
+    pytest.importorskip("cv2")
+    from driftsense.matching import RERANK_ROTATION
+    assert RERANK_ROTATION is False, (
+        "enabling the rotation re-rank changes the shipped decode; it needs a "
+        "full 2,250-pair A/B first (issue #37 / PR #35 review)")
+
+    reference, search = _fixture()
+    default = pose_candidates(reference, search, k=3, band=False,
+                              prune_margin=None)
+    explicit_off = pose_candidates(reference, search, k=3, band=False,
+                                   prune_margin=None, rerank_rotation=False)
+    assert default == explicit_off, "the default no longer tracks RERANK_ROTATION"
+
+    reranked = pose_candidates(reference, search, k=3, band=False,
+                               prune_margin=None, rerank_rotation=True)
+    assert default != reranked, (
+        "on the p008-style fixture the re-rank must change the hypotheses; if "
+        "it does not, this test can no longer prove the default path is the "
+        "old one")
+
 def _shortlist_seeds(reference, search, monkeypatch, k=3):
     """The (scale, rotation) seeds pose_candidates actually hands to the
     refine -- i.e. the candidate shortlist itself, read before any polish.
@@ -335,6 +372,10 @@ def _shortlist_seeds(reference, search, monkeypatch, k=3):
     the single call site the shortlist flows into, so whatever is recorded
     here is exactly what candidate generation offered downstream, with the
     golden-section polish taken out of the picture entirely.
+
+    Opts in to `rerank_rotation=True`: the re-rank is gated OFF in the
+    shipped decode until its A/B lands, so the default path would not
+    exercise the behaviour these cases exist to pin.
     """
     import driftsense.matching as M
 
@@ -346,7 +387,8 @@ def _shortlist_seeds(reference, search, monkeypatch, k=3):
         return float(f0), float(r0), 0.0
 
     monkeypatch.setattr(M, "_refine_pose_local", _spy)
-    M.pose_candidates(reference, search, k=k, band=False, prune_margin=None)
+    M.pose_candidates(reference, search, k=k, band=False, prune_margin=None,
+                      rerank_rotation=True)
     return seeds
 
 
@@ -411,7 +453,8 @@ def test_rerank_recovers_pose_at(theta):
     angles (where no coarse sample sits on the truth)."""
     pytest.importorskip("cv2")
     reference, search = _fixture(theta)
-    out = pose_candidates(reference, search, k=3, band=False, prune_margin=None)
+    out = pose_candidates(reference, search, k=3, band=False,
+                          prune_margin=None, rerank_rotation=True)
     f_best, r_best, _ = out[0]
     assert abs(f_best - Z_TRUE) <= 0.35, (
         "theta=%.2f: winner scale %.3f is not the true basin" % (theta, f_best))
