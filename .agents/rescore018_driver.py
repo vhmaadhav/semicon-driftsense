@@ -229,18 +229,35 @@ def draw_weights(n: int, draws: int, seed: int) -> np.ndarray:
 
 
 def bootstrap_vectorised(da: dict, db: dict, draws: int = N_BOOT,
-                         seed: int = SEED, block: int = 1000) -> np.ndarray:
-    """Paired subtotal deltas for all resamples, fully vectorised.
+                         seed: int = SEED, block: int = 1000,
+                         return_components: bool = False):
+    """Paired deltas for all resamples, fully vectorised.
 
-    Processed in memory-sized blocks of `block` resamples; within a block
-    every resample is one matrix product -- no per-resample Python loop."""
+    `block` is a MEMORY parameter only -- it must not change the Monte
+    Carlo sample for a given (draws, seed): one RandomState(seed) drives
+    the whole bootstrap and is consumed sequentially across blocks, so
+    block=67/500/1000 all produce identical deltas (asserted by C3b).
+    (Review 5089846291 point 3: per-block `seed + s` seeding made the
+    advertised seed block-dependent.)
+
+    return_components=True returns the (draws x 5) per-component delta
+    matrix (localisation, scale, rotation, rejection, calibration) instead
+    of the 85-pt subtotal deltas."""
     n = len(da["scores"])
+    rng = np.random.RandomState(seed)          # ONE stream for all blocks
     out = np.empty(draws)
+    comps_out = np.empty((draws, len(COMPONENTS))) if return_components else None
     for s in range(0, draws, block):
         e = min(s + block, draws)
-        W = draw_weights(n, e - s, seed + s)   # distinct seed per block
-        out[s:e] = bootstrap_from_weights(W, da, db)
-    return out
+        take = rng.choice(n, size=(e - s, n), replace=True)
+        flat = (take + np.arange(e - s)[:, None] * n).ravel()
+        W = np.bincount(flat, minlength=(e - s) * n).reshape(e - s, n) \
+            .astype(np.float64)
+        if return_components:
+            comps_out[s:e] = bootstrap_components_from_weights(W, da, db)
+        else:
+            out[s:e] = bootstrap_from_weights(W, da, db)
+    return comps_out if return_components else out
 
 
 def bootstrap_from_weights(W: np.ndarray, da: dict, db: dict) -> np.ndarray:
@@ -288,6 +305,57 @@ def bootstrap_from_weights(W: np.ndarray, da: dict, db: dict) -> np.ndarray:
     auc_b = auc_row(db)
     return ((lb - la) + (sb - sa) + (rb - ra) + (fb - fa)
             + 10 * (np.nan_to_num(auc_b) - np.nan_to_num(auc_a)))
+
+
+def bootstrap_components_from_weights(W: np.ndarray, da: dict,
+                                      db: dict) -> np.ndarray:
+    """Per-component deltas (cand - base) for each resample row of W.
+
+    Same linear-in-w algebra as bootstrap_from_weights, keeping the five
+    components separate (localisation, scale, rotation, rejection,
+    calibration) so the policy argument can show WHERE the delta comes
+    from, not just its total. Must agree with bootstrap_from_weights on
+    the row sum -- asserted by C5 in validate()."""
+    n = W.shape[1]
+    w = W * (n / W.sum(axis=1, keepdims=True))
+
+    def component(d):
+        la = (d["loc"] * d["pres_a"]) @ w.T / (d["pres_a"] @ w.T)
+        lb = (d["loc"] * d["pres_b"]) @ w.T / (d["pres_b"] @ w.T)
+        loc = ee.W_A * la + ee.W_B * lb
+        sc = (d["sc"] @ w.T) / (d["ok"] @ w.T)
+        rc = (d["rc"] @ w.T) / (d["ok"] @ w.T)
+        tp, fp, fn = d["tp"] @ w.T, d["fp"] @ w.T, d["fn"] @ w.T
+        f1_den = 2 * tp + fp + fn
+        f1 = np.where(f1_den > 0, 2 * tp / np.maximum(f1_den, 1e-300), 0.0)
+        return (40 * loc, 10 * sc, 10 * rc, 15 * f1)
+
+    (la, sa, ra, fa) = component(da)
+    (lb, sb, rb, fb) = component(db)
+
+    def auc_col(d):
+        wt = w.T
+        a_w = d["a_auc"][:, None] * wt
+        b_w = d["b_auc"][:, None] * wt
+        A, B = a_w.sum(axis=0), b_w.sum(axis=0)
+        order = np.argsort(d["scores"], kind="mergesort")
+        uniq, inv = np.unique(d["scores"][order], return_inverse=True)
+        bw = np.zeros((len(uniq), w.shape[0]))
+        np.add.at(bw, inv, b_w[order])
+        aw = np.zeros((len(uniq), w.shape[0]))
+        np.add.at(aw, inv, a_w[order])
+        below = np.concatenate([np.zeros((1, w.shape[0])),
+                                np.cumsum(bw, axis=0)])[:-1]
+        conc = (aw * (below + 0.5 * bw)).sum(axis=0)
+        return np.where((A > 0) & (B > 0), conc / np.maximum(A * B, 1e-300),
+                        np.nan)
+
+    ac_a, ac_b = auc_col(da), auc_col(db)
+    cols = np.stack([
+        lb - la, sb - sa, rb - ra, fb - fa,
+        10 * (np.nan_to_num(ac_b) - np.nan_to_num(ac_a)),
+    ], axis=1)
+    return cols
 
 
 def bootstrap_reference(da: dict, db: dict, draws: int, seed: int) -> np.ndarray:
@@ -345,14 +413,22 @@ def validate(a: pd.DataFrame, b: pd.DataFrame, da: dict, db: dict) -> None:
     vec = bootstrap_from_weights(draw_weights(len(a), 200, 777), da, db)
     assert np.max(np.abs(ref - vec)) < 1e-9, (
         f"C3 vectorised vs reference loop diverge: max {np.max(np.abs(ref - vec))}")
-    # C3b: the production entry point (block loop, seed+s plumbing, ragged
-    # last block) must reproduce the same deltas as independently recomposed
-    # blocks -- ref2 recomposes them without the out[s:e] scatter.
-    vec2 = bootstrap_vectorised(da, db, draws=200, seed=777, block=67)
-    ref2 = np.concatenate([bootstrap_from_weights(
-        draw_weights(len(a), e - s, 777 + s), da, db)
-        for s, e in ((0, 67), (67, 134), (134, 200))])
-    assert np.max(np.abs(vec2 - ref2)) < 1e-9, "C3b block plumbing diverges"
+    # C3b: `block` must be a MEMORY parameter only -- one RandomState(seed)
+    # consumed sequentially means block=67/200/500/1000 all produce the
+    # SAME deltas for the same seed (review 5089846291 point 3). Checks
+    # both the single-stream seeding and the ragged last block.
+    sizes = (67, 200, 500, 1000)
+    base = bootstrap_vectorised(da, db, draws=200, seed=777, block=sizes[0])
+    for bs in sizes[1:]:
+        other = bootstrap_vectorised(da, db, draws=200, seed=777, block=bs)
+        assert np.max(np.abs(other - base)) < 1e-9, (
+            f"C3b block size {bs} changed the Monte Carlo sample")
+    # C5: the per-component path's row sums must equal the subtotal path
+    # row-for-row, so the policy analysis shares the subtotal's guarantee.
+    comps = bootstrap_vectorised(da, db, draws=200, seed=777,
+                                 return_components=True)
+    assert np.max(np.abs(comps.sum(axis=1) - base)) < 1e-9, (
+        "C5 per-component deltas do not sum to subtotal deltas")
 
     # C4: weighted AUC vs the independent O(n^2) pairwise reference.
     rs = np.random.RandomState(99)
@@ -368,7 +444,8 @@ def validate(a: pd.DataFrame, b: pd.DataFrame, da: dict, db: dict) -> None:
           "C1 full-frame per-component == score(); "
           "C2 6 resamples per-component == score() on expanded frames; "
           "C3 vectorised == reference loop over 200 identical draws; "
-          "C3b production block plumbing == recomposed blocks; "
+          "C3b block size is memory-only (67/200/500/1000 identical); "
+          "C5 per-component deltas sum to subtotal deltas; "
           "C4 weighted AUC == brute-force on 30 tie-forcing cases (1e-9)")
 
 
@@ -405,6 +482,20 @@ def main():
     print(f"  P(paired delta >= +{gate:.2f}) = {p_ge:.4f}")
     print(f"  promotion gate (paired delta >= +{gate:.2f}): "
           f"{'CLEAR' if lo >= gate else 'NOT CLEARED'} by CI lower bound")
+
+    # Per-component paired deltas: where the total comes from, and whether
+    # the slightly-negative components are distinguishable from zero (the
+    # no-component-regression clause of the promotion rule).
+    comps = bootstrap_vectorised(da, db, return_components=True)
+    print("\nPer-component paired deltas (cand - base), same 10,000 draws:")
+    print(f"{'component':<14}{'point':>9}{'median':>9}{'2.5%':>9}{'97.5%':>9}"
+          f"{'P(>0)':>8}")
+    for j, k in enumerate(COMPONENTS):
+        c = comps[:, j]
+        c_lo, c_hi = np.percentile(c, [2.5, 97.5])
+        print(f"{k:<14}{pts_b[k] - pts_a[k]:>+9.4f}"
+              f"{float(np.median(c)):+9.4f}{float(c_lo):+9.4f}"
+              f"{float(c_hi):+9.4f}{float((c > 0).mean()):>8.3f}")
 
 
 if __name__ == "__main__":

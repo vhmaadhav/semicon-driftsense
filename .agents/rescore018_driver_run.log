@@ -6,11 +6,19 @@ rotation            9.02      9.02    -0.00
 rejection          13.62     13.80    +0.18
 calibration         9.88      9.88    -0.00
 TOTAL (85)         76.94     77.27    +0.33
-cross-validation PASSED: C1 full-frame per-component == score(); C2 6 resamples per-component == score() on expanded frames; C3 vectorised == reference loop over 200 identical draws; C3b production block plumbing == recomposed blocks; C4 weighted AUC == brute-force on 30 tie-forcing cases (1e-9)
+cross-validation PASSED: C1 full-frame per-component == score(); C2 6 resamples per-component == score() on expanded frames; C3 vectorised == reference loop over 200 identical draws; C3b block size is memory-only (67/200/500/1000 identical); C5 per-component deltas sum to subtotal deltas; C4 weighted AUC == brute-force on 30 tie-forcing cases (1e-9)
 
 Paired bootstrap of subtotal delta (cand - base), N=10000, seed=0, fully vectorised, no loops:
   point delta   +0.3289
-  median delta  +0.3276
-  95% CI        [+0.0692, +0.5999]
-  P(paired delta >= +0.35) = 0.4291
+  median delta  +0.3285
+  95% CI        [+0.0762, +0.6047]
+  P(paired delta >= +0.35) = 0.4376
   promotion gate (paired delta >= +0.35): NOT CLEARED by CI lower bound
+
+Per-component paired deltas (cand - base), same 10,000 draws:
+component         point   median     2.5%    97.5%   P(>0)
+localisation    +0.1605  +0.1605  -0.0138  +0.3458   0.964
+scale           -0.0052  -0.0051  -0.0143  +0.0024   0.101
+rotation        -0.0043  -0.0041  -0.0227  +0.0115   0.311
+rejection       +0.1804  +0.1801  +0.0449  +0.3269   0.996
+calibration     -0.0024  -0.0016  -0.0238  +0.0149   0.436

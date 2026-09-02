@@ -1,12 +1,24 @@
 # Staged-200 gate statistics at SHIPPED_THRESHOLD = 0.18 — PR #34 headline CSVs
 
+**WHAT THESE NUMBERS ARE AND ARE NOT (review 5089846291 point 2).** They are
+a **model-risk bootstrap over our own generated 2,250-pair pool**: how gate
+decisions vary when a grading-sized stage is resampled *from this pool*.
+They are **NOT the probability of clearing the organizer's blind stage** —
+the organizer grades a *fixed* A70/B70/C40/D20 set drawn from *their* data,
+not a with-replacement sample from our frame (and the real stage also
+contains D pairs, excluded here). Read every figure below as "if stages
+were resampled from our pool, how often does each checkpoint clear X" — an
+empirical stability/risk estimate, not a literal grading-event probability.
+A finite-pool stage simulation (sampling WITHOUT replacement) would sit
+between this estimate and the full-frame point; it is not run here, and
+even then it would remain an estimate from our generator.
+
 Companion to `RESCORE_SHIPPED_T018.md`, which rescored the PR #34 headline
 CSVs — `.agents/feat_base_nb.csv` (shipped weights) vs
 `.agents/feat_setcfull.csv` (candidate) — on all 2,250 pairs at 0.18. The
-rubric actually grades on a stratified 200-pair stage (A=70, B=70, C=40;
+rubric grades on a stratified 200-pair stage (A=70, B=70, C=40;
 F1 over the staged grayscale pairs), so this document reruns the SAME
-paired comparison at grading sample size: how often does each checkpoint
-clear the gates when only one stage is drawn? The CSVs contain only
+paired comparison at grading sample size. The CSVs contain only
 grayscale sets (A=875, B=875, C=500), so the staged frame here is the
 stage's 180 grayscale pairs; a real stage's 20 non-grayscale pairs add
 nothing (every `score()` component is gray-masked).
@@ -97,14 +109,20 @@ adds the spot-check and anomaly guards (~8 s).
 
 ## Interpretation — what this licenses and what it does not
 
-- DOES quantify gate-decision risk at grading sample size for BOTH
-  checkpoints: on a drawn stage the candidate clears the F1 ≥ 0.90 bonus
-  gate 77.3% vs 63.5% for shipped, and the paired delta reaches +0.35 in
-  45.6% of stages (P(delta > 0) = 0.741).
+- DOES quantify gate-decision **risk** for BOTH checkpoints when stages are
+  resampled from our pool: the candidate clears the F1 ≥ 0.90 bonus gate on
+  77.3% of resampled stages vs 63.5% for shipped, and the paired delta
+  reaches +0.35 in 45.6% of them (P(delta > 0) = 0.741).
+- Does **NOT** give the probability of clearing the organizer's fixed
+  blind stage (review 5089846291 point 2): the real stage is one fixed
+  A70/B70/C40/D20 set from the organizer's data, not a with-replacement
+  draw from our 2,250. The rates here are model-risk estimates over our
+  own generator's pool and must be quoted as such.
 - Does NOT change the full-frame +0.3289 point estimate, its CI
-  [+0.0692, +0.5999], or the NOT-CLEARED verdict on the +0.35 gate; the
-  staged CI is wider by construction (1/√n at n=180), not a different
-  effect. The full-frame estimate stays the decision-grade one.
+  [+0.0762, +0.6047] (v3, single-stream rng), or the NOT-CLEARED verdict on
+  the +0.35 gate; the staged CI is wider by construction (1/√n at n=180),
+  not a different effect. The full-frame estimate stays the decision-grade
+  one.
 - The staged CI includes negative deltas (~26% of stages score the
   candidate below shipped) — stage noise, not regression evidence: every
   full-frame component delta is non-negative beyond noise (worst: scale
