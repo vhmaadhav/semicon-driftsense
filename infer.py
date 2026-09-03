@@ -163,23 +163,33 @@ def load_model(weights_path: str):
     # to 5.4e-06 px and score by 2.3e-06 (30 pairs across sets A/B/C). That is
     # ~200,000x below the 1 px credit tier, but it is a numerical difference,
     # not an exact one, and is stated as such.
-    if device.type == "cpu" and os.environ.get("DRIFTSENSE_CHANNELS_LAST", "1") != "0":
+    #
+    # The two CPU switches are INDEPENDENT (PR #48 review): BN folding is a
+    # graph rewrite, channels_last is a memory layout, and neither needs the
+    # other. Each reads its own environment variable and each fails on its own,
+    # so DRIFTSENSE_CHANNELS_LAST=0 leaves folding enabled and
+    # DRIFTSENSE_FUSE_BN=0 leaves the layout change enabled.
+    if device.type == "cpu":
         # Fold every BatchNorm2d into the convolution feeding it. In eval mode a
         # BatchNorm is a fixed affine map, so this is an algebraic identity --
         # the folded weights produce the same function with 17 fewer kernel
         # launches and 17 fewer passes over the activations. Measured on the
         # 924x924 search branch, 4 threads: 979.8 -> 706.3 ms, 1.39x, max output
-        # difference 5.25e-06 (float re-association only).
+        # difference 5.25e-06 (float re-association only). End to end, paired
+        # against channels_last alone on an idle machine, the pipeline gain is
+        # 1.07x (median 2.04 -> 1.91 s) -- the isolated forward figure does not
+        # survive a decode that interleaves OpenCV work between forwards.
         if os.environ.get("DRIFTSENSE_FUSE_BN", "1") != "0":
             try:
                 model = _fuse_conv_bn(model)
             except Exception as e:  # noqa: BLE001
                 print(f"[warn] conv/bn fusion skipped ({e})", file=sys.stderr)
-        try:
-            model = model.to(memory_format=torch.channels_last)
-        except Exception as e:  # noqa: BLE001
-            print(f"[warn] channels_last unavailable ({e}); using default layout",
-                  file=sys.stderr)
+        if os.environ.get("DRIFTSENSE_CHANNELS_LAST", "1") != "0":
+            try:
+                model = model.to(memory_format=torch.channels_last)
+            except Exception as e:  # noqa: BLE001
+                print(f"[warn] channels_last unavailable ({e}); using default layout",
+                      file=sys.stderr)
     return model, device
 
 

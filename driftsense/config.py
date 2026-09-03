@@ -41,14 +41,29 @@ from __future__ import annotations
 SHIPPED_CONFIDENCE = "legacy_min"
 
 # Found threshold, in the units of whichever SHIPPED_CONFIDENCE is active.
-# With SHIPPED_CONFIDENCE="fused6" (NOT the current default)
-# the score column is a calibrated P(present) and this threshold lives in
-# those units (0.4870; re-tuned on the 2,250 holdout against the total rubric
-# with the downward bias convention -- declined present pairs forfeit
-# localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b). The
-# historical 0.18 gated the legacy min() statistic and is kept ONLY for the
-# no-weights ZNCC fallback path in register.py, whose score is raw ZNCC.
+# The statistic and its threshold are ONE unit system -- change both or
+# neither (tests/test_submission_parity.py pins the coupling, not the value).
+#
+# Current: SHIPPED_CONFIDENCE="legacy_min", so 0.18 gates min(net, zncc). It
+# is the shipped threshold on the shipped learned path, not a fallback value.
+# Kept at 0.18 rather than the pool-optimal 0.200 deliberately: 0.200 is a
+# narrow peak sitting 0.01 from a -0.7 cliff at 0.210 on our distribution,
+# while 0.180 sits on a flat plateau, and the external CPU benchmark at
+# 75c4572 shows the score distribution shifts substantially on organizer-like
+# data. See docs/CAMPAIGN_2026-09-03_REPORT.md.
+#
+# If SHIPPED_CONFIDENCE is ever set back to "fused6", this must move to 0.4870
+# at the same time -- there the score column is a calibrated P(present) and
+# 0.18 in those units decides nothing (re-tuned on the 2,250 holdout against
+# the total rubric with the downward bias convention -- declined present pairs
+# forfeit localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b).
 SHIPPED_THRESHOLD = 0.18
+
+# The no-weights ZNCC fallback in register.py scores a raw NCC from a single
+# template sweep, which is neither statistic above, so it carries its own gate.
+# It equals SHIPPED_THRESHOLD today only because the shipped statistic is
+# min(net, zncc) and inherits the same historical tuning; they are separate
+# constants so that changing one cannot silently move the other.
 LEGACY_FALLBACK_THRESHOLD = 0.18
 
 # 2026-09-03, PR #48 review: fused6 was measured against legacy_min on ONE

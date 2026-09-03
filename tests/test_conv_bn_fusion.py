@@ -8,6 +8,7 @@ default inference path, so it gets a test rather than a comment.
 The 252-pair decode-level parity evidence lives in `.agents/A_EFFICIENCY_REPORT.md`;
 this is the unit-level guard that runs in CI.
 """
+import contextlib
 import os
 
 import numpy as np
@@ -114,3 +115,78 @@ def test_env_var_disables_fusion():
         else:
             os.environ["DRIFTSENSE_FUSE_BN"] = old
         importlib.reload(I)
+
+
+@contextlib.contextmanager
+def _reload_with(env):
+    """Reload `infer` under a temporary environment, restoring it afterwards."""
+    import importlib
+    import infer as I
+    old = {k: os.environ.get(k) for k in env}
+    try:
+        os.environ.update(env)
+        importlib.reload(I)
+        yield I
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        importlib.reload(I)
+
+
+def _cpu_path_or_skip():
+    if not os.path.exists(WEIGHTS):
+        pytest.skip("weights unavailable")
+    if torch.cuda.is_available() or torch.backends.mps.is_available():
+        pytest.skip("both CPU switches are only reached when device.type == 'cpu'")
+
+
+def _unambiguous_conv_weight(model):
+    """A 4-D weight whose two memory formats actually differ.
+
+    A conv weight with C == 1 or H == W == 1 is contiguous in both formats, so
+    it cannot witness a layout change. Return one that can, or None.
+    """
+    for p in model.parameters():
+        if p.dim() == 4 and p.shape[1] > 1 and (p.shape[2] > 1 or p.shape[3] > 1):
+            return p
+    return None
+
+
+def test_channels_last_off_still_folds():
+    """The two CPU switches are independent (PR #48 review item 4).
+
+    BN folding is a graph rewrite and channels_last is a memory layout; they
+    are documented as separate toggles, so turning the layout off must not
+    silently turn the rewrite off with it.
+    """
+    import torch.nn as nn
+    _cpu_path_or_skip()
+    with _reload_with({"DRIFTSENSE_CHANNELS_LAST": "0",
+                       "DRIFTSENSE_FUSE_BN": "1"}) as I:
+        model, device = I.load_model(WEIGHTS)
+        assert device.type == "cpu"
+        assert sum(1 for m in model.modules() if isinstance(m, nn.BatchNorm2d)) == 0, (
+            "DRIFTSENSE_CHANNELS_LAST=0 disabled BN folding as a side effect")
+        w = _unambiguous_conv_weight(model)
+        if w is not None:
+            assert not w.is_contiguous(memory_format=torch.channels_last), (
+                "DRIFTSENSE_CHANNELS_LAST=0 did not disable the layout change")
+
+
+def test_fusion_off_still_applies_channels_last():
+    """The mirror direction: DRIFTSENSE_FUSE_BN=0 must not cost the layout win."""
+    import torch.nn as nn
+    _cpu_path_or_skip()
+    with _reload_with({"DRIFTSENSE_CHANNELS_LAST": "1",
+                       "DRIFTSENSE_FUSE_BN": "0"}) as I:
+        model, device = I.load_model(WEIGHTS)
+        assert device.type == "cpu"
+        assert sum(1 for m in model.modules() if isinstance(m, nn.BatchNorm2d)) > 0, (
+            "DRIFTSENSE_FUSE_BN=0 did not disable folding")
+        w = _unambiguous_conv_weight(model)
+        if w is not None:
+            assert w.is_contiguous(memory_format=torch.channels_last), (
+                "DRIFTSENSE_FUSE_BN=0 disabled channels_last as a side effect")

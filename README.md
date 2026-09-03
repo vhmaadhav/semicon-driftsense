@@ -306,6 +306,22 @@ fresh scenes **with the upstream generator** and scores them against the
 neither our data pipeline nor our label convention. Exit status is non-zero if
 any check fails. `--n 24` for a tighter estimate.
 
+### Build the submission ZIP
+
+```bash
+python scripts/build_submission_zip.py -o dist/submission.zip --check
+```
+
+The artifact is **constructed from a whitelist**, never filtered from the
+checkout: a `git archive` of this repository would carry the `.agents/`
+experiment logs, all 20 checkpoints in `weights/` (67 MB, one of which ships)
+and `data/`. The builder stages only the named deliverables, fails the build if
+an entry point imports a local module the whitelist does not ship, and writes a
+deterministic archive (sorted, fixed timestamps) so the same checkout always
+produces the same bytes. `--check` then runs the artifact audit
+(`scripts/check_submission_zip.py`) on the ZIP that was just written — always
+audit the exact file you upload.
+
 ---
 
 ## The inference script

@@ -70,7 +70,9 @@ divided by pair count for comparability.
    `torch.set_flush_denormal` best-effort; stderr `# t,pair,secs` + summary).
    Output verified byte-identical on the official 20.
 3. **Fallback guard:** the no-weights ZNCC path now gates at
-   `LEGACY_FALLBACK_THRESHOLD` (0.18) — its score is raw ZNCC, not fused units.
+   `LEGACY_FALLBACK_THRESHOLD` (0.18) — its score is raw ZNCC from a single
+   template sweep, not the learned path's confidence statistic, so it carries
+   its own gate rather than `--threshold`.
 
 ## Measured out (documented dead ends — the repo's convention)
 
@@ -79,7 +81,7 @@ divided by pair count for comparability.
 | Bicubic sub-pixel placement | official-20 +0.40 credit (rescues both Set D boundary pairs) but 60-pair holdout p95 shift 0.271 px vs 0.15 gate, gate-a break, credit −0.01; does **not** rescue p014 (the loc-tie pair) | flag-gated (`SHIPPED_SUBPIXEL="parabola"`) |
 | Upsampled-DFT sub-pixel (Guizar-Sicairos 2008) | credit-neutral on holdout, moved p019 the wrong way | flag-gated |
 | Raw-surface rotation cross-check | fixes p010 (+0.4), breaks p020 (−0.4): net 0.00 | probe only |
-| Coarse-sweep FFT search-DFT reuse | value parity 4.8e-08, 0/150 argmax disagreements, but net ≈1.5% of pair time (only 50/214 matchTemplate calls share the probe DFT; template construction ≈47% of coarse cost is FFT-immune) | flag-off instrumentation (`driftsense/coarse_fft.py`) |
+| Coarse-sweep FFT search-DFT reuse | value parity 4.8e-08, 0/150 argmax disagreements, but net ≈1.5% of pair time (only 50/214 matchTemplate calls share the probe DFT; template construction ≈47% of coarse cost is FFT-immune) | flag-off instrumentation; the module was **deleted** in PR #48 rather than kept as unshipped code |
 | 7-feature / 9-feature / derived calibration statistics | 6+margin AUC 0.9907 < 6's 0.9915; 9 uses inference-unavailable rank/band; no derived feature beats the 6 | measured out |
 | r_delta / peak-width features (Buniatyan et al. 2017) | requires instrumented re-decode; margin (its available analogue) measured out; spec recorded for post-freeze | future work |
 

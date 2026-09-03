@@ -230,8 +230,15 @@ def main():
         ax.hist(100 * ok.s_err, bins=np.linspace(0, 4, 50), alpha=0.8,
                 color="#2b6cb0", label="after")
         ax.axvline(1, color="#c53030", lw=1.0, ls="--")
-        ax.set_xlabel("|scale error| (%)"); ax.set_title("Scale error, before vs after", fontsize=9)
-        ax.legend(fontsize=7); ax.tick_params(labelsize=7)
+        ax.set_xlabel("|scale error| (%)")
+        # Without --baseline there is no "before" series, so the panel must not
+        # advertise a comparison it is not drawing.
+        ax.set_title("Scale error, before vs after" if base is not None
+                     else "Scale error after the fix (|s| vs the 1% band)",
+                     fontsize=9)
+        if base is not None:
+            ax.legend(fontsize=7)
+        ax.tick_params(labelsize=7)
 
         t4 = fig.add_axes([0.07, 0.04, 0.86, 0.35]); t4.axis("off")
         para(t4, 1.00, "5.  What we could not fix, and why", weight="bold", size=11)

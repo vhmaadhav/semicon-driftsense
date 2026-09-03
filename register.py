@@ -114,8 +114,9 @@ def main():
                          "threshold are one unit system, so when the weights cannot "
                          "load and the ZNCC fallback runs, this value is ignored and "
                          "the fallback uses its own calibrated "
-                         "LEGACY_FALLBACK_THRESHOLD instead -- a fused6 threshold "
-                         "applied to a raw NCC would decide nothing meaningful")
+                         "LEGACY_FALLBACK_THRESHOLD instead -- a threshold tuned "
+                         "for the learned path's confidence statistic, applied to "
+                         "a raw NCC, would decide nothing meaningful")
     ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
                     help="hypothesis selector: zncc (default) | consensus | majority. "
                          "consensus overrides the native-ZNCC winner only when the rank "
@@ -181,10 +182,10 @@ def main():
                     res = I.zncc_fallback(ref, sea)
                     res.setdefault("scale", 10.0)
                     res.setdefault("theta", 0.0)
-                    # The fallback's score is raw ZNCC, not the fused
-                    # calibrated P(present): it gates at the LEGACY threshold
-                    # (driftsense.config.LEGACY_FALLBACK_THRESHOLD), not at
-                    # the shipped fused-units one. Only reachable when the
+                    # The fallback's score is raw ZNCC from a single template
+                    # sweep, not the learned path's confidence statistic, so it
+                    # gates at driftsense.config.LEGACY_FALLBACK_THRESHOLD
+                    # rather than at --threshold. Only reachable when the
                     # weights/torch are unavailable -- on the grader box they
                     # ship inside the ZIP, so this is a degraded-mode guard.
                     threshold = LEGACY_FALLBACK_THRESHOLD
