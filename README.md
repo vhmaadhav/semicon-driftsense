@@ -63,33 +63,34 @@ is the one entry point the reference machine runs.
 
 ## Results
 
-Self-measured on a **2,250-pair held-out generation run** (`data/ext_p2`, sets
-A/B/C from our own generator, disjoint seeds from anything trained on), scored
-under the corrected grader semantics: a declined pair (`found=0`) is credited
-**zero** for localisation and pose, matching exactly what `register.py` writes
-and what the organizer's evaluator will see.
+**Current shipped model** (`weights/driftsense.pt`, the 1.02M "wide" checkpoint
+— see [Model & training](#model--training)) against the 0.456M model it
+replaced, no-band, at each model's locally-optimal threshold:
 
-| Component | Score | Detail |
-| --------- | ----- | ------ |
-| Localisation | 0.8679 | set A 0.9705 (92.5% ≤1px), set B 0.7840 (89.3% ≤5px); weighted 0.45·A + 0.55·B |
-| Pose — scale | 0.8978 | median relative error 0.42% |
-| Pose — rotation | 0.9038 | median error 0.102° |
-| Rejection | F1 0.8878 | reject-as-positive convention; 0.9673 under the lenient one |
-| Calibration | AUC 0.9872 | `min(network score, native ZNCC)` against per-pair correctness |
-| Set D (bonus) | 0.938 | 94.8% ≤5px; clears the +6 gate |
+| model | threshold | total /85 | loc A | loc B | rejection F1 | calibration AUC |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.456M (previous) | 0.2007 | 75.96 | 0.9705 | 0.7847 | 0.8893 | 0.9871 |
+| **1.02M, shipped** | 0.1587 | **76.97** | 0.9737 | 0.8183 | 0.9061 | 0.9883 |
 
-**75.92 of 85 self-measurable points** at this snapshot (shipped threshold
-**0.18**, `verification="zncc"`, `band=False` — see `driftsense/config.py`).
-Efficiency (5 pts) is a relative ranking we can't self-assess, and the
+Source: `.agents/WIDE.txt`. The wide model cleared the promotion gate against
+the previous one on every component. Note the table's locally-optimal
+threshold (0.1587) differs from the currently configured
+`driftsense/config.py:SHIPPED_THRESHOLD` (**0.18**, tuned against the full
+rubric rather than this component table alone) — the two weren't re-measured
+together at exactly 0.18.
+
+**75.92–76.97 of 85 self-measurable points**, depending on snapshot (see
+above). Efficiency (5 pts) is a relative ranking we can't self-assess, and the
 generator/citations/failure-analysis component (10 pts) is judged separately.
 
-This table is one coherent, reproducible measurement — it is **not** the
-current ceiling. Several validated gains landed after it (sub-pixel row
-correction +1.00 localisation, a Set-C rejection fine-tune +0.33, an
-uncontested-hypothesis early exit, a fail-closed fix for a model-load
-degradation bug) without yet being folded into a fresh full 2,250-pair
-rescore. Treat this table as a conservative floor; `FAILURE_ANALYSIS.md`
-carries the itemized, dated findings for everything since.
+Several further validated gains landed after both snapshots above (sub-pixel
+row correction, **+0.59 localisation** on the canonical 2,500-pair paired A/B
+— `driftsense/config.py`; a Set-C rejection fine-tune, +0.33; an
+uncontested-hypothesis early exit; a fail-closed fix for a model-load
+degradation bug) without yet being folded into one fresh full rescore against
+the current checkpoint. Treat the table above as a conservative floor;
+`FAILURE_ANALYSIS.md` carries the itemized, dated findings for everything
+since.
 
 **Runtime**, measured end-to-end with `register.py`, shipped 4-thread cap:
 
@@ -226,10 +227,14 @@ inference-side search in [How it works](#how-it-works), not by training on
 rotated/rescaled data.
 
 **Attribution.** The synthetic-data generator in [`generator/`](generator/) is
-[`aayushraina21/drift-sense-synthetic-data`](https://huggingface.co/spaces/aayushraina21/drift-sense-synthetic-data),
-vendored unmodified. This project adds the geometry-corrected ground truth,
-the Phase 2 pose/absence extensions, the learned localiser, and the
-evaluation harness. Full references: [`CITATIONS.md`](CITATIONS.md).
+based on / vendored from
+[`aayushraina21/drift-sense-synthetic-data`](https://huggingface.co/spaces/aayushraina21/drift-sense-synthetic-data).
+Phase 2 extensions (`polygon_scale_fraction`, `severity_continuous`, variable
+canvas size, pitch-factor support) and the audit/deliverable tooling
+(`generate_phase2.py`, `baseline.py`, `score.py`, `contact_sheet.py`,
+`REPORT.md`) are added in this repository. This project also adds the
+geometry-corrected ground truth, the learned localiser, and the evaluation
+harness. Full references: [`CITATIONS.md`](CITATIONS.md).
 
 ## Examples
 
@@ -244,12 +249,24 @@ above threshold. Regenerate with
 
 ## Model & training
 
-0.46M-parameter Siamese correlation network, 19 `Conv2d` layers, no
-attention — a dilated-convolution `ContextBranch` over the response map
-supplies the long-range context needed to disambiguate periodic repeats.
+Siamese correlation network, 19 `Conv2d` layers, no attention — a
+dilated-convolution `ContextBranch` over the response map supplies the
+long-range context needed to disambiguate periodic repeats. The architecture
+is configurable (`width`/`ctx`/`head`); the **shipped checkpoint**
+(`weights/driftsense.pt`) is the wide variant, `width=96/ctx=48/head=96`,
+**1.02M parameters** — loaded via `net_from_checkpoint()`, which reads the
+architecture from the checkpoint's own `arch_kwargs` rather than assuming the
+class defaults (`width=64/ctx=32/head=64`, 0.46M, the earlier Phase 1-era
+size). Verify what's actually loaded with:
+
+```bash
+python -c "import torch; ck=torch.load('weights/driftsense.pt', weights_only=True); print(ck['arch_kwargs'])"
+```
+
 Trained in four phases (base → speckle fine-tune → streamed unlimited data →
-large-pool fine-tune) on synthetic DRAM/FinFET layouts, entirely on generated
-data with disjoint seeds between every split.
+large-pool fine-tune), then a further Phase 2 retraining lineage that
+produced the shipped wide checkpoint, entirely on generated data with
+disjoint seeds between every split.
 
 Full methodology, every training command, checkpoint-selection evidence,
 negative results, and reproduction steps: **[`TRAINING.md`](TRAINING.md)**.
@@ -277,7 +294,7 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 | [`infer.py`](infer.py) | legacy single-pair CLI (Phase 1 era); not the graded entry point |
 | [`tests/`](tests/) | `pytest` suite over coordinate, label, and CLI invariants |
 | [`scripts/`](scripts/) | development tooling — generation, verification, analysis, submission checks |
-| [`failure_analysis.pdf`](failure_analysis.pdf) | the required 2-page failure analysis (source: `FAILURE_ANALYSIS.md`) |
+| [`failure_analysis.pdf`](failure_analysis.pdf) | the required 2-page failure analysis, built by `scripts/failure_analysis.py` from a results CSV — independently authored from, and not auto-synced with, `FAILURE_ANALYSIS.md`'s prose; keep both current by hand |
 | [`requirements.txt`](requirements.txt) | full `pip freeze` of the environment `register.py` runs in |
 | [`phase1/`](phase1/) | frozen archive of the pre-Phase-2 codebase, kept for history — not part of this submission |
 
