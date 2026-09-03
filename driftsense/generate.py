@@ -877,13 +877,21 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
                 gt_y += area_convention_offset(pose_params.magnification)
             raw_gx, raw_gy = gt_x, gt_y
             gx, gy = correct_gt(gt_x, gt_y, row_shift, k)
-        out.append({"reference": reference_img, "search": search_img,
-                    "gt_x": gx, "gt_y": gy,
-                    "gt_x_raw": raw_gx, "gt_y_raw": raw_gy,
-                    "label_shift_px": float(np.hypot(gx - raw_gx, gy - raw_gy))
-                    if present else 0.0,
-                    "architecture": architecture,
-                    "found": int(present),
-                    "magnification": pose_params.magnification,
-                    "rotation_deg": pose_params.rotation_deg})
+        row = {"reference": reference_img, "search": search_img,
+              "gt_x": gx, "gt_y": gy,
+              "gt_x_raw": raw_gx, "gt_y_raw": raw_gy,
+              "label_shift_px": float(np.hypot(gx - raw_gx, gy - raw_gy))
+              if present else 0.0,
+              "architecture": architecture,
+              "found": int(present),
+              "magnification": pose_params.magnification,
+              "rotation_deg": pose_params.rotation_deg}
+        # Surface the realized generation parameters (severity_continuous
+        # included) the same way build_one does, so a caller like the Phase 2
+        # audit can verify what actually rendered rather than trusting the
+        # requested pose alone (issue #31: a degenerate severity range used
+        # to silently skip sample_severity_params, and nothing downstream
+        # could tell). No key here collides with the ones set above.
+        row.update(params.as_dict())
+        out.append(row)
     return out

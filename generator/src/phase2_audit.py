@@ -132,9 +132,24 @@ def validate_audit_specs(specs: tuple[PairSpec, ...] = AUDIT_SPECS) -> None:
         raise ValueError("Sets A, B and D must be present")
 
 
+# A pinned severity LEVEL is naturally a single point (lo == hi), but
+# driftsense.generate.build_one only engages sample_severity_params -- the
+# function that actually draws the coherent per-knob degradation -- when
+# `_shi > _slo`. A degenerate (lo == hi) range fails that strictly-greater
+# gate, so a pair pinned this way silently falls back to independent
+# per-knob draws (noise="randomized") instead of the requested severity
+# level: it is labelled "Set-B severity N" but never actually realizes it
+# (issue #31). Widening the top by SEVERITY_PIN_EPSILON keeps `_shi > _slo`
+# true while leaving the realized severity indistinguishable from the pinned
+# level -- sample_severity_params's own +/-8% per-knob jitter
+# (SEVERITY_MARGIN) is four orders of magnitude larger than this epsilon.
+SEVERITY_PIN_EPSILON = 1e-6
+
+
 def pose_for(spec: PairSpec) -> PoseSpec:
     polygon = (-0.2, 0.2) if spec.set_name == "B" else (0.0, 0.0)
-    severity = (spec.severity_level / 4.0, spec.severity_level / 4.0) \
+    target = spec.severity_level / 4.0
+    severity = (target, target + SEVERITY_PIN_EPSILON) \
         if spec.set_name == "B" else (0.0, 0.0)
     return PoseSpec(
         rotation_deg=(spec.theta, spec.theta),
@@ -146,9 +161,23 @@ def pose_for(spec: PairSpec) -> PoseSpec:
     )
 
 
-def _seed_for(seed: int, index: int) -> int:
-    state = np.random.SeedSequence([int(seed), int(index), 0x45])
+def _seed_for(seed: int, index: int, attempt: int = 0) -> int:
+    # attempt=0 must reproduce byte-identically what every pair used before
+    # retries existed -- SeedSequence hashes the WHOLE entropy tuple, so
+    # appending attempt=0 unconditionally would reseed every pair, not just
+    # a failing one. Only a retry (attempt>0) extends the entropy.
+    entropy = [int(seed), int(index), 0x45]
+    if attempt:
+        entropy.append(int(attempt))
+    state = np.random.SeedSequence(entropy)
     return int(state.generate_state(1, dtype=np.uint64)[0])
+
+
+# Docx spec section 5: "If a crop fails, resample a different crop location
+# and retry. Cap the retries, and if nothing passes, fail loudly." The AMP
+# reference material's own generator used up to 14 attempts; this audit is a
+# fixed 20-pair set rather than a bulk run, so a smaller cap is plenty.
+MAX_VERIFY_ATTEMPTS = 8
 
 
 def _write_png(path: Path, image: np.ndarray) -> None:
@@ -177,7 +206,8 @@ def _prepare_output(root: Path, force: bool) -> None:
     (root / "search").mkdir(exist_ok=True)
 
 
-def _manifest_row(spec: PairSpec, result: dict, index: int, seed: int) -> dict:
+def _manifest_row(spec: PairSpec, result: dict, pair_seed: int,
+                  verify_attempts: int) -> dict:
     return {
         "pair_id": spec.pair_id,
         "set_name": spec.set_name,
@@ -195,9 +225,15 @@ def _manifest_row(spec: PairSpec, result: dict, index: int, seed: int) -> dict:
         "magnification": float(result["magnification"]),
         "rotation_deg": float(result["rotation_deg"]),
         "severity_level": spec.severity_level,
+        "severity_continuous": float(result.get("severity_continuous", 0.0)),
         "edge_brightening": spec.edge_brightening,
         "noise_profile": spec.noise,
-        "sample_seed": _seed_for(seed, index),
+        "sample_seed": pair_seed,
+        # 1 unless the label-verification gate below needed a resample; a
+        # value >1 here is a legitimate part of the record, not a defect --
+        # docx section 5 requires exactly this resample-until-verified
+        # behaviour and asks that it be reported.
+        "verify_attempts": verify_attempts,
         "description": spec.description,
     }
 
@@ -212,19 +248,75 @@ def generate_audit(output_dir: str | os.PathLike[str] = OUTPUT_DEFAULT,
     tracemalloc.start()
     rows: list[dict] = []
     for index, spec in enumerate(AUDIT_SPECS):
-        pair_seed = _seed_for(seed, index)
-        results = make_pairs(
-            pair_seed, [spec.preset], spec.noise, crops=1,
-            pose=pose_for(spec), preset_name=spec.preset
-        )
-        if len(results) != 1:
-            raise RuntimeError(f"{spec.pair_id}: expected one generated pair")
-        result = results[0]
-        if bool(result["found"]) != spec.present:
-            raise RuntimeError(f"{spec.pair_id}: presence mismatch")
-        _write_png(root / "reference" / f"{spec.pair_id}.png", result["reference"])
-        _write_png(root / "search" / f"{spec.pair_id}.png", result["search"])
-        rows.append(_manifest_row(spec, result, index, seed))
+        ref_path = root / "reference" / f"{spec.pair_id}.png"
+        sea_path = root / "search" / f"{spec.pair_id}.png"
+        last_verify_error = None
+        for attempt in range(MAX_VERIFY_ATTEMPTS):
+            pair_seed = _seed_for(seed, index, attempt)
+            results = make_pairs(
+                pair_seed, [spec.preset], spec.noise, crops=1,
+                pose=pose_for(spec), preset_name=spec.preset
+            )
+            if len(results) != 1:
+                raise RuntimeError(f"{spec.pair_id}: expected one generated pair")
+            result = results[0]
+            if bool(result["found"]) != spec.present:
+                raise RuntimeError(f"{spec.pair_id}: presence mismatch")
+            if spec.set_name == "B":
+                # Realized-parameter check (issue #31): confirm the severity
+                # ladder actually fired for this pair rather than silently
+                # falling back to independent per-knob draws. A generic
+                # "randomized" pair's severity_continuous defaults to 0.0
+                # (GenerationParams' own default), so this also catches the
+                # degenerate-tuple regression the epsilon above exists to
+                # avoid.
+                target = spec.severity_level / 4.0
+                realized = float(result.get("severity_continuous", 0.0))
+                if abs(realized - target) > 10 * SEVERITY_PIN_EPSILON:
+                    raise RuntimeError(
+                        f"{spec.pair_id}: severity ladder did not pin to "
+                        f"level {spec.severity_level} (target {target:.6f}, "
+                        f"realized {realized:.6f}) -- the ladder likely did "
+                        "not fire")
+
+            # Docx section 5: gate the artifact that ships, not an
+            # intermediate -- write to disk first, then read both PNGs back
+            # and verify against those, exactly like run_score's own
+            # verification does. A pair whose label the global peak cannot
+            # reproduce within 3 px / margin 0.02 is resampled with a fresh
+            # seed rather than shipped; only present pairs have a target to
+            # verify.
+            _write_png(ref_path, result["reference"])
+            _write_png(sea_path, result["search"])
+            if not spec.present:
+                break
+            reference, search = _read_pair(root, {
+                "reference_path": f"reference/{spec.pair_id}.png",
+                "search_path": f"search/{spec.pair_id}.png"})
+            primary = _local_verify(reference, search, float(result["gt_x"]),
+                                    float(result["gt_y"]),
+                                    float(result["magnification"]),
+                                    float(result["rotation_deg"]), "raw")
+            independent = _local_verify(reference, search, float(result["gt_x"]),
+                                        float(result["gt_y"]),
+                                        float(result["magnification"]),
+                                        float(result["rotation_deg"]), "gradient")
+            if primary["error_px"] <= 3.0 and primary["margin"] >= 0.02 \
+                    and independent["error_px"] <= 3.0:
+                break
+            last_verify_error = (
+                f"primary error={primary['error_px']:.3f}px "
+                f"margin={primary['margin']:.4f}, "
+                f"independent error={independent['error_px']:.3f}px "
+                f"(attempt {attempt + 1}/{MAX_VERIFY_ATTEMPTS})")
+        else:
+            raise RuntimeError(
+                f"{spec.pair_id}: label failed verification after "
+                f"{MAX_VERIFY_ATTEMPTS} resamples -- last attempt: "
+                f"{last_verify_error}. Never shipping an unverified label "
+                "(docx section 5).")
+
+        rows.append(_manifest_row(spec, result, pair_seed, attempt + 1))
 
     fields = list(rows[0])
     _write_csv(root / "manifest.csv", rows, fields)
@@ -657,6 +749,18 @@ def render_report(metrics: dict, rows: list[dict]) -> str:
         "## 2. Verification and resampling",
         "",
         f"Primary verification requires local peak error <=3 px and margin >=0.02; independent verification uses gradient magnitude rather than raw intensity. All present pairs passed: {metrics['all_present_verification_pass']}.",
+        "",
+        "| pair_id | primary error (px) | primary margin | independent error (px) | pass |",
+        "|---|---:|---:|---:|:---:|",
+    ]
+    for v in metrics["verification"]:
+        lines.append(
+            f"| {v['pair_id']} | {v['primary']['error_px']:.3f} | "
+            f"{v['primary']['margin']:.4f} | {v['independent']['error_px']:.3f} | "
+            f"{'PASS' if v['pass'] else 'FAIL'} |"
+        )
+    lines += [
+        "",
         "Resampling compares the production blurred affine path with an independent 2x supersampled path and a nearest-neighbour no-antialiasing control:",
     ]
     for result in metrics["resampling"]:
