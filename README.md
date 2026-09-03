@@ -31,12 +31,45 @@ so one failure cannot invalidate the rest of the batch.
 The submission is designed to run **offline**. It does not download models or
 make network calls; the shipped checkpoint is `weights/driftsense.pt`.
 
+## Phase 2 rubric alignment
+
+The official scoring (`Applied Materials_Phase 2_Task.pptx`, slide 6) weighs
+six areas. **The numbers below are our own held-out synthetic measurements**
+(full 2,250-pair internal set, shipped configuration — `threshold=0.18`,
+`band=False`) — **not the organizer's blind score**, which is unreleased.
+
+| Scored area | Pts | Our measurement |
+| --- | ---: | --- |
+| Localisation (Set A 0.45 + Set B 0.55, tiered 1/2/3/5 px) | 40 | 36.05 |
+| Pose — scale | 10 | 8.96 |
+| Pose — rotation | 10 | 9.02 |
+| Rejection (F1 on `found`, reject-positive) | 15 | 13.62 (F1 ≈0.91) |
+| Confidence calibration (AUC of `score`) | 10 | 9.88 (AUC ≈0.99) |
+| Efficiency (median wall-clock/pair) | 5 | 1.82 s median (CPU, 4 threads; 5 s budget) |
+| **Measurable subtotal** | **85** | **77.53** |
+
+Set D (optical, bonus-only) credit: 0.938 — clears the `+6` bonus gate
+(`Set D ≥ 0.40` with `Sets A-C ≥ 0.50`). Sources: `.agents/RESCORE_SHIPPED_T018.md`,
+`.agents/SUBPIXEL_DRIFT.md`, `.agents/CPU_RUNTIME.md`.
+
+### Submission-surface compliance (slide 5)
+
+| Requirement | Where |
+| --- | --- |
+| Entry point `python register.py --input pairs.csv --output predictions.csv` | `register.py` |
+| Output columns `pair_id,x,y,theta,scale,found,score`, one row per pair | `register.py` (never drops a row) |
+| Python 3.11, pinned dependencies | `requirements.txt` (`pip freeze`, tested in CI) |
+| Offline: no network, no downloads | shipped checkpoint loads from disk only |
+| Weights ship inside the ZIP | `weights/driftsense.pt` |
+| Documented generator | `generate_dataset.py` |
+| Failure analysis (≤2 pages) | `failure_analysis.pdf` |
+
 ## Phase 2 problem
 
 Compared with the original fixed-pose task, Phase 2 removes three assumptions:
 
-1. magnification varies over approximately `8×–12×`;
-2. rotation varies over approximately `±5°`;
+1. magnification varies over `[8×, 12×]`;
+2. rotation varies over `[-5°, +5°]`;
 3. some Reference/Search pairs contain **no true instance**.
 
 The hard part remains the periodic semiconductor layout: many local patches can

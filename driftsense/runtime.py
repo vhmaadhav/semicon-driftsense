@@ -100,8 +100,10 @@ def load_model(weights_path: str):
     #
     # Measured on 6 set B pairs, 4 threads, CPU-only torch 2.13:
     # 4.612 -> 1.769 s/pair, a 2.61x speedup, with x/y/scale/theta/score
-    # bit-identical. It is a memory-layout choice, not an algorithm change:
-    # the convolutions compute the same values in a different traversal order.
+    # numerically equivalent for scoring purposes (see the exact figures
+    # below -- NOT bit-identical). It is a memory-layout choice, not an
+    # algorithm change: the convolutions compute the same values in a
+    # different traversal order.
     #
     # Guarded because the win is CPU-specific and the layout is only defined
     # for 4-D weights; a failure here must not cost the run. Set

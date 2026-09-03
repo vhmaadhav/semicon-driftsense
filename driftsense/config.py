@@ -14,8 +14,7 @@ These are calibrated choices, not spec-derived constants:
 * SHIPPED_BAND = False: the difference-of-Gaussians pre-filter on the coarse
   sweep costs points on both architectures (register.py measurement
   +0.439 / +0.509, PR #18 reached the same conclusion separately).
-* SHIPPED_VERIFICATION = "zncc"
-SHIPPED_SUBPIXEL_ROWS = True: the native-ZNCC winner; consensus/majority
+* SHIPPED_VERIFICATION = "zncc": the native-ZNCC winner; consensus/majority
   are measured research selectors, not shipped ones.
 * SHIPPED_SUBPIXEL_ROWS = True: re-place x on the scan row the label is
   defined against, recovering the centre row's raster-drift sample
