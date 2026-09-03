@@ -159,8 +159,9 @@ def main():
 
     model, device = I.load_model(a.weights) or (None, None)
 
-    os.makedirs(os.path.dirname(os.path.abspath(a.output)) or ".", exist_ok=True)
     times = []
+    t_start = time.perf_counter()
+    found_count = 0
     is_tty = sys.stdout.isatty()
     is_stderr_tty = sys.stderr.isatty()
     total_rows = len(rows)
