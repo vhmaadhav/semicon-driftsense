@@ -412,10 +412,30 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 | [`evaluate.py`](evaluate.py) | batch evaluation vs. the classical ZNCC baseline |
 | [`infer.py`](infer.py) | legacy single-pair CLI (Phase 1 era); not the graded entry point |
 | [`tests/`](tests/) | `pytest` suite over coordinate, label, and CLI invariants |
-| [`scripts/`](scripts/) | development tooling — generation, verification, analysis, submission checks |
+| [`scripts/`](scripts/) | development tooling — generation, verification, analysis, and the submission ZIP builder/checker |
 | [`failure_analysis.pdf`](failure_analysis.pdf) | the required 2-page failure analysis, built by `scripts/failure_analysis.py` from a results CSV — independently authored from, and not auto-synced with, `FAILURE_ANALYSIS.md`'s prose; keep both current by hand |
 | [`requirements.txt`](requirements.txt) | full `pip freeze` of the environment `register.py` runs in |
 | [`phase1/`](phase1/) | frozen archive of the pre-Phase-2 codebase, kept for history — not part of this submission |
+
+## Building the submission ZIP
+
+The graded artifact is a ZIP the organizers extract and run, not a link to this
+repo, so it is built from an explicit allow-list rather than from an archive of
+`main` — which would otherwise carry `phase1/`, `.agents/`, and 48 MB of unused
+checkpoints into whatever a judge opens.
+
+```bash
+python scripts/build_submission_zip.py --out dist/submission.zip
+python scripts/check_submission_zip.py dist/submission.zip
+```
+
+The builder prints what it shipped and aborts if a manifest entry has gone
+missing or a denied path would leak; `--list` prints the resolved manifest
+without writing anything. The checker then extracts the finished ZIP into a
+temporary directory and audits *only* that extraction — layout, a real
+`torch.load` plus `infer.load_model` of the shipped checkpoint, `--help` smoke
+tests, an import-closure network scan, PDF page count, and requirements pins.
+`tests/test_submission_manifest.py` holds the manifest itself to contract.
 
 ## Further reading
 

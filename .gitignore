@@ -7,6 +7,9 @@ output/
 # generator/README.md (Phase 2 deliverable).
 !generator/output/
 
+# Built submission artifacts (rebuild with scripts/build_submission_zip.py).
+dist/
+
 # Environment
 venv/
 __pycache__/
