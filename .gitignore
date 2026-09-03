@@ -3,6 +3,9 @@ data/
 sample/
 output/
 
+# Built submission artifacts (rebuild with scripts/build_submission_zip.py).
+dist/
+
 # Environment
 venv/
 __pycache__/
