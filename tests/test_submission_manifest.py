@@ -78,32 +78,97 @@ def test_organizer_required_paths_are_all_in_the_manifest(manifest):
     assert [p for p in required if p not in manifest] == []
 
 
+# DOCX section 7's generator deliverable set, verbatim: generate_phase2.py,
+# baseline.py, score.py, contact_sheet.py, src/, REPORT.md, and "output/ with
+# pairs.csv + ground_truth.csv + manifest.csv + baseline_calibration.txt +
+# contact_sheet.png + reference/ + search/".
+SECTION_7 = [
+    "generator/generate_phase2.py",
+    "generator/baseline.py",
+    "generator/score.py",
+    "generator/contact_sheet.py",
+    "generator/REPORT.md",
+    "generator/src/pipeline.py",
+    "generator/output/pairs.csv",
+    "generator/output/ground_truth.csv",
+    "generator/output/manifest.csv",
+    "generator/output/baseline_calibration.txt",
+    "generator/output/contact_sheet.png",
+    "generator/output/REPORT.md",
+]
+
+
 def test_generator_deliverables_are_in_the_manifest(manifest):
-    """DOCX section 7's generator deliverable set."""
-    required = ["generator/generate_phase2.py", "generator/baseline.py",
-                "generator/score.py", "generator/contact_sheet.py",
-                "generator/REPORT.md", "generator/src/pipeline.py"]
-    assert [p for p in required if p not in manifest] == []
+    """DOCX section 7's deliverable set, the output/ package included.
 
-
-def test_generator_output_package_is_in_the_manifest(manifest):
-    """Section 7 names output/ itself, images included.
-
-    The builder prunes scratch directories by name; output/ must survive that
+    output/ is a scratch name everywhere else in this repo and the builder
+    prunes it by name, so the one approved package has to survive that
     pruning or a graded deliverable silently stops shipping.
     """
-    required = ["generator/output/pairs.csv",
-                "generator/output/ground_truth.csv",
-                "generator/output/manifest.csv",
-                "generator/output/baseline_calibration.txt",
-                "generator/output/contact_sheet.png",
-                "generator/output/REPORT.md"]
-    assert [p for p in required if p not in manifest] == []
+    assert [p for p in SECTION_7 if p not in manifest] == []
     for sub in ("reference", "search"):
         images = [n for n in manifest
                   if n.startswith("generator/output/" + sub + "/")
                   and n.endswith(".png")]
         assert len(images) == 20, sub + ": " + str(len(images)) + " images"
+
+
+def test_unrelated_output_directories_are_still_pruned(builder, tmp_path,
+                                                       monkeypatch):
+    """The section 7 exception is by full path, not by the name output/."""
+    fake = tmp_path / "repo"
+    (fake / "pkg" / "output").mkdir(parents=True)
+    (fake / "pkg" / "output" / "scratch.txt").write_text("junk")
+    (fake / "pkg" / "keep.py").write_text("# kept\n")
+    monkeypatch.setattr(builder, "ALLOW", ["pkg"])
+    members, missing = builder.collect(str(fake))
+    names = [a for a, _ in members]
+    assert missing == []
+    assert "pkg/keep.py" in names
+    assert [n for n in names if "output" in n] == []
+
+
+def test_the_section_7_package_survives_the_same_pruning(builder, tmp_path,
+                                                         monkeypatch):
+    """generator/output/ is the one exception, and it is walked in full."""
+    fake = tmp_path / "repo"
+    (fake / "generator" / "output" / "reference").mkdir(parents=True)
+    (fake / "generator" / "output" / "pairs.csv").write_text("pair_id\n")
+    (fake / "generator" / "output" / "reference" / "A01.png").write_bytes(
+        b"\x89PNG\r\n\x1a\n" + b"0" * 2048)
+    monkeypatch.setattr(builder, "ALLOW", ["generator/output"])
+    members, missing = builder.collect(str(fake))
+    names = [a for a, _ in members]
+    assert missing == []
+    assert sorted(names) == ["generator/output/pairs.csv",
+                             "generator/output/reference/A01.png"]
+
+
+def test_lfs_pointers_are_detected(builder, tmp_path):
+    pointer = tmp_path / "A01.png"
+    pointer.write_bytes(b"version https://git-lfs.github.com/spec/v1\n"
+                        b"oid sha256:" + b"0" * 64 + b"\nsize 604279\n")
+    real = tmp_path / "real.png"
+    real.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 4096)
+    assert builder.is_lfs_pointer(str(pointer))
+    assert not builder.is_lfs_pointer(str(real))
+
+
+def test_build_refuses_unfetched_lfs_pointers(builder, tmp_path, monkeypatch):
+    """A checkout without LFS must not ship 130 bytes of text as an image.
+
+    generator/.gitattributes routes *.png through LFS, so this is the state a
+    `git archive` or a clone without git-lfs actually produces.
+    """
+    fake = tmp_path / "repo"
+    (fake / "generator" / "output").mkdir(parents=True)
+    (fake / "generator" / "output" / "contact_sheet.png").write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:x\nsize 1\n")
+    (fake / "register.py").write_text("# entry point\n")
+    monkeypatch.setattr(builder, "ALLOW", ["register.py", "generator/output"])
+    out = str(tmp_path / "pointers.zip")
+    assert builder.build(out, str(fake)) == 1
+    assert not os.path.exists(out)
 
 
 def test_archive_is_flat(manifest):
@@ -181,6 +246,16 @@ def test_builder_writes_a_clean_archive(builder, tmp_path):
     assert "register.py" in names
     assert [n for n in names if n.startswith("weights/")] == \
         [builder.WEIGHTS_ONLY]
+    # Section 7 checked against the real archive, not just the manifest, and
+    # every shipped image checked to be a PNG rather than an LFS pointer.
+    assert [p for p in SECTION_7 if p not in names] == []
+    with zipfile.ZipFile(out) as zf:
+        for sub in ("reference", "search"):
+            images = [n for n in names
+                      if n.startswith("generator/output/" + sub + "/")]
+            assert len(images) == 20, sub
+            for name in images:
+                assert zf.read(name)[:8] == b"\x89PNG\r\n\x1a\n", name
 
 
 def test_build_refuses_a_tree_that_would_leak(builder, tmp_path, monkeypatch):

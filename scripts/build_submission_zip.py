@@ -152,16 +152,29 @@ DENY = [
 WEIGHTS_ONLY = "weights/driftsense.pt"
 
 # Dropped while walking any allow-listed directory.
-# NOTE: "output" is deliberately NOT pruned -- generator/output/ is a
-# section 7 deliverable. Nothing else named output/ is in ALLOW, so it cannot
-# sweep in a stray scratch directory.
 PRUNE_DIRS = {"__pycache__", ".pytest_cache", ".ipynb_checkpoints", ".git",
-              "eval_results"}
+              "output", "eval_results"}
+
+# Repo-relative directories that survive PRUNE_DIRS anyway. output/ is a
+# scratch name everywhere in this repo except one place: generator/output/ is
+# the fixed 20-pair package DOCX section 7 names as a deliverable. Excepting
+# it by full path, rather than dropping "output" from PRUNE_DIRS, keeps every
+# unrelated output/ directory excluded.
+PRUNE_EXCEPTIONS = {"generator/output"}
 PRUNE_GLOBS = ["*.pyc", "*.pyo", "*.tmp", ".DS_Store", "*~", "*.orig", "*.rej"]
 
 # Sanity floor for the shipped checkpoint: a truncated file or an unfetched
 # LFS pointer is small, loads as garbage, and is easy to miss by eye.
 MIN_WEIGHTS_BYTES = 1_000_000
+
+# generator/.gitattributes routes *.png through Git LFS, so the 41 images in
+# generator/output/ are pointers in the repository and only become real bytes
+# when LFS smudges them on checkout. Build on a machine where that did not
+# happen -- no git-lfs installed, a `git archive`, GitHub's "Download ZIP" --
+# and every image ships as ~130 bytes of text that a judge cannot open. The
+# builder reads the working tree, so it is the last gate that can catch this.
+LFS_POINTER_MAGIC = b"version https://git-lfs.github.com/spec/v1"
+LFS_POINTER_MAX_BYTES = 1024
 
 # Reproducible archives: a fixed DOS timestamp, so two builds of the same tree
 # are byte-identical. 1980-01-01 is the ZIP epoch.
@@ -174,6 +187,26 @@ ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
 
 def pruned(name):
     return any(fnmatch.fnmatch(name, pat) for pat in PRUNE_GLOBS)
+
+
+def prune_dir(repo, abspath):
+    """True when a directory is scratch and must not be walked."""
+    name = os.path.basename(abspath)
+    if name not in PRUNE_DIRS:
+        return False
+    rel = os.path.relpath(abspath, repo).replace(os.sep, "/")
+    return rel not in PRUNE_EXCEPTIONS
+
+
+def is_lfs_pointer(path):
+    """True for an unfetched Git LFS pointer standing in for real content."""
+    try:
+        if os.path.getsize(path) > LFS_POINTER_MAX_BYTES:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(len(LFS_POINTER_MAGIC)) == LFS_POINTER_MAGIC
+    except OSError:
+        return False
 
 
 def deny_reason(arcname):
@@ -198,8 +231,9 @@ def collect(repo=REPO):
         elif os.path.isdir(src):
             found = False
             for dirpath, dirnames, filenames in os.walk(src):
-                dirnames[:] = sorted(d for d in dirnames
-                                     if d not in PRUNE_DIRS)
+                dirnames[:] = sorted(
+                    d for d in dirnames
+                    if not prune_dir(repo, os.path.join(dirpath, d)))
                 for filename in sorted(filenames):
                     if pruned(filename):
                         continue
@@ -245,6 +279,18 @@ def build(out_path, repo=REPO):
     if blocked:
         return fail("ALLOW would ship DENY-listed paths:\n  - "
                     + "\n  - ".join(a + ": " + w for a, w in blocked))
+
+    pointers = [a for a, path in members if is_lfs_pointer(path)]
+    if pointers:
+        shown = pointers[:10]
+        more = len(pointers) - len(shown)
+        return fail(str(len(pointers)) + " file(s) are unfetched Git LFS "
+                    "pointers, not real content:\n  - "
+                    + "\n  - ".join(shown)
+                    + ("\n  - ... and " + str(more) + " more" if more else "")
+                    + "\nRun `git lfs pull` and rebuild. Shipping these would "
+                      "put ~130 bytes of pointer text where a judge expects "
+                      "an image.")
 
     weights = dict(members).get(WEIGHTS_ONLY)
     if weights is not None and os.path.getsize(weights) < MIN_WEIGHTS_BYTES:
