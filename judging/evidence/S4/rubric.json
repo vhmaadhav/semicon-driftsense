@@ -1,0 +1,81 @@
+{
+  "bonus": {
+    "plus4_f1_gate": true,
+    "plus6_natural_reading": true,
+    "plus6_strict_reading": true,
+    "points": 10,
+    "set_d_credit": 0.9800000000000001,
+    "sets_ac_credit_natural": 0.9144285714285716,
+    "sets_ac_credit_strict": 0.8514285714285714
+  },
+  "components": {
+    "calibration_10": {
+      "auc": 0.9979629943982345,
+      "auc_submitted": 0.7532956685499058,
+      "points": 9.979629943982346,
+      "points_submitted": 7.532956685499058
+    },
+    "localisation_40": {
+      "credit": 0.9144285714285716,
+      "points": 36.57714285714286
+    },
+    "pose_rotation_10": {
+      "credit": 0.908029197080292,
+      "points": 9.08029197080292
+    },
+    "pose_scale_10": {
+      "credit": 0.9386861313868613,
+      "points": 9.386861313868613
+    },
+    "rejection_15": {
+      "f1_reject": 0.9876543209876543,
+      "points": 14.814814814814813
+    }
+  },
+  "label": "S4",
+  "not_self_assessable": {
+    "efficiency_5": "relative quartile ranking across teams",
+    "generator_docs_10": "judge-assessed"
+  },
+  "pairs": 200,
+  "per_set": {
+    "A": {
+      "credit": 0.9914285714285715,
+      "median_err_px": 0.2772681862018611,
+      "pairs": 70,
+      "within_1px": 0.9571428571428572,
+      "within_5px": 1.0
+    },
+    "B": {
+      "credit": 0.8514285714285714,
+      "median_err_px": 0.7844074137360504,
+      "pairs": 70,
+      "within_1px": 0.6,
+      "within_5px": 0.9571428571428572
+    },
+    "C": {
+      "credit": 1.0,
+      "pairs": 40
+    },
+    "D": {
+      "credit": 0.9800000000000001,
+      "pairs": 20,
+      "within_5px": 1.0
+    }
+  },
+  "subtotal_85": 79.83874090061155,
+  "threshold": 0.18,
+  "timing": {
+    "max_s": 2.1,
+    "mean_s": 1.2431150000000002,
+    "median_s": 1.2015,
+    "meets_target_median": true,
+    "min_s": 0.505,
+    "over_hard_timeout": 0,
+    "over_median_budget": false,
+    "p90_s": 1.8477999999999999,
+    "p99_s": 2.0491499999999996,
+    "pairs_expected": 200,
+    "pairs_timed": 200
+  }
+}

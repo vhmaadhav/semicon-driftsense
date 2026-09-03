@@ -1,0 +1,43 @@
+{
+  "absent_count": 40,
+  "is_official_blind_benchmark": false,
+  "max_verify_attempts_used": 22,
+  "numpy": "2.4.6",
+  "opencv": "5.0.0",
+  "organizer_data_used_for_training_or_tuning": false,
+  "pair_count": 200,
+  "present_count": 160,
+  "presets": [
+    "dram_1x",
+    "dram_compact",
+    "dram_dense",
+    "dram_legacy",
+    "dram_loose",
+    "dram_wide",
+    "finfet_10nm",
+    "finfet_14nm",
+    "finfet_22nm",
+    "finfet_28nm",
+    "finfet_45nm",
+    "finfet_7nm"
+  ],
+  "renderer": "driftsense.generate -> generator/src",
+  "runtime_seconds": 730.0752379900005,
+  "seed": 3,
+  "sets": {
+    "A": 70,
+    "B": 70,
+    "C": 40,
+    "D": 20
+  },
+  "severity_levels_realized": [
+    0.25,
+    0.250001,
+    0.5,
+    0.500001,
+    0.75,
+    0.750001,
+    1.0,
+    1.000001
+  ]
+}

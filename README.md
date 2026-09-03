@@ -92,16 +92,113 @@ the current checkpoint. Treat the table above as a conservative floor;
 `FAILURE_ANALYSIS.md` carries the itemized, dated findings for everything
 since.
 
+### Spec-composition campaign (5 × 200 pairs, reference machine)
+
+A second, independent measurement on the reference machine: five 200-pair sets
+(seeds 1–5) composed **A70 / B70 / C40 / D20** per slide 4, built by
+[`judging/organizer_generator/gen_200.py`](judging/organizer_generator/gen_200.py).
+That script is **ours** — it implements the spec recipe on top of the vendored
+generator and reuses the reviewed Issue 45 audit fixture for pose construction,
+seeding and label verification. It is **not** organizer-issued data and these
+1,000 pairs are **not** the official blind benchmark.
+
+| | loc /40 | scale /10 | rot /10 | reject /15 | calib /10 | **/85** | Set D | bonus |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| mean of 5 sets | 36.65 | 9.39 | 8.91 | 14.63 | 9.96 | **79.54** | 0.984 | **+10** |
+| sd | 0.98 | 0.12 | 0.29 | 0.22 | 0.02 | **1.08** | 0.015 | 0 |
+| worst set | 35.38 | 9.23 | 8.51 | 14.29 | 9.93 | **77.76** | 0.970 | +10 |
+| best set | 37.96 | 9.57 | 9.25 | 14.81 | 9.98 | **80.67** | 1.000 | +10 |
+
+Both bonus gates are met on all five sets under both readings of the +6
+condition: Set D credit **0.984** against a 0.40 gate, and the Sets A–C
+localisation credit **0.916** against a 0.50 gate (per-set: A 0.992, B 0.854).
+So **+10 of the +10**.
+The sd is the number to read next to the mean: at 1.08 points across five sets,
+a difference under about a point is not a result at this sample size.
+
+**This is not a gain over the 75.92–76.97 above — it is a different dataset.**
+Those figures are 2,250 pairs of `data/ext_p2`, which is the harder and more
+conservative of the two and **remains the planning number of record**.
+
+Set B is the whole of the remaining gap, and inside it the loss is monotone in
+severity: credit 0.964 / 0.911 / 0.833 / **0.699** at severity levels 1–4
+(350 B pairs). Severity 4 alone costs ~1.5 of the 5.5 missing points. Of the 9
+present pairs wrongly declined across 1,000, 8 were severity 3–4 and every one
+had a true error of 291–1004 px — genuine lock-on failures the rejector
+correctly declined, not calibration slop. Set C gave up exactly **1** false
+accept in 200.
+
+#### Retired: the 81.45 / 81.93 figures
+
+PR #51 reported 81.45 mean / 81.93 best on three 200-pair sets. **Those are
+withdrawn**, and the cause is a generator defect, not a regression.
+
+`driftsense.generate.build_one` only draws the coherent per-knob degradation
+when its severity range satisfies `_shi > _slo`. A severity pinned as a single
+point (`lo == hi`) fails that strictly-greater test, so the pair renders as
+**generic per-knob draws at severity 0.0** while still carrying the label
+"Set-B severity N" — issue #31, fixed in the audit fixture with a 1e-6 epsilon
+that `gen_200.py` inherits. PR #51's generator script was never committed, so
+what it did cannot be read; the defect can, however, be reproduced and priced.
+Identical code, identical seed, identical box and pinned cores — the only
+difference being `severity=(t, t)` versus `severity=(t, t + 1e-6)`:
+
+| | realised Set B severity | Set B credit | **/85** | median |
+| --- | --- | ---: | ---: | ---: |
+| ladder fires | 0.25 / 0.50 / 0.75 / 1.00 | 0.8257 | **79.54** | 1.164 s |
+| degenerate pin | **0.0 on all 70 pairs** | 0.9343 | **81.57** | 0.897 s |
+
+81.57 reproduces the old headline on demand by switching the degradation off,
+and PR #51's reported Set B credit (0.9086 / 0.9143) sits in the legacy arm's
+range, not the degraded one. The easier data also ran *faster* — 0.897 s vs
+1.164 s, because undegraded pairs trip the early-exit gates more often — so
+both of that PR's leading numbers moved for the same reason. Reproduce with
+`gen_200.py --legacy-severity-pin`.
+
+One caveat bounds this the other way: mapping level 4 to `severity_continuous
+= 1.0` puts a quarter of Set B at the generator's **ceiling**. Slide 4 discloses
+that four levels exist, not how hard they are. If the organizers' level 4 is
+milder than our ceiling, the true figure lies inside **[79.54, 81.57]** — the
+same interval this A/B brackets. We plan on 79.54.
+
 **Runtime**, measured end-to-end with `register.py`, shipped 4-thread cap:
 
-| hardware | median | p90 | max |
-| --- | ---: | ---: | ---: |
-| Apple M4, arm64 (development machine) | 0.960 s | 1.343 s | 1.637 s |
-| x86 (AMD Ryzen, 4-thread cap) | 2.66 s | 6.16 s | 7.16 s |
+| hardware | pairs | median | p90 | max | constraint verified |
+| --- | ---: | ---: | ---: | ---: | --- |
+| **x86, 4 pinned P-cores, 8 GB cap** | **1,000** | **1.147 s** | **1.883 s** | **2.191 s** | yes — see below |
+| x86, 4 pinned E-cores, 8 GB cap | 200 | 2.859 s | 4.538 s | 4.972 s | yes |
+| Apple M4, arm64 (development machine) | 600 | 0.960 s | 1.343 s | 1.637 s | n/a — not x86 |
+| x86 (AMD Ryzen, 4-thread cap) | — | 2.66 s | 6.16 s | 7.16 s | thread cap only, cores not pinned |
 
-Both comfortably clear the 5 s median target and the 20 s hard timeout; the
-x86 figure is the one that matters for the reference machine and is roughly
-2.8× the ARM number — see `FAILURE_ANALYSIS.md` for the full breakdown.
+The first two rows are the reference-machine measurement: a 4-core x86 box with
+8 GB and no GPU, emulated with the cap **read back from inside the running
+process** rather than assumed. Full campaign:
+[`.agents/JUDGEBOX_X86_CAMPAIGN.md`](.agents/JUDGEBOX_X86_CAMPAIGN.md);
+reproduce with [`judging/run_all.sh`](judging/run_all.sh).
+
+| constraint | mechanism | realised |
+| --- | --- | --- |
+| 4 cores | `taskset`, 4 **distinct physical** cores (no HT siblings) | `sched_getaffinity` → 4 CPUs |
+| 8 GB RAM, no swap | systemd scope, `MemoryMax=8G`, `MemorySwapMax=0` | cgroup `memory.max` 8589934592, `swap.max` 0 |
+| no GPU | CPU-only venv | `cuda.is_available()` False, torch 2.13.0+cpu |
+| no network | `unshare -n` spot-check | 0 interfaces, all rows still written |
+| peak memory | `/usr/bin/time` | 0.93–1.07 GB — 13% of the cap |
+
+Every row clears the 5 s median budget, and **no pair in 1,000 came within 9 s
+of the 20 s hard timeout** — the slowest single pair was 2.191 s. Two caveats
+the older rows understate:
+
+* The **sub-2 s median is a property of the faster core, not of the code.** The
+  same 200 pairs on 4 E-cores gave a 2.859 s median with a **bit-identical
+  decode** (subtotal equal to 4 decimal places, every component identical). Any
+  "1.15 s/pair" claim has to name the core it was measured on.
+* The AMD Ryzen row's **p90 and max exceed 5 s**, so "comfortably clears the
+  budget" was only ever true of its median. Its spread (p90 = 2.3× median)
+  is the signature of a machine that was not idle; the pinned rows above hold
+  p90 at 1.6× median. For calibration, a 5-pair spot check taken here *while
+  the generator held cores* measured a 5.90 s median on the same binary and the
+  same pinned cores that gave 1.15 s idle — a 5× inflation from background load
+  alone. Only idle-machine, serial readings are quoted in the first two rows.
 
 ## The `score` column: what our confidence means
 
@@ -292,6 +389,7 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 | [`train.py`](train.py) | training script that reproduces the shipped weights |
 | [`evaluate.py`](evaluate.py) | batch evaluation vs. the classical ZNCC baseline |
 | [`infer.py`](infer.py) | legacy single-pair CLI (Phase 1 era); not the graded entry point |
+| [`judging/`](judging/) | reference-machine emulation — the 200-pair spec-composition generator, the constrained runner, the rubric scorer and the cross-set aggregator |
 | [`tests/`](tests/) | `pytest` suite over coordinate, label, and CLI invariants |
 | [`scripts/`](scripts/) | development tooling — generation, verification, analysis, submission checks |
 | [`failure_analysis.pdf`](failure_analysis.pdf) | the required 2-page failure analysis, built by `scripts/failure_analysis.py` from a results CSV — independently authored from, and not auto-synced with, `FAILURE_ANALYSIS.md`'s prose; keep both current by hand |
@@ -300,6 +398,7 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 
 ## Further reading
 
+- [`.agents/JUDGEBOX_X86_CAMPAIGN.md`](.agents/JUDGEBOX_X86_CAMPAIGN.md) — the reference-machine campaign: constraint evidence, the 5-set rubric table, and why 81.45/81.93 was withdrawn
 - [`FAILURE_ANALYSIS.md`](FAILURE_ANALYSIS.md) — current failure modes, what was tried and measured, what's still open
 - [`TRAINING.md`](TRAINING.md) — full training methodology, checkpoint selection, reproduction
 - [`CITATIONS.md`](CITATIONS.md) — references behind the physics, noise, and design choices

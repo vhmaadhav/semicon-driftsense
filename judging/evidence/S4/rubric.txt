@@ -1,0 +1,36 @@
+==============================================================================
+PHASE 2 RUBRIC - S4  (200 pairs, threshold 0.180)
+==============================================================================
+component                                                 metric        points
+------------------------------------------------------------------------------
+Localisation (40)                                  credit 0.9144         36.58
+   set A (70 pairs)           0.9914  med 0.28px  <=1px 95.7%  <=5px 100.0%
+   set B (70 pairs)           0.8514  med 0.78px  <=1px 60.0%  <=5px 95.7%
+Pose - scale (10)                                  credit 0.9387          9.39
+Pose - rotation (10)                               credit 0.9080          9.08
+Rejection (15)                                 F1(reject) 0.9877         14.81
+   set C correct-reject                                   1.0000
+Calibration (10)                                      AUC 0.9980          9.98
+   [submitted AUC]                                        0.7533          7.53
+------------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                                 79.84
+  + efficiency (5)                     relative quartile - judge
+  + generator/report (10)                         judge-assessed
+
+BONUS (+10 available)                                                       10
+  set D credit                            0.9800  (gate >= 0.40)
+  sets A-C credit                         0.9144  (gate >= 0.50)
+  +6 (D>=0.40, A-C>=0.50)                                    MET
+     [strict reading]                                        MET
+  +4 (F1(reject) >= 0.90)                                    MET
+
+RUNTIME (per pair)                               200 pairs timed
+  median                                                 1.202 s
+  mean                                                   1.243 s
+  p90 / p99 / max                        1.848 / 2.049 / 2.100 s
+  median budget (<= 5 s)                                    PASS
+  campaign target (<= 2 s)                                  PASS
+  pairs over 20 s timeout                                      0
+==============================================================================
+
+wrote judging/out/S4/rubric.json

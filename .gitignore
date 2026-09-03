@@ -47,3 +47,10 @@ venv-hf/
 # reference sample materials (confidential -- never commit; see docs/VERIFIED_GROUND_TRUTH.md section 9)
 .agents/ref_material/
 .agents/ref_0901/
+
+# Judging-box campaign: the generated pair sets are ~300 MB each and are
+# reproducible from judging/organizer_generator/gen_200.py at a given seed.
+# The small provenance files under judging/evidence/ ARE tracked.
+judging/S[0-9]*/
+judging/out/
+judging/*.log

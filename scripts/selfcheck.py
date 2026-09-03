@@ -31,9 +31,16 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 
 TOLERANCE_PX = 5.0
-# Recorded in README.md; a mismatch means the weights are not the shipped ones.
-EXPECTED_SHA256 = "90db89f9861c2c9ea386eaa03e45ff03fc4962dc7e349aa00423621a5fce1488"
-EXPECTED_EPOCHS = 24
+# A mismatch means the weights are not the shipped ones.
+# Currently the Set C fine-tune (711758c): 1,025,060 params, global_step 20614.
+# These two constants stayed pinned to the superseded 24-epoch v5f checkpoint
+# (90db89f9...) across both commits that replaced the weights file (020f21a
+# "Ship the 1.02M model", 711758c "Ship the Set C fine-tune"), so selfcheck
+# reported two failures on a perfectly valid submission. Re-pin BOTH whenever
+# weights/driftsense.pt changes -- the whole point of the check is that the
+# file and its documented identity cannot drift apart silently.
+EXPECTED_SHA256 = "e6506b7c3b2ccfd47f9337e9b95df20d0fb2b14a6d45b0a1c892d60464a71ca8"
+EXPECTED_EPOCHS = 22
 
 PASS, FAIL, WARN = "  PASS", "  FAIL", "  WARN"
 _failures: list[str] = []

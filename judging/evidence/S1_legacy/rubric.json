@@ -1,0 +1,81 @@
+{
+  "bonus": {
+    "plus4_f1_gate": true,
+    "plus6_natural_reading": true,
+    "plus6_strict_reading": true,
+    "points": 10,
+    "set_d_credit": 1.0,
+    "sets_ac_credit_natural": 0.9638571428571427,
+    "sets_ac_credit_strict": 0.9342857142857142
+  },
+  "components": {
+    "calibration_10": {
+      "auc": 0.9991226530970345,
+      "auc_submitted": 0.7696629213483146,
+      "points": 9.991226530970344,
+      "points_submitted": 7.6966292134831455
+    },
+    "localisation_40": {
+      "credit": 0.9638571428571427,
+      "points": 38.55428571428571
+    },
+    "pose_rotation_10": {
+      "credit": 0.8978417266187049,
+      "points": 8.978417266187048
+    },
+    "pose_scale_10": {
+      "credit": 0.9417266187050358,
+      "points": 9.417266187050359
+    },
+    "rejection_15": {
+      "f1_reject": 0.975,
+      "points": 14.625
+    }
+  },
+  "label": "S1_legacy",
+  "not_self_assessable": {
+    "efficiency_5": "relative quartile ranking across teams",
+    "generator_docs_10": "judge-assessed"
+  },
+  "pairs": 200,
+  "per_set": {
+    "A": {
+      "credit": 1.0,
+      "median_err_px": 0.219324849441149,
+      "pairs": 70,
+      "within_1px": 1.0,
+      "within_5px": 1.0
+    },
+    "B": {
+      "credit": 0.9342857142857142,
+      "median_err_px": 0.5144072460458082,
+      "pairs": 70,
+      "within_1px": 0.8,
+      "within_5px": 0.9857142857142858
+    },
+    "C": {
+      "credit": 0.975,
+      "pairs": 40
+    },
+    "D": {
+      "credit": 1.0,
+      "pairs": 20,
+      "within_5px": 1.0
+    }
+  },
+  "subtotal_85": 81.56619569849346,
+  "threshold": 0.18,
+  "timing": {
+    "max_s": 2.431,
+    "mean_s": 1.1503349999999999,
+    "median_s": 0.8975,
+    "meets_target_median": true,
+    "min_s": 0.532,
+    "over_hard_timeout": 0,
+    "over_median_budget": false,
+    "p90_s": 1.8379999999999999,
+    "p99_s": 2.1054499999999994,
+    "pairs_expected": 200,
+    "pairs_timed": 200
+  }
+}
