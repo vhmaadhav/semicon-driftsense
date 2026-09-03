@@ -21,7 +21,13 @@ import pandas as pd                      # noqa: E402
 from matplotlib.backends.backend_pdf import PdfPages   # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from eval_ext import LOC_TIERS, ROT_TIERS, SCALE_TIERS, W_A, W_B, tier  # noqa: E402
+# The document calls this "the shipped threshold", so it must BE the shipped
+# threshold: read it from the config register.py reads rather than repeating
+# the number here, where a config bump would silently leave the PDF quoting a
+# stale operating point as if it were what ships.
+from driftsense.config import SHIPPED_THRESHOLD  # noqa: E402
 
 
 def cohen_d(a, b):
@@ -56,7 +62,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv")
     ap.add_argument("-o", "--out", default="failure_analysis.pdf")
-    ap.add_argument("--threshold", type=float, default=0.25)
+    ap.add_argument("--threshold", type=float, default=SHIPPED_THRESHOLD,
+                    help="found/reject threshold to report; defaults to "
+                         "driftsense.config.SHIPPED_THRESHOLD "
+                         "(%(default)s), the value register.py ships")
     ap.add_argument("--baseline", default=None, help="optional before-CSV for the fix panel")
     ap.add_argument("--manifest-glob", default="data/ext_p2/*/manifest.csv",
                     help="joined on pair_id to recover the generator parameters")
