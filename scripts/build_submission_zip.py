@@ -83,6 +83,14 @@ ALLOW = [
     "generator/README.md",
     "generator/requirements.txt",
     "generator/tests",
+    # Section 7 names output/ itself as a deliverable: "output/ with pairs.csv
+    # + ground_truth.csv + manifest.csv + baseline_calibration.txt +
+    # contact_sheet.png + reference/ + search/". This is the fixed, audited
+    # 20-pair package (A8/B6/C4/D2, seed 45045) -- 34 MB, and the single
+    # largest thing in the ZIP after the checkpoint. It is NOT regenerable by
+    # the judge from the ZIP alone in a way that reproduces these exact
+    # labels, so it ships.
+    "generator/output",
 
     # -- the tests a judge can actually run -------------------------------
     # A test ships when both are true: its subject ships, and it passes from
@@ -144,8 +152,11 @@ DENY = [
 WEIGHTS_ONLY = "weights/driftsense.pt"
 
 # Dropped while walking any allow-listed directory.
+# NOTE: "output" is deliberately NOT pruned -- generator/output/ is a
+# section 7 deliverable. Nothing else named output/ is in ALLOW, so it cannot
+# sweep in a stray scratch directory.
 PRUNE_DIRS = {"__pycache__", ".pytest_cache", ".ipynb_checkpoints", ".git",
-              "output", "eval_results"}
+              "eval_results"}
 PRUNE_GLOBS = ["*.pyc", "*.pyo", "*.tmp", ".DS_Store", "*~", "*.orig", "*.rej"]
 
 # Sanity floor for the shipped checkpoint: a truncated file or an unfetched

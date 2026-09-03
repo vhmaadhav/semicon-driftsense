@@ -86,6 +86,26 @@ def test_generator_deliverables_are_in_the_manifest(manifest):
     assert [p for p in required if p not in manifest] == []
 
 
+def test_generator_output_package_is_in_the_manifest(manifest):
+    """Section 7 names output/ itself, images included.
+
+    The builder prunes scratch directories by name; output/ must survive that
+    pruning or a graded deliverable silently stops shipping.
+    """
+    required = ["generator/output/pairs.csv",
+                "generator/output/ground_truth.csv",
+                "generator/output/manifest.csv",
+                "generator/output/baseline_calibration.txt",
+                "generator/output/contact_sheet.png",
+                "generator/output/REPORT.md"]
+    assert [p for p in required if p not in manifest] == []
+    for sub in ("reference", "search"):
+        images = [n for n in manifest
+                  if n.startswith("generator/output/" + sub + "/")
+                  and n.endswith(".png")]
+        assert len(images) == 20, sub + ": " + str(len(images)) + " images"
+
+
 def test_archive_is_flat(manifest):
     """register.py at the archive root: the organizer runs it from there."""
     assert "register.py" in manifest
