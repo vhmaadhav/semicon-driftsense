@@ -25,8 +25,13 @@ Two independent guards protect that boundary:
 Missing ALLOW entries are fatal too: a rename that silently drops a required
 file from the submission is exactly the failure this script exists to prevent.
 
-Audit the result with the companion checker, which extracts the ZIP into a
-temporary directory and audits only that extraction:
+The companion checker runs automatically on the finished archive: it extracts
+the ZIP into a temporary directory and audits only that extraction, so what is
+audited is exactly what a judge would open. Building and auditing are one
+operation on purpose -- an unaudited artifact is not evidence of anything, and
+the two steps drifting apart is how an unaudited ZIP reaches a judge. Its exit
+status is this script's exit status. Use `--no-audit` to skip it (for
+inspecting a deliberately partial build), then audit by hand with:
 
     python scripts/check_submission_zip.py dist/submission.zip
 """
@@ -37,6 +42,7 @@ import argparse
 import fnmatch
 import os
 import sys
+import tempfile
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -304,17 +310,40 @@ def report(out_path, members):
     print()
     print("  excluded: " + ", ".join(label for label, _, _ in DENY)
           + ", weights/* except driftsense.pt")
+
+
+
+def audit(out_path):
+    """Audit the archive we just built, via the companion checker.
+
+    The checker is imported rather than shelled out to so that the audit runs
+    under the same interpreter that built the ZIP -- a subprocess would have
+    to guess one, and guessing wrong turns a failed audit into a skipped one.
+    """
+    sys.path.insert(0, HERE)
+    import check_submission_zip as checker
+
+    print("auditing " + out_path + " -- check_submission_zip.py, "
+          "artifact mode")
     print()
-    print("next: python scripts/check_submission_zip.py " + out_path)
+    with tempfile.TemporaryDirectory(prefix="submission-audit-") as tmp:
+        try:
+            checker.extract_zip(out_path, tmp)
+        except zipfile.BadZipFile as exc:
+            print("[ARTIFACT] [FAIL] ZIP is unreadable: " + str(exc))
+            return 1
+        return checker.run_audit(tmp, "ARTIFACT", artifact_mode=True)
 
 
 def main():
     ap = argparse.ArgumentParser(
         description="Build the Phase 2 submission ZIP from an explicit "
-                    "allow-list. See the module docstring.",
+                    "allow-list, then audit it. See the module docstring.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=os.path.join("dist", "submission.zip"),
                     help="output ZIP path (default: dist/submission.zip)")
+    ap.add_argument("--no-audit", action="store_true",
+                    help="skip the automatic artifact audit of the built ZIP")
     ap.add_argument("--list", action="store_true",
                     help="print the resolved manifest and exit without "
                          "writing a ZIP")
@@ -329,7 +358,10 @@ def main():
             return 1
         return 0
 
-    return build(args.out)
+    rc = build(args.out)
+    if rc or args.no_audit:
+        return rc
+    return audit(args.out)
 
 
 if __name__ == "__main__":

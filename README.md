@@ -426,15 +426,25 @@ checkpoints into whatever a judge opens.
 
 ```bash
 python scripts/build_submission_zip.py --out dist/submission.zip
+```
+
+That one command builds *and* audits: an unaudited artifact is not evidence of
+anything, so the checker runs on the finished ZIP automatically and its verdict
+is the command's exit status. The builder prints what it shipped and aborts if
+a manifest entry has gone missing or a denied path would leak; `--list` prints
+the resolved manifest without writing anything, and `--no-audit` skips the
+audit when inspecting a deliberately partial build.
+
+The audit extracts the finished ZIP into a temporary directory and audits
+*only* that extraction — layout, a real `torch.load` plus `infer.load_model` of
+the shipped checkpoint, `--help` smoke tests, an import-closure network scan,
+PDF page count, and requirements pins. It can also be run by hand against any
+ZIP:
+
+```bash
 python scripts/check_submission_zip.py dist/submission.zip
 ```
 
-The builder prints what it shipped and aborts if a manifest entry has gone
-missing or a denied path would leak; `--list` prints the resolved manifest
-without writing anything. The checker then extracts the finished ZIP into a
-temporary directory and audits *only* that extraction — layout, a real
-`torch.load` plus `infer.load_model` of the shipped checkpoint, `--help` smoke
-tests, an import-closure network scan, PDF page count, and requirements pins.
 `tests/test_submission_manifest.py` holds the manifest itself to contract.
 
 ## Further reading
