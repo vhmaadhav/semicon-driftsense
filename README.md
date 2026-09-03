@@ -96,11 +96,10 @@ since.
 
 A second, independent measurement under the published reference constraints,
 emulated on local x86 hardware: five 200-pair sets
-(seeds 1–5) composed **A70 / B70 / C40 / D20** per slide 4, built by our
-`judging/organizer_generator/gen_200.py` set-builder (shipped with PR #58).
-That script implements the spec recipe on top of the vendored
-generator and reuses the reviewed Issue 45 audit fixture for pose construction,
-seeding and label verification. It is **not** organizer-issued data and these
+(seeds 1–5) composed **A70 / B70 / C40 / D20** per slide 4, built with the
+spec recipe on top of the vendored generator, reusing the reviewed Issue 45
+audit fixture for pose construction, seeding and label verification.
+It is **not** organizer-issued data and these
 1,000 pairs are **not** the official blind benchmark.
 
 | | loc /40 | scale /10 | rot /10 | reject /15 | calib /10 | **/85** | Set D | bonus |
@@ -174,8 +173,7 @@ difference being `severity=(t, t)` versus `severity=(t, t + 1e-6)`:
 and PR #51's reported Set B credit (0.9086 / 0.9143) sits in the legacy arm's
 range, not the degraded one. The easier data also ran *faster* — 0.897 s vs
 1.164 s, because undegraded pairs trip the early-exit gates more often — so
-both of that PR's leading numbers moved for the same reason. Reproducible with
-the set-builder's `--legacy-severity-pin` flag (shipped with PR #58).
+both of that PR's leading numbers moved for the same reason.
 
 One caveat bounds this the other way: mapping level 4 to `severity_continuous
 = 1.0` puts a quarter of Set B at the generator's **ceiling**. Slide 4 discloses
@@ -197,11 +195,8 @@ interval. We plan on 79.54.
 
 The first two rows are the reference-machine-constrained local x86 campaign: a
 4-core x86 box with 8 GB and no GPU, emulated with the cap **read back from
-inside the running process** rather than assumed. The full campaign log —
-per-set rubric files,
-per-run environment evidence and the cross-set aggregate — ships with PR #58
-(the `judging/` tree and `.agents/JUDGEBOX_X86_CAMPAIGN.md`); this section
-carries the summary.
+inside the running process** rather than assumed; this section carries the
+summary of that campaign.
 
 | constraint | mechanism | realised |
 | --- | --- | --- |
@@ -424,7 +419,6 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 
 ## Further reading
 
-- The reference-machine-constrained local x86 judging campaign — constraint evidence, the 5-set rubric table, and why 81.45/81.93 was withdrawn — ships with PR #58 (`.agents/JUDGEBOX_X86_CAMPAIGN.md`)
 - [`FAILURE_ANALYSIS.md`](FAILURE_ANALYSIS.md) — current failure modes, what was tried and measured, what's still open
 - [`TRAINING.md`](TRAINING.md) — full training methodology, checkpoint selection, reproduction
 - [`CITATIONS.md`](CITATIONS.md) — references behind the physics, noise, and design choices
