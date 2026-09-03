@@ -169,6 +169,22 @@ def main():
     if not is_stderr_tty:
         print("# per-pair seconds", file=sys.stderr)
 
+    if is_tty and not a.quiet:
+        sys.stdout.write("\033[2J\033[H")  # Clear screen and move cursor to top
+        banner = [
+            "╔══════════════════════════════════════════════════════════════════════════════╗",
+            "║               🔬 DRIFTSENSE PHASE 2: SUBPIXEL SEM REGISTRATION              ║",
+            "╠══════════════════════════════════════════════════════════════════════════════╣",
+            "║  Architecture:  Learned ConvEncoder + Refined oneDNN NHWC AVX-512 Fused      ║",
+            f"║  Dataset:       {total_rows:<4} pairs ({os.path.basename(a.input):<44}) ║",
+            f"║  Hardware Cap:  {a.threads or 'auto (4 cores)'} CPU thread(s) capped                                  ║",
+            f"║  Predictions:   {os.path.abspath(a.output):<60} ║",
+            "╚══════════════════════════════════════════════════════════════════════════════╝",
+            ""
+        ]
+        sys.stdout.write("\n".join(banner) + "\n")
+        sys.stdout.flush()
+
     def format_time(seconds: float) -> str:
         m = int(seconds // 60)
         s = int(seconds % 60)
@@ -229,23 +245,44 @@ def main():
                 pct = (cur_n / total_rows) * 100
 
                 if is_tty:
-                    bar_len = 16
+                    import shutil
+                    cols = shutil.get_terminal_size((100, 24)).columns
+                    bar_len = 14 if cols < 110 else 18
                     filled = int(bar_len * cur_n / total_rows)
                     bar = "█" * filled + "░" * (bar_len - filled)
-                    status = (
-                        f"\r\033[K\033[1;36m[DriftSense]\033[0m "
-                        f"[{bar}] \033[1;32m{pct:5.1f}%\033[0m "
-                        f"({cur_n}/{total_rows}) "
-                        f"| \033[33m{pid:<5}\033[0m: \033[32m{dt:.2f}s\033[0m "
-                        f"| med: \033[1;35m{med:.2f}s\033[0m "
-                        f"| ETA: \033[1;34m{format_time(eta)}\033[0m"
-                    )
+
+                    if cols >= 115:
+                        status = (
+                            f"\r\033[K\033[1;36m[DriftSense]\033[0m "
+                            f"[{bar}] \033[1;32m{pct:5.1f}%\033[0m ({cur_n}/{total_rows}) "
+                            f"| \033[33m{pid:<5}\033[0m: \033[32m{dt:.2f}s\033[0m "
+                            f"| Elapsed: \033[1;33m{format_time(elapsed)}\033[0m "
+                            f"| ETA: \033[1;34m{format_time(eta)}\033[0m "
+                            f"| med: \033[1;35m{med:.2f}s\033[0m"
+                        )
+                    elif cols >= 90:
+                        status = (
+                            f"\r\033[K\033[1;36m[DriftSense]\033[0m "
+                            f"[{bar}] \033[1;32m{pct:5.1f}%\033[0m ({cur_n}/{total_rows}) "
+                            f"| \033[33m{pid:<5}\033[0m "
+                            f"| Ela: \033[1;33m{format_time(elapsed)}\033[0m "
+                            f"| ETA: \033[1;34m{format_time(eta)}\033[0m "
+                            f"| med: \033[1;35m{med:.2f}s\033[0m"
+                        )
+                    else:
+                        status = (
+                            f"\r\033[K\033[1;36m[DS]\033[0m "
+                            f"\033[1;32m{pct:5.1f}%\033[0m ({cur_n}/{total_rows}) "
+                            f"| Ela: \033[1;33m{format_time(elapsed)}\033[0m "
+                            f"| ETA: \033[1;34m{format_time(eta)}\033[0m "
+                            f"| med: \033[1;35m{med:.2f}s\033[0m"
+                        )
                     sys.stdout.write(status)
                     sys.stdout.flush()
                 elif cur_n % 10 == 0 or cur_n == total_rows:
                     print(f"  {cur_n:3d}/{total_rows} ({pct:5.1f}%) | {pid:<6} {dt:.2f}s | "
-                          f"med: {med:.2f}s avg: {mean:.2f}s | ETA: {format_time(eta)} | "
-                          f"rate: {rate:.2f} p/s", flush=True)
+                          f"med: {med:.2f}s avg: {mean:.2f}s | Ela: {format_time(elapsed)} | "
+                          f"ETA: {format_time(eta)} | rate: {rate:.2f} p/s", flush=True)
                 f.flush()
 
     t_total = time.perf_counter() - t_start
