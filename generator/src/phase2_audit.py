@@ -75,6 +75,24 @@ def _p(pair_id: str, set_name: str, preset: str, z: float, theta: float,
 # It deliberately uses every preset once before repeating a few across the
 # degradation/negative/optical sets.
 AUDIT_SPECS = (
+    # Calibration retune attempted (2026-09-03), then reverted -- kept as a
+    # record so the next person doesn't re-try the same two things. Global
+    # label verification (correctly) only accepts crops that are unambiguous
+    # at full-frame scale, and those are also easier for the naive baseline
+    # -- pushing overall present credit from 0.550 to 0.787, out of the docx
+    # section 5.1 target band (0.30-0.55). Two bounded retune passes were
+    # tried, neither weakening verification: (1) Set A noise "default" ->
+    # "low" plus Set B severity pushed toward 3-4 -> credit moved the WRONG
+    # way, to 0.800; (2) Set A noise -> "medium" (B unchanged from (1)) ->
+    # back to 0.7875, no improvement. A crop that survives global
+    # verification under added noise tends to still be a strong, unambiguous
+    # match -- noise doesn't reliably decouple "hittable" from "easy" once
+    # the gate requires global uniqueness, which is exactly the tension the
+    # docx names in section 5.1. Per instruction: do not manufacture a
+    # deceptively lower baseline by weakening the verification gate or
+    # picking deliberately ambiguous crops. Reverted to the original spec
+    # below (the one that measures 0.787) and documented as a limitation in
+    # REPORT.md section 4 instead.
     _p("A01", "A", "dram_1x", 8.0, -5.0, description="nominal pose lower endpoint"),
     _p("A02", "A", "dram_dense", 12.0, 5.0, description="nominal pose upper endpoint"),
     _p("A03", "A", "dram_loose", 10.0, 0.0, description="nominal pose zero rotation"),
@@ -177,7 +195,7 @@ def _seed_for(seed: int, index: int, attempt: int = 0) -> int:
 # and retry. Cap the retries, and if nothing passes, fail loudly." The AMP
 # reference material's own generator used up to 14 attempts; this audit is a
 # fixed 20-pair set rather than a bulk run, so a smaller cap is plenty.
-MAX_VERIFY_ATTEMPTS = 8
+MAX_VERIFY_ATTEMPTS = 32
 
 
 def _write_png(path: Path, image: np.ndarray) -> None:
@@ -293,10 +311,10 @@ def generate_audit(output_dir: str | os.PathLike[str] = OUTPUT_DEFAULT,
             reference, search = _read_pair(root, {
                 "reference_path": f"reference/{spec.pair_id}.png",
                 "search_path": f"search/{spec.pair_id}.png"})
-            primary = _local_verify(reference, search, float(result["gt_x"]),
-                                    float(result["gt_y"]),
-                                    float(result["magnification"]),
-                                    float(result["rotation_deg"]), "raw")
+            primary = _global_verify(reference, search, float(result["gt_x"]),
+                                     float(result["gt_y"]),
+                                     float(result["magnification"]),
+                                     float(result["rotation_deg"]), "raw")
             independent = _local_verify(reference, search, float(result["gt_x"]),
                                         float(result["gt_y"]),
                                         float(result["magnification"]),
@@ -427,8 +445,46 @@ def _feature(image: np.ndarray, mode: str) -> np.ndarray:
     raise ValueError(f"unknown verifier feature: {mode}")
 
 
+def _global_verify(reference: np.ndarray, search: np.ndarray, gt_x: float,
+                   gt_y: float, z: float, theta: float, mode: str = "raw") -> dict:
+    """Primary label verification: the GLOBAL correlation peak over the
+    entire search frame at the fixed labelled pose (docx section 5: "The
+    global correlation peak must land within 3 px of your label").
+
+    On a periodic layout a crop can look perfect within any local window
+    while a stronger repeat elsewhere in the full 1000x1000 frame wins
+    globally -- exactly the failure mode section 5 exists to catch, and a
+    windowed search cannot see it by construction. Margin is measured
+    against the best competing peak outside a small exclusion window around
+    the winner, over the SAME full-frame response the winner came from.
+    """
+    template = _feature(make_template(reference, z, theta), mode)
+    frame = _feature(search, mode)
+    tw, th = template.shape[1], template.shape[0]
+    response = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
+    _, peak, _, location = cv2.minMaxLoc(response)
+    px = location[0] + tw / 2.0
+    py = location[1] + th / 2.0
+    error = float(np.hypot(px - gt_x, py - gt_y))
+    suppressed = response.copy()
+    cv2.circle(suppressed, location, 9, -np.inf, -1)
+    runner = float(np.max(suppressed)) if suppressed.size else float("-inf")
+    margin = float(peak - runner) if np.isfinite(runner) else float(peak)
+    return {
+        "x": float(px), "y": float(py), "score": float(peak),
+        "error_px": error, "margin": margin, "mode": mode,
+    }
+
+
 def _local_verify(reference: np.ndarray, search: np.ndarray, gt_x: float,
                   gt_y: float, z: float, theta: float, mode: str) -> dict:
+    """Independent cross-check: a deliberately different template/feature
+    path (gradient magnitude, not raw intensity) confirmed near the already
+    globally-verified label, per docx section 5's "cross-check with a
+    second, deliberately different verifier". Windowed, not global -- it is
+    corroborating _global_verify's answer, not independently establishing
+    global uniqueness, which is _global_verify's job.
+    """
     template = _feature(make_template(reference, z, theta), mode)
     frame = _feature(search, mode)
     tw, th = template.shape[1], template.shape[0]
@@ -449,7 +505,8 @@ def _local_verify(reference: np.ndarray, search: np.ndarray, gt_x: float,
     error = float(np.hypot(px - gt_x, py - gt_y))
     # Suppress a small neighbourhood around the winner before measuring the
     # runner-up. This is a local distinctiveness margin, not a global periodic
-    # uniqueness claim; the baseline section reports global ambiguity honestly.
+    # uniqueness claim -- _global_verify (the primary check) is what
+    # establishes global uniqueness; this is corroboration only.
     suppressed = response.copy()
     cv2.circle(suppressed, location, 9, -np.inf, -1)
     runner = float(np.max(suppressed)) if suppressed.size else float("-inf")
@@ -668,8 +725,8 @@ def run_score(output_dir: str | os.PathLike[str] = OUTPUT_DEFAULT,
         if not int(row["present"]):
             continue
         reference, search = _read_pair(root, row)
-        primary = _local_verify(reference, search, float(row["gt_x"]), float(row["gt_y"]),
-                                float(row["magnification"]), float(row["rotation_deg"]), "raw")
+        primary = _global_verify(reference, search, float(row["gt_x"]), float(row["gt_y"]),
+                                 float(row["magnification"]), float(row["rotation_deg"]), "raw")
         independent = _local_verify(reference, search, float(row["gt_x"]), float(row["gt_y"]),
                                     float(row["magnification"]), float(row["rotation_deg"]), "gradient")
         verification.append({
@@ -748,7 +805,7 @@ def render_report(metrics: dict, rows: list[dict]) -> str:
         "",
         "## 2. Verification and resampling",
         "",
-        f"Primary verification requires local peak error <=3 px and margin >=0.02; independent verification uses gradient magnitude rather than raw intensity. All present pairs passed: {metrics['all_present_verification_pass']}.",
+        f"Primary verification is the GLOBAL correlation peak over the full search frame at the labelled pose, requiring error <=3 px and margin >=0.02 against the best competing peak; independent verification cross-checks near that label with gradient magnitude rather than raw intensity. All present pairs passed: {metrics['all_present_verification_pass']}.",
         "",
         "| pair_id | primary error (px) | primary margin | independent error (px) | pass |",
         "|---|---:|---:|---:|:---:|",
@@ -781,6 +838,24 @@ def render_report(metrics: dict, rows: list[dict]) -> str:
         "",
         "Set C references are generated from an independent same-family decoy canvas with the renderer's pitch-offset rule; the search canvas is separate, so no true reference instance is inserted. The similarity audit reports global NCC scores as difficulty evidence and retains the semantic absence flag as the actual label contract.",
         "The procedural DRAM/FinFET patterns are illustrative rather than proprietary fab geometry. The independent resampling truth is a supersampled validation field, not a metrology instrument. The NCC baseline remains vulnerable to periodic repeats; its score range is reported rather than hidden.",
+        "",
+        "**Calibration band limitation.** Global post-write verification (the "
+        "GLOBAL correlation peak over the full search frame, per section 5) "
+        "exposed periodic ambiguities a windowed local verifier had been "
+        "hiding: enforcing the required global-peak gate raised naive-"
+        "baseline present credit from 0.550 to 0.787, above the section "
+        "5.1 target band (0.30-0.55). Two bounded retune passes (Set A "
+        "noise floor raised, Set B severity pushed toward levels 3-4) were "
+        "tried and neither brought the set back into band -- a crop that "
+        "survives global verification under added noise tends to still be "
+        "a strong, unambiguous match, so noise does not reliably decouple "
+        "\"hittable\" from \"easy\" once the gate requires global "
+        "uniqueness. We retained globally verifiable labels rather than "
+        "weakening the gate, or selecting deliberately ambiguous crops, to "
+        "force the calibration target. Severity remains the "
+        "presence-detection/difficulty lever it is used as elsewhere in "
+        "this report; the remaining calibration deviation is reported here "
+        "as a known limitation, not resolved.",
         "",
         "## 5. Acceptance snapshot",
         "",
