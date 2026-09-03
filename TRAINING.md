@@ -113,8 +113,16 @@ like-for-like.
 
 ## 3. The model
 
-A Siamese fully-convolutional localiser, **0.46 M parameters**
-(`driftsense/model.py`).
+A Siamese fully-convolutional localiser (`driftsense/model.py`), configurable
+via `width`/`ctx`/`head`. The class defaults (`width=64/ctx=32/head=64`) are
+the earlier, **0.46 M-parameter** Phase 1-era size; the narrative below
+through §4 describes that model's training history. The **shipped checkpoint**
+(`weights/driftsense.pt`) is a wider variant selected during Phase 2
+retraining — `width=96/ctx=48/head=96`, **1.02 M parameters** — loaded via
+`net_from_checkpoint()`, which reads the architecture from the checkpoint's
+own `arch_kwargs` rather than the class defaults. See "Phase 2 retraining
+lineage" below for that model's own history; don't assume 0.46M when reading
+`weights/driftsense.pt`'s actual size off this page.
 
 The layout is periodic, so *local* appearance cannot identify a site. Three
 things break the tie, and the architecture is built around each:
@@ -436,17 +444,26 @@ and how the shipped checkpoint was selected:
   label-noise weighting; p8's inverted weighting (`--jitter-power -1`) measured
   +0.05 (0.04σ on the grade scale — inside noise) and was recorded as a
   controlled negative.
-- **p9_last (shipped)** — the epoch-39 checkpoint; measured 72.55 → 75.27 on
-  the 85-point scale across the held-out re-measurement, and is the state in
-  `weights/driftsense.pt` (epoch metadata in the checkpoint file). Promoted on
+- **p9_last** — the epoch-39 checkpoint, 0.456M parameters; measured 72.55 →
+  75.27 on the 85-point scale across the held-out re-measurement. Promoted on
   the paired full-set comparison even though one CI crossed zero, because the
   component breakdown was uniformly non-inferior (decision documented in
-  `.agents/PHASE2_STATE.md`).
+  `.agents/PHASE2_STATE.md`). **This is not what currently ships** — see the
+  correction below.
+- **wide (shipped)** — a 1.02M-parameter run (`width=96/ctx=48/head=96`)
+  that superseded p9_last: 76.97/85 vs. p9's 75.96/85 at each model's
+  locally-optimal threshold, gaining on every component (`.agents/WIDE.txt`).
+  This is the checkpoint actually in `weights/driftsense.pt` — confirmed by
+  reading its `arch_kwargs` directly, not by trusting this narrative (see
+  below).
 - **Negative experiments kept on record:** spectral pose estimation (measured,
   negative, `7ee5473`), Set D bonus unreachable at the then-current score
   (`3185778`), second-checkpoint ensemble (hurt, dropped), epoch-12/24/30
   trajectory soups (−1.7/−2.0 on a paired draw, `.agents/INFERENCE_TWEAKS.md`).
 
-Which checkpoint ships: whatever `weights/driftsense.pt` contains — verify with
-`python -c "import torch; ck=torch.load('weights/driftsense.pt', weights_only=True); print(ck.get('epoch'), ck.get('arch'))"`
+Which checkpoint ships: whatever `weights/driftsense.pt` contains — **this
+narrative has drifted out of sync with the actual file before** (it described
+p9_last as shipped after the wide model had already replaced it), so verify
+directly rather than trusting the prose above:
+`python -c "import torch; ck=torch.load('weights/driftsense.pt', weights_only=True); print(ck.get('epoch'), ck.get('arch'), ck.get('arch_kwargs'))"`
 and the SHA-256 recorded in the submission notes.
