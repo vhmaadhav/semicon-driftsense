@@ -2,6 +2,10 @@
 data/
 sample/
 output/
+# Exception to output/: the final fixed 20-pair generator audit package ships
+# in-repo because the submission form only takes a GitHub repo link. See
+# generator/README.md (Phase 2 deliverable).
+!generator/output/
 
 # Environment
 venv/
