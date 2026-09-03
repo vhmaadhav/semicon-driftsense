@@ -87,6 +87,18 @@ def _pose_for(spec):
 
 SET_SIZES = {"A": 70, "B": 70, "C": 40, "D": 20}
 SEED_DEFAULT = 45045
+
+# Deliberately raised from the audit fixture's 32 (imported above and shadowed
+# here). The audit draws 6 Set B pairs; this draws 70 at four severity levels,
+# so it reaches further into the tail of hard-to-verify crops. Measured worst
+# case across the five shipped sets: 47 attempts (S2), with S5 at 37 -- both
+# above 32, so at the fixture's cap generation would have aborted rather than
+# produced a set. Raising the cap does NOT weaken the gate: every attempt still
+# has to clear the same global-peak (<=3 px, margin >=0.02) and independent
+# gradient-domain checks, so this buys more resamples, never a laxer standard.
+# generation_meta.json records max_verify_attempts_used so the headroom stays
+# auditable; if a future set approaches 64, raise it here rather than relaxing
+# the verifier.
 MAX_VERIFY_ATTEMPTS = 64
 
 # Slide 4 gives the categories and the endpoints, not the ladder. The audit
