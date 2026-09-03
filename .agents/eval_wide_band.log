@@ -1,0 +1,41 @@
+450 pairs over 5 shard(s), 2 workers
+[W901 06:21:55.930939720 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 92274688 bytes (free: 89063424, total: 8214937600).
+[W901 06:21:56.668535991 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 117440512 bytes (free: 7274496, total: 8214937600).
+[W901 06:21:57.243221082 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 127926272 bytes (free: 122617856, total: 8214937600).
+[W901 06:21:58.327307286 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 138412032 bytes (free: 11468800, total: 8214937600).
+[W901 06:21:58.338851494 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 138412032 bytes (free: 116326400, total: 8214937600).
+[W901 06:22:00.780739456 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 132120576 bytes (free: 45023232, total: 8214937600).
+[W901 06:22:01.127472293 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 140509184 bytes (free: 42926080, total: 8214937600).
+[W901 06:22:01.678662532 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 100663296 bytes (free: 59703296, total: 8214937600).
+[W901 06:22:02.402314054 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 140509184 bytes (free: 53411840, total: 8214937600).
+[W901 06:22:03.358068143 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 140509184 bytes (free: 55508992, total: 8214937600).
+[W901 06:22:05.120516135 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 134217728 bytes (free: 55508992, total: 8214937600).
+[W901 06:22:06.241819753 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 138412032 bytes (free: 53411840, total: 8214937600).
+[W901 06:22:09.136405003 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 140509184 bytes (free: 49217536, total: 8214937600).
+  100/450  0.46s/pair wall  eta 2.7 min
+  200/450  0.44s/pair wall  eta 1.8 min
+  300/450  0.43s/pair wall  eta 1.1 min
+  400/450  0.41s/pair wall  eta 0.3 min
+wrote .agents/wide_band.csv
+
+==========================================================================
+EXTERNAL TEST SET — 450 pairs (A 175, B 175, C 100, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8871     35.48
+   set A (175 pairs)        0.9726  <=5px 98.9%  <=1px 92.0%
+                                         median 0.33px
+   set B (175 pairs)        0.8171  <=5px 92.0%  <=1px 57.1%
+                                         median 0.89px
+Pose — scale (10)             credit 0.9036  med 0.37%      9.04
+Pose — rotation (10)        credit 0.8898  med 0.105deg      8.90
+Rejection (15)              F1(reject) 0.9016 @fix 0.180     13.52
+                            correct-rej 87  lost-real 6  missed-abs 13
+                            [lenient F1(present) 0.9731]
+                            [best-possible F1(reject) 0.9137 @ 0.1996]
+Calibration (10)                            AUC 0.9879      9.88
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   76.82
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

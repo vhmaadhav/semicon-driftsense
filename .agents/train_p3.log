@@ -1,0 +1,163 @@
+device: cuda   amp: bf16
+train pairs: 52000 from 104 split(s)   crop: 512
+val scenes: 200
+sampling 15000 of 52000 pairs per epoch (11.5 passes over the pool)
+parameters: 0.46M
+fine-tuning from weights/driftsense.pt: weights only (fresh optimizer, fresh one-cycle at max_lr 0.0003, epoch counter from 0)
+resumed from weights/driftsense.pt (epoch 0, best 10.599px)
+  e0 [50/937] loss 0.493 focal 0.377 off 0.1157 | batch median err 1.6px | 27.3 img/s | lr 1.21e-05
+  e0 [100/937] loss 0.472 focal 0.355 off 0.1172 | batch median err 1.1px | 33.5 img/s | lr 1.22e-05
+  e0 [150/937] loss 0.472 focal 0.355 off 0.1165 | batch median err 2.9px | 37.4 img/s | lr 1.25e-05
+  e0 [200/937] loss 0.471 focal 0.355 off 0.1159 | batch median err 1.3px | 39.0 img/s | lr 1.29e-05
+  e0 [250/937] loss 0.459 focal 0.345 off 0.1138 | batch median err 2.6px | 40.0 img/s | lr 1.34e-05
+  e0 [300/937] loss 0.460 focal 0.348 off 0.1124 | batch median err 0.9px | 40.6 img/s | lr 1.40e-05
+  e0 [350/937] loss 0.462 focal 0.350 off 0.1115 | batch median err 1.5px | 41.2 img/s | lr 1.47e-05
+  e0 [400/937] loss 0.466 focal 0.352 off 0.1138 | batch median err 26.3px | 41.8 img/s | lr 1.56e-05
+  e0 [450/937] loss 0.461 focal 0.347 off 0.1135 | batch median err 2.4px | 42.0 img/s | lr 1.65e-05
+  e0 [500/937] loss 0.457 focal 0.344 off 0.1135 | batch median err 1.9px | 42.1 img/s | lr 1.76e-05
+  e0 [550/937] loss 0.459 focal 0.345 off 0.1135 | batch median err 2.0px | 43.2 img/s | lr 1.88e-05
+  e0 [600/937] loss 0.460 focal 0.346 off 0.1138 | batch median err 2.1px | 44.2 img/s | lr 2.00e-05
+  e0 [650/937] loss 0.458 focal 0.345 off 0.1130 | batch median err 2.1px | 44.1 img/s | lr 2.14e-05
+  e0 [700/937] loss 0.455 focal 0.342 off 0.1125 | batch median err 26.9px | 44.4 img/s | lr 2.29e-05
+  e0 [750/937] loss 0.453 focal 0.341 off 0.1126 | batch median err 1.3px | 44.6 img/s | lr 2.45e-05
+  e0 [800/937] loss 0.451 focal 0.339 off 0.1123 | batch median err 3.4px | 45.0 img/s | lr 2.62e-05
+  e0 [850/937] loss 0.448 focal 0.335 off 0.1127 | batch median err 1.2px | 45.1 img/s | lr 2.79e-05
+  e0 [900/937] loss 0.447 focal 0.335 off 0.1126 | batch median err 2.6px | 45.4 img/s | lr 2.98e-05
+epoch 0: loss 0.4470 | val median 0.53px  acc@1 0.717  acc@2 0.917  acc@5 0.967  acc@10 0.967 | 10.1 min
+  e1 [50/937] loss 0.411 focal 0.297 off 0.1141 | batch median err 1.3px | 40.2 img/s | lr 3.34e-05
+  e1 [100/937] loss 0.429 focal 0.314 off 0.1153 | batch median err 1.4px | 42.6 img/s | lr 3.55e-05
+  e1 [150/937] loss 0.419 focal 0.307 off 0.1116 | batch median err 1.2px | 44.4 img/s | lr 3.78e-05
+  e1 [200/937] loss 0.405 focal 0.296 off 0.1094 | batch median err 16.8px | 44.6 img/s | lr 4.01e-05
+  e1 [250/937] loss 0.406 focal 0.297 off 0.1081 | batch median err 10.3px | 44.4 img/s | lr 4.25e-05
+  e1 [300/937] loss 0.405 focal 0.297 off 0.1088 | batch median err 2.1px | 44.1 img/s | lr 4.51e-05
+  e1 [350/937] loss 0.405 focal 0.297 off 0.1077 | batch median err 1.4px | 43.7 img/s | lr 4.77e-05
+  e1 [400/937] loss 0.411 focal 0.300 off 0.1110 | batch median err 8.9px | 43.4 img/s | lr 5.04e-05
+  e1 [450/937] loss 0.407 focal 0.297 off 0.1103 | batch median err 1.9px | 43.2 img/s | lr 5.31e-05
+  e1 [500/937] loss 0.405 focal 0.295 off 0.1101 | batch median err 1.3px | 43.6 img/s | lr 5.60e-05
+  e1 [550/937] loss 0.403 focal 0.293 off 0.1096 | batch median err 1.9px | 43.8 img/s | lr 5.89e-05
+  e1 [600/937] loss 0.404 focal 0.295 off 0.1097 | batch median err 1.1px | 43.9 img/s | lr 6.19e-05
+  e1 [650/937] loss 0.407 focal 0.297 off 0.1094 | batch median err 3.0px | 44.0 img/s | lr 6.50e-05
+  e1 [700/937] loss 0.407 focal 0.298 off 0.1097 | batch median err 0.9px | 44.5 img/s | lr 6.82e-05
+  e1 [750/937] loss 0.408 focal 0.298 off 0.1096 | batch median err 1.2px | 44.8 img/s | lr 7.14e-05
+  e1 [800/937] loss 0.408 focal 0.299 off 0.1093 | batch median err 1.4px | 45.3 img/s | lr 7.47e-05
+  e1 [850/937] loss 0.407 focal 0.298 off 0.1092 | batch median err 36.6px | 45.4 img/s | lr 7.80e-05
+  e1 [900/937] loss 0.408 focal 0.299 off 0.1098 | batch median err 44.1px | 45.3 img/s | lr 8.15e-05
+epoch 1: loss 0.4087 | val median 0.46px  acc@1 0.733  acc@2 0.933  acc@5 0.983  acc@10 0.983 | 7.4 min
+  e2 [50/937] loss 0.358 focal 0.257 off 0.1005 | batch median err 1.4px | 43.4 img/s | lr 8.75e-05
+  e2 [100/937] loss 0.395 focal 0.291 off 0.1037 | batch median err 2.2px | 46.5 img/s | lr 9.11e-05
+  e2 [150/937] loss 0.396 focal 0.288 off 0.1077 | batch median err 3.0px | 48.3 img/s | lr 9.47e-05
+  e2 [200/937] loss 0.394 focal 0.284 off 0.1098 | batch median err 1.9px | 48.5 img/s | lr 9.84e-05
+  e2 [250/937] loss 0.392 focal 0.282 off 0.1092 | batch median err 1.8px | 49.1 img/s | lr 1.02e-04
+  e2 [300/937] loss 0.392 focal 0.283 off 0.1091 | batch median err 1.6px | 49.2 img/s | lr 1.06e-04
+  e2 [350/937] loss 0.397 focal 0.288 off 0.1096 | batch median err 1.8px | 48.8 img/s | lr 1.10e-04
+  e2 [400/937] loss 0.393 focal 0.283 off 0.1099 | batch median err 2.8px | 49.2 img/s | lr 1.13e-04
+  e2 [450/937] loss 0.392 focal 0.281 off 0.1104 | batch median err 1.8px | 49.4 img/s | lr 1.17e-04
+  e2 [500/937] loss 0.390 focal 0.279 off 0.1109 | batch median err 1.6px | 49.7 img/s | lr 1.21e-04
+  e2 [550/937] loss 0.389 focal 0.278 off 0.1109 | batch median err 1.1px | 49.6 img/s | lr 1.25e-04
+  e2 [600/937] loss 0.391 focal 0.280 off 0.1108 | batch median err 1.8px | 49.5 img/s | lr 1.29e-04
+  e2 [650/937] loss 0.392 focal 0.281 off 0.1110 | batch median err 12.5px | 49.6 img/s | lr 1.33e-04
+  e2 [700/937] loss 0.390 focal 0.279 off 0.1112 | batch median err 1.4px | 49.9 img/s | lr 1.37e-04
+  e2 [750/937] loss 0.391 focal 0.280 off 0.1115 | batch median err 1.9px | 49.8 img/s | lr 1.41e-04
+  e2 [800/937] loss 0.392 focal 0.280 off 0.1117 | batch median err 2.1px | 50.0 img/s | lr 1.45e-04
+  e2 [850/937] loss 0.392 focal 0.280 off 0.1117 | batch median err 1.8px | 50.1 img/s | lr 1.49e-04
+  e2 [900/937] loss 0.392 focal 0.281 off 0.1111 | batch median err 1.3px | 49.8 img/s | lr 1.53e-04
+epoch 2: loss 0.3911 | val median 0.46px  acc@1 0.717  acc@2 0.917  acc@5 0.967  acc@10 0.967 | 6.5 min
+  e3 [50/937] loss 0.379 focal 0.275 off 0.1043 | batch median err 1.5px | 46.5 img/s | lr 1.60e-04
+  e3 [100/937] loss 0.399 focal 0.288 off 0.1112 | batch median err 17.4px | 47.4 img/s | lr 1.64e-04
+  e3 [150/937] loss 0.384 focal 0.277 off 0.1066 | batch median err 1.6px | 47.5 img/s | lr 1.68e-04
+  e3 [200/937] loss 0.384 focal 0.278 off 0.1059 | batch median err 1.3px | 48.3 img/s | lr 1.72e-04
+  e3 [250/937] loss 0.380 focal 0.274 off 0.1054 | batch median err 1.5px | 48.4 img/s | lr 1.76e-04
+  e3 [300/937] loss 0.383 focal 0.278 off 0.1055 | batch median err 1.2px | 48.8 img/s | lr 1.80e-04
+  e3 [350/937] loss 0.383 focal 0.277 off 0.1059 | batch median err 1.4px | 49.6 img/s | lr 1.84e-04
+  e3 [400/937] loss 0.383 focal 0.278 off 0.1053 | batch median err 11.6px | 49.3 img/s | lr 1.88e-04
+  e3 [450/937] loss 0.381 focal 0.276 off 0.1055 | batch median err 1.7px | 48.6 img/s | lr 1.92e-04
+  e3 [500/937] loss 0.378 focal 0.273 off 0.1050 | batch median err 1.3px | 48.4 img/s | lr 1.96e-04
+  e3 [550/937] loss 0.382 focal 0.275 off 0.1064 | batch median err 1.1px | 48.1 img/s | lr 2.00e-04
+  e3 [600/937] loss 0.381 focal 0.274 off 0.1068 | batch median err 2.1px | 47.6 img/s | lr 2.03e-04
+  e3 [650/937] loss 0.381 focal 0.274 off 0.1073 | batch median err 1.4px | 47.1 img/s | lr 2.07e-04
+  e3 [700/937] loss 0.380 focal 0.273 off 0.1074 | batch median err 1.1px | 46.1 img/s | lr 2.11e-04
+  e3 [750/937] loss 0.382 focal 0.274 off 0.1076 | batch median err 33.0px | 45.2 img/s | lr 2.15e-04
+  e3 [800/937] loss 0.383 focal 0.275 off 0.1084 | batch median err 2.6px | 44.2 img/s | lr 2.18e-04
+  e3 [850/937] loss 0.385 focal 0.276 off 0.1088 | batch median err 0.7px | 43.5 img/s | lr 2.22e-04
+  e3 [900/937] loss 0.387 focal 0.278 off 0.1090 | batch median err 1.6px | 42.8 img/s | lr 2.25e-04
+epoch 3: loss 0.3859 | val median 0.44px  acc@1 0.750  acc@2 0.950  acc@5 1.000  acc@10 1.000 | 8.5 min
+  saved weights/driftsense_p3.pt (acc@5 1.000, median 0.44px)
+  e4 [50/937] loss 0.398 focal 0.290 off 0.1079 | batch median err 1.0px | 32.4 img/s | lr 2.32e-04
+  e4 [100/937] loss 0.391 focal 0.286 off 0.1052 | batch median err 1.8px | 34.6 img/s | lr 2.35e-04
+  e4 [150/937] loss 0.395 focal 0.285 off 0.1103 | batch median err 1.4px | 34.5 img/s | lr 2.38e-04
+  e4 [200/937] loss 0.394 focal 0.283 off 0.1109 | batch median err 25.5px | 35.1 img/s | lr 2.42e-04
+  e4 [250/937] loss 0.394 focal 0.285 off 0.1090 | batch median err 2.2px | 35.2 img/s | lr 2.45e-04
+  e4 [300/937] loss 0.390 focal 0.281 off 0.1086 | batch median err 1.4px | 35.3 img/s | lr 2.48e-04
+  e4 [350/937] loss 0.394 focal 0.285 off 0.1089 | batch median err 9.6px | 35.2 img/s | lr 2.51e-04
+  e4 [400/937] loss 0.392 focal 0.283 off 0.1093 | batch median err 0.8px | 35.2 img/s | lr 2.54e-04
+  e4 [450/937] loss 0.388 focal 0.280 off 0.1085 | batch median err 1.2px | 35.4 img/s | lr 2.57e-04
+  e4 [500/937] loss 0.390 focal 0.282 off 0.1088 | batch median err 2.0px | 35.2 img/s | lr 2.60e-04
+  e4 [550/937] loss 0.387 focal 0.279 off 0.1075 | batch median err 1.6px | 35.4 img/s | lr 2.62e-04
+  e4 [600/937] loss 0.387 focal 0.279 off 0.1078 | batch median err 1.7px | 35.5 img/s | lr 2.65e-04
+  e4 [650/937] loss 0.386 focal 0.277 off 0.1081 | batch median err 1.7px | 35.6 img/s | lr 2.68e-04
+  e4 [700/937] loss 0.385 focal 0.277 off 0.1081 | batch median err 2.6px | 35.6 img/s | lr 2.70e-04
+  e4 [750/937] loss 0.384 focal 0.276 off 0.1078 | batch median err 1.9px | 35.5 img/s | lr 2.73e-04
+  e4 [800/937] loss 0.386 focal 0.278 off 0.1084 | batch median err 2.5px | 35.6 img/s | lr 2.75e-04
+  e4 [850/937] loss 0.386 focal 0.278 off 0.1084 | batch median err 1.9px | 35.6 img/s | lr 2.77e-04
+  e4 [900/937] loss 0.388 focal 0.280 off 0.1080 | batch median err 1.6px | 35.6 img/s | lr 2.79e-04
+epoch 4: loss 0.3878 | val median 0.53px  acc@1 0.717  acc@2 0.917  acc@5 0.967  acc@10 0.967 | 9.5 min
+  e5 [50/937] loss 0.356 focal 0.252 off 0.1042 | batch median err 2.4px | 31.3 img/s | lr 2.83e-04
+  e5 [100/937] loss 0.376 focal 0.269 off 0.1070 | batch median err 1.4px | 34.7 img/s | lr 2.85e-04
+  e5 [150/937] loss 0.377 focal 0.269 off 0.1071 | batch median err 1.9px | 36.7 img/s | lr 2.86e-04
+  e5 [200/937] loss 0.384 focal 0.274 off 0.1102 | batch median err 2.6px | 37.1 img/s | lr 2.88e-04
+  e5 [250/937] loss 0.393 focal 0.281 off 0.1116 | batch median err 3.0px | 36.5 img/s | lr 2.90e-04
+  e5 [300/937] loss 0.387 focal 0.277 off 0.1103 | batch median err 1.2px | 35.1 img/s | lr 2.91e-04
+  e5 [350/937] loss 0.390 focal 0.279 off 0.1107 | batch median err 2.1px | 34.5 img/s | lr 2.92e-04
+  e5 [400/937] loss 0.386 focal 0.275 off 0.1118 | batch median err 100.8px | 34.1 img/s | lr 2.94e-04
+  e5 [450/937] loss 0.384 focal 0.274 off 0.1109 | batch median err 1.2px | 33.9 img/s | lr 2.95e-04
+  e5 [500/937] loss 0.383 focal 0.273 off 0.1102 | batch median err 1.5px | 33.4 img/s | lr 2.96e-04
+  e5 [550/937] loss 0.382 focal 0.273 off 0.1093 | batch median err 1.8px | 33.2 img/s | lr 2.97e-04
+  e5 [600/937] loss 0.384 focal 0.275 off 0.1090 | batch median err 1.6px | 33.1 img/s | lr 2.97e-04
+  e5 [650/937] loss 0.382 focal 0.273 off 0.1085 | batch median err 190.5px | 32.9 img/s | lr 2.98e-04
+  e5 [700/937] loss 0.382 focal 0.273 off 0.1086 | batch median err 2.1px | 33.0 img/s | lr 2.99e-04
+  e5 [750/937] loss 0.381 focal 0.272 off 0.1086 | batch median err 2.7px | 32.9 img/s | lr 2.99e-04
+  e5 [800/937] loss 0.380 focal 0.271 off 0.1086 | batch median err 1.4px | 33.0 img/s | lr 3.00e-04
+  e5 [850/937] loss 0.380 focal 0.272 off 0.1084 | batch median err 1.5px | 32.9 img/s | lr 3.00e-04
+  e5 [900/937] loss 0.380 focal 0.272 off 0.1083 | batch median err 1.3px | 32.9 img/s | lr 3.00e-04
+epoch 5: loss 0.3803 | val median 0.44px  acc@1 0.733  acc@2 0.933  acc@5 1.000  acc@10 1.000 | 10.1 min
+  e6 [50/937] loss 0.386 focal 0.277 off 0.1096 | batch median err 2.3px | 28.5 img/s | lr 3.00e-04
+  e6 [100/937] loss 0.385 focal 0.276 off 0.1087 | batch median err 1.4px | 30.3 img/s | lr 3.00e-04
+  e6 [150/937] loss 0.382 focal 0.274 off 0.1082 | batch median err 1.1px | 30.4 img/s | lr 3.00e-04
+  e6 [200/937] loss 0.386 focal 0.279 off 0.1073 | batch median err 94.6px | 30.7 img/s | lr 3.00e-04
+  e6 [250/937] loss 0.385 focal 0.277 off 0.1079 | batch median err 1.0px | 31.0 img/s | lr 3.00e-04
+  e6 [300/937] loss 0.379 focal 0.271 off 0.1079 | batch median err 3.2px | 31.3 img/s | lr 3.00e-04
+  e6 [350/937] loss 0.380 focal 0.272 off 0.1078 | batch median err 1.3px | 31.3 img/s | lr 3.00e-04
+  e6 [400/937] loss 0.384 focal 0.276 off 0.1082 | batch median err 64.2px | 31.4 img/s | lr 3.00e-04
+  e6 [450/937] loss 0.387 focal 0.279 off 0.1082 | batch median err 1.9px | 31.3 img/s | lr 3.00e-04
+  e6 [500/937] loss 0.388 focal 0.278 off 0.1096 | batch median err 2.8px | 31.5 img/s | lr 3.00e-04
+  e6 [550/937] loss 0.386 focal 0.276 off 0.1094 | batch median err 29.6px | 31.6 img/s | lr 3.00e-04
+  e6 [600/937] loss 0.387 focal 0.278 off 0.1090 | batch median err 34.8px | 31.5 img/s | lr 3.00e-04
+  e6 [650/937] loss 0.386 focal 0.276 off 0.1097 | batch median err 1.8px | 31.6 img/s | lr 3.00e-04
+  e6 [700/937] loss 0.388 focal 0.277 off 0.1104 | batch median err 1.4px | 31.5 img/s | lr 3.00e-04
+  e6 [750/937] loss 0.389 focal 0.278 off 0.1113 | batch median err 1.5px | 31.4 img/s | lr 3.00e-04
+  e6 [800/937] loss 0.390 focal 0.278 off 0.1119 | batch median err 1.4px | 31.4 img/s | lr 3.00e-04
+  e6 [850/937] loss 0.389 focal 0.278 off 0.1119 | batch median err 1.4px | 31.3 img/s | lr 2.99e-04
+  e6 [900/937] loss 0.388 focal 0.277 off 0.1111 | batch median err 12.4px | 31.6 img/s | lr 2.99e-04
+epoch 6: loss 0.3879 | val median 0.47px  acc@1 0.733  acc@2 0.933  acc@5 0.983  acc@10 0.983 | 9.5 min
+  e7 [50/937] loss 0.368 focal 0.265 off 0.1033 | batch median err 2.1px | 40.9 img/s | lr 2.99e-04
+  e7 [100/937] loss 0.369 focal 0.261 off 0.1076 | batch median err 1.4px | 45.7 img/s | lr 2.99e-04
+  e7 [150/937] loss 0.367 focal 0.261 off 0.1061 | batch median err 30.7px | 46.1 img/s | lr 2.99e-04
+  e7 [200/937] loss 0.382 focal 0.273 off 0.1083 | batch median err 2.0px | 47.4 img/s | lr 2.99e-04
+  e7 [250/937] loss 0.378 focal 0.270 off 0.1080 | batch median err 14.9px | 47.8 img/s | lr 2.99e-04
+  e7 [300/937] loss 0.376 focal 0.270 off 0.1062 | batch median err 7.5px | 47.6 img/s | lr 2.99e-04
+  e7 [350/937] loss 0.378 focal 0.272 off 0.1060 | batch median err 2.1px | 47.7 img/s | lr 2.99e-04
+  e7 [400/937] loss 0.379 focal 0.273 off 0.1063 | batch median err 3.0px | 47.6 img/s | lr 2.99e-04
+  e7 [450/937] loss 0.380 focal 0.274 off 0.1065 | batch median err 24.6px | 47.8 img/s | lr 2.99e-04
+  e7 [500/937] loss 0.379 focal 0.272 off 0.1071 | batch median err 1.6px | 48.0 img/s | lr 2.98e-04
+  e7 [550/937] loss 0.378 focal 0.271 off 0.1073 | batch median err 1.7px | 48.0 img/s | lr 2.98e-04
+  e7 [600/937] loss 0.379 focal 0.272 off 0.1073 | batch median err 1.7px | 47.8 img/s | lr 2.98e-04
+  e7 [650/937] loss 0.378 focal 0.270 off 0.1076 | batch median err 68.5px | 48.0 img/s | lr 2.98e-04
+  e7 [700/937] loss 0.380 focal 0.272 off 0.1080 | batch median err 1.9px | 48.2 img/s | lr 2.98e-04
+  e7 [750/937] loss 0.380 focal 0.272 off 0.1080 | batch median err 0.9px | 48.3 img/s | lr 2.98e-04
+  e7 [800/937] loss 0.378 focal 0.270 off 0.1081 | batch median err 1.3px | 48.4 img/s | lr 2.98e-04
+  e7 [850/937] loss 0.379 focal 0.271 off 0.1081 | batch median err 1.1px | 48.5 img/s | lr 2.98e-04
+  e7 [900/937] loss 0.379 focal 0.271 off 0.1077 | batch median err 86.8px | 48.6 img/s | lr 2.98e-04
+epoch 7: loss 0.3777 | val median 0.46px  acc@1 0.750  acc@2 0.950  acc@5 1.000  acc@10 1.000 | 6.4 min
+  e8 [50/937] loss 0.402 focal 0.283 off 0.1188 | batch median err 1.7px | 56.6 img/s | lr 2.97e-04
+  e8 [100/937] loss 0.389 focal 0.275 off 0.1137 | batch median err 1.3px | 58.7 img/s | lr 2.97e-04
+TRAIN4DONE

@@ -1,0 +1,49 @@
+# Generated data — ~15 GB. Regenerate with generate_dataset.py / scripts/gen_data.py.
+data/
+sample/
+output/
+
+# Environment
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.pytest-tmp/
+.uv-cache/
+
+# Local editor and Graphify workspace
+.obsidian/
+.codex/
+graphify-out/
+
+# Training artifacts (the shipped weights file itself IS committed)
+logs/
+weights/*_last.pt
+
+# Evaluation output — keep the figures and metrics the README links to,
+# ignore the scratch subdirectories individual eval runs write into.
+results/*/
+.pytest_cache/
+
+# Working notes, measured results and agent context. Shared with the team:
+# .agents/PHASE2_STATE.md is the single source of truth for where Phase 2
+# stands, and the ext_*.csv files are the per-pair results every number in
+# README.md and IMPROVING.md is computed from.
+# NOTE: PHASE2_ADDENDUM.md is transcribed from a briefing deck marked
+# "Applied Materials Confidential". This repository is private; keep it that
+# way, or drop that one file.
+
+# Per-epoch training checkpoints (--keep-epochs); only the promoted weights ship.
+weights/*_e[0-9]*.pt
+weights/*_p2_history.json
+
+# HF port: staging tars, isolated venv, and upload state. None of this is
+# part of the submission and none of it should be tracked.
+venv-hf/
+.hf_stage/
+.agents/hf_port_state.tsv
+# agent memory (local only)
+.dsh/
+# reference sample materials (confidential -- never commit; see docs/VERIFIED_GROUND_TRUTH.md section 9)
+.agents/ref_material/
+.agents/ref_0901/

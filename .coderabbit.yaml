@@ -1,0 +1,56 @@
+# CodeRabbit review configuration.
+# Schema: https://docs.coderabbit.ai/reference/configuration
+language: en-US
+early_access: false
+
+reviews:
+  profile: chill            # low-noise; escalate to `active` if too lenient
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  commit_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - phase2              # this repo's PRs target phase2, not main
+  path_filters:
+    # Experiment artifacts and bulk data: never reviewable, huge, noisy
+    - "!**/.agents/**"
+    - "!**/data/**"
+    - "!**/weights/**"
+    - "!**/venv*/**"
+    - "!**/*.csv"
+    - "!**/*.pt"
+    - "!**/graphify-out/**"
+    - "!**/*.ipynb"
+  path_instructions:
+    - path: "**/*.py"
+      instructions: >-
+        This is a semiconductor pattern-matching research repo (Siamese
+        correlation network, PyTorch). Tests run via ./venv313/bin/python -m
+        pytest -q (NOT system python; venv/ is broken). Prefer explicit
+        hand-derived test literals over values generated from the
+        implementation. Numerics: fp32 loss over bf16 autocast is deliberate
+        (focal term underflow); flag only genuine numerical hazards.
+        Experiment scripts under scripts/ are working tools - do not demand
+        production hardening there, but DO flag unrestricted torch.load
+        (weights_only) on any inference path and any scorer-semantics change
+        that could drift from register.py's submission contract (threshold
+        0.18, band=False, zero loc/pose credit when found=0).
+    - path: "register.py"
+      instructions: >-
+        Phase 2 submission entry point. Treat any change here as
+        correctness-critical: every pair_id must appear exactly once, no
+        network access, DEFAULT_FOUND_THRESHOLD and band=False are the
+        measured shipped configuration.
+    - path: "scripts/eval_ext.py"
+      instructions: >-
+        Grader-equivalent evaluator. Its defaults must keep mirroring
+        register.py (threshold, band). Scoring semantics: declined present
+        pairs earn zero localisation and zero pose credit.
+
+chat:
+  auto_reply: true

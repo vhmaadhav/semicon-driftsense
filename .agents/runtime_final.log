@@ -1,0 +1,12 @@
+
+data/ext_p2/test_B_0000   n=20  threads=4  hypotheses=3
+  median 3.35s   mean 3.24s   p90 4.16s   max 4.42s
+  budget: median<=5s OK   max<20s OK
+
+  stage breakdown (share of 64.8s total):
+    locate (network)         55.73s   86.0%
+    pose_candidates           7.88s   12.2%
+    polish_pose               0.93s    1.4%
+    canonicalize              0.03s    0.0%
+    refine_zncc               0.01s    0.0%
+    (unattributed)            0.24s

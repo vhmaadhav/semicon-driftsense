@@ -1,0 +1,317 @@
+# References
+
+Sources behind the synthetic-data physics, the degradation/augmentation model,
+and the network design. Grouped by the decision each one supports.
+
+Where a claim is standard textbook material the canonical text is cited rather
+than a specific paper. Nothing here is used verbatim; the generator implements
+simplified, publicly-documented models, and all device dimensions are
+illustrative of published scaling trends rather than any fab's actual process.
+
+---
+
+## 1. Upstream generator
+
+The synthetic-data generator this project builds on:
+
+- **Drift-Sense Synthetic Dataset Generator**, `aayushraina21`, Hugging Face
+  Spaces — <https://huggingface.co/spaces/aayushraina21/drift-sense-synthetic-data>
+  Vendored unmodified in [`generator/`](generator/). Supplies the DRAM/FinFET
+  pattern synthesis, mat/strip zone composition, structural-defect model and
+  SEM acquisition model.
+
+This project adds: geometry-corrected ground truth, a parallel/reproducible
+generation wrapper, the learned localiser, and the evaluation harness. The
+ground-truth correction is described in [`README.md`](README.md) and
+implemented in [`driftsense/generate.py`](driftsense/generate.py).
+
+---
+
+## 2. SEM image formation — justifies the acquisition-noise model
+
+The search/reference degradation chain (beam PSF blur, Poisson shot noise,
+additive detector noise, charging artifacts, astigmatism, vignetting) follows
+standard SEM image-formation theory.
+
+- Reimer, L. *Scanning Electron Microscopy: Physics of Image Formation and
+  Microanalysis*, 2nd ed., Springer.
+  — Beam–specimen interaction, probe size and its effect on resolution, and
+  the origin of the Gaussian probe profile modelled as `gaussian_psf_blur`.
+- Goldstein, J. et al. *Scanning Electron Microscopy and X-Ray Microanalysis*,
+  Springer.
+  — Signal statistics and the dose/noise trade-off. Motivates modelling
+  detected signal as Poisson in electron count (`add_shot_noise`, with `dose`
+  as a proxy for dwell time / beam current) and the separate additive
+  Gaussian detector-noise term.
+  — Also covers specimen charging on insulating layers, the basis for the
+  horizontal bright-streak artifact (`add_charging_streaks`).
+
+**Why it matters here:** the reference is a slow, high-dose acquisition and
+the search is a fast, wide-area, low-dose one. Modelling them with *different*
+dose and noise (rather than the same image plus noise) is what makes the
+matching problem realistic, and it is why the network standardises each frame
+independently instead of assuming a shared exposure.
+
+## 3. Scan distortion and drift — justifies the geometric warps
+
+- Raster-scan drift, hysteresis and scan non-linearity in electron microscopy
+  are well documented as a metrology error source; they motivate the
+  progressive row-shear plus per-row jitter model (`apply_raster_drift`) and
+  the radial (barrel/pincushion) scan-linearity term
+  (`apply_barrel_distortion`).
+  See the SEM instrumentation chapters of Reimer and of Goldstein et al. above.
+
+**Why it matters here:** this is the actual subject of the problem statement —
+Navigation-Error Recovery exists because stage and scan errors accumulate
+between visits. It is also the reason the upstream ground truth needed
+correcting: these warps move the pattern *after* the crop coordinates are
+fixed.
+
+## 4. Process variation and defects — justifies the pattern fingerprint
+
+- **Line-edge/line-width roughness (LER/LWR) and CD variation** are intrinsic
+  to lithography and are the standard subject of CD-SEM metrology. Modelled
+  as per-line width jitter and cumulative placement jitter in the pattern
+  generators, and as a global CD bias (`linewidth_bias_nm`).
+  - Bunday, B. et al. — CD-SEM metrology and LER/LWR measurement work
+    presented in the SPIE *Advanced Lithography* / *Metrology, Inspection, and
+    Process Control* series.
+- **Resist/high-aspect-ratio pattern collapse** from capillary forces during
+  drying, modelled by `structural_defects.maybe_collapse_gap`:
+  - Tanaka, T., Morigami, M., Atoda, N. — work on the mechanism of resist
+    pattern collapse during development, *Journal of The Electrochemical
+    Society* / *Jpn. J. Appl. Phys.*
+- **Corner rounding** from the finite resolution of the litho/etch process,
+  modelled as a morphological rounding radius.
+
+**Why it matters here:** these are the *only* reasons the layout is not
+perfectly periodic. Cumulative placement jitter of ~1–1.5 nm per line
+compounds as a random walk, so grid phase drifts measurably across a 10 µm
+field; per-line CD variation survives the 10× downsample as low-amplitude
+intensity modulation. Together they are the fingerprint that makes a specific
+site identifiable at all.
+
+## 5. Device architecture — justifies the layout presets
+
+- **DRAM 6F² folded-bitline cell** (2F × 3F cell, word-line pitch ≈ 2F,
+  bit-line pitch ≈ 3F) — standard memory-architecture material, and the basis
+  for the `dram_*` presets.
+- **FinFET fin/gate pitch scaling** — the `finfet_*` presets follow published
+  fin-pitch and contacted-poly-pitch (CPP) scaling trends.
+  - Auth, C. et al. "A 22nm High Performance and Low-Power CMOS Technology
+    Featuring Fully-Depleted Tri-Gate Transistors...", *Symposium on VLSI
+    Technology*, 2012.
+- **IRDS** (International Roadmap for Devices and Systems), IEEE —
+  <https://irds.ieee.org/> — for pitch/scaling trend context.
+- **Array mats separated by peripheral/routing strips** — memory arrays are
+  built from discrete sub-array blocks rather than one uniform field; this is
+  what `patterns/zones.py` composes, and it is the strongest globally unique
+  cue available to the matcher.
+
+## 6. Classical matching — the baseline and the refinement stage
+
+- Lewis, J. P. "Fast Normalized Cross-Correlation", *Vision Interface*, 1995.
+  — ZNCC, the classical baseline and the sub-pixel refinement stage.
+- Kuglin, C. D. and Hines, D. C. "The Phase Correlation Image Alignment
+  Method", *IEEE Int. Conf. on Cybernetics and Society*, 1975.
+  — Considered as an alternative sub-pixel translation estimator; parabolic
+  interpolation of the ZNCC peak was used instead.
+
+**Why it matters here:** ZNCC is precise once it is in the right neighbourhood
+but latches onto the wrong repeat in periodic layouts. The design splits those
+two jobs — the network chooses the region, ZNCC places it sub-pixel.
+
+### Comparing correlation scores across template sizes
+
+- Lewis (1995), above, §2: NCC is normalised over the template's own support,
+  so the statistic is comparable only between templates of equal pixel count.
+  Peak NCC rises as the support shrinks, because fewer samples are easier to
+  fit by chance.
+
+**Why it matters here:** a Phase 2 scale search renders a new template per
+candidate magnification, and `template_px = reference_px / magnification`, so
+the candidates have *different* supports by construction. Ranking them by raw
+`TM_CCOEFF_NORMED` therefore carries a systematic pull towards larger
+magnification (smaller template). `polish_pose` pins the template canvas
+across its sweep so every candidate is scored over an identical pixel count,
+which removes that pull; `make_template(..., canvas=...)` exists for this.
+
+### Robust similarity for hypothesis verification
+
+- Zabih, R. and Woodfill, J. "Non-parametric Local Transforms for Computing
+  Visual Correspondence", *ECCV* 1994. — The rank and census transforms:
+  each pixel is replaced by a summary of the local intensity *ordering*, so
+  correlation over them tolerates a large fraction of outliers and is invariant
+  to monotonic intensity change.
+- Elboher, E. and Werman, M. "Asymmetric Correlation: A Noise Robust Similarity
+  Measure for Template Matching", *IEEE TIP* 2013.
+- Marr, D. and Hildreth, E. "Theory of Edge Detection", *Proc. R. Soc. B* 1980.
+  — The difference-of-Gaussians band-pass.
+
+**What we actually adopted, and why not the obvious one.** The rank transform
+is the textbook answer for impulse noise, and impulse noise is the second
+strongest discriminator of our Set B failures (Cohen's d = 1.21). It was
+measured as a hypothesis selector and **rejected**: it rescues the most
+failures (14 of 22) but breaks 13 of 180 pairs that currently succeed, for a
+net far below the incumbent ZNCC. It discards too much signal on clean frames.
+An independent investigation (PR #3) reached the same verdict on different
+data. The citation is kept because the method was tried and the negative result
+is the useful part.
+
+A difference-of-Gaussians band was the better measured choice (net +10 against
+the incumbent's +7) and is applied in the coarse pose sweep, where Set B's
+degradations sit at both spectral extremes — charging low-frequency, shot and
+impulse noise high-frequency — with the layout structure between them.
+
+### Realising a continuous scale from a discrete raster
+
+- Unser, M., Aldroubi, A. and Eden, M. "B-Spline Signal Processing", *IEEE
+  Trans. Signal Processing* 41(2), 1993. — Resampling a discrete image at a
+  non-integer scale is an interpolation problem; the achievable geometry is
+  not restricted to integer output sizes.
+- Evangelidis, G. D. and Psarakis, E. Z. "Parametric Image Alignment Using
+  Enhanced Correlation Coefficient Maximization", *IEEE TPAMI* 30(10), 2008.
+  — The standard photometric refinement of a parametric warp to sub-pixel
+  precision, and the reference formulation for treating scale as a continuous
+  warp parameter rather than an output-size choice.
+
+**Why it matters here:** rendering the template with `cv2.resize` to
+`round(reference_px / m)` quantises the *realised* magnification to
+`reference_px / round(reference_px / m)` — 43 attainable values across
+[8, 12], with steps 0.81–1.22% wide. The Phase 2 scale tier pays full credit
+below 1%, so the quantisation step is as wide as the whole full-credit band
+and any search over `m` optimises a piecewise-constant objective.
+`make_template` therefore applies the residual sub-integer scale as part of
+the affine it was already paying for to apply rotation, which makes the
+realised scale continuous (measured: median realisation error 0.26% → 0.012%)
+at no additional resampling cost.
+
+## 7. Network design
+
+- Bertinetto, L. et al. "Fully-Convolutional Siamese Networks for Object
+  Tracking", *ECCV Workshops*, 2016.
+  — The shared-encoder + cross-correlation formulation this model follows.
+- Li, B. et al. "SiamRPN++: Evolution of Siamese Visual Tracking with Very
+  Deep Networks", *CVPR*, 2019.
+  — Grouped/depthwise cross-correlation producing a multi-channel response
+  volume rather than a single map.
+- Yu, F. and Koltun, V. "Multi-Scale Context Aggregation by Dilated
+  Convolutions", *ICLR*, 2016.
+  — The dilated stacks in the context branch and the head, used to reach the
+  several-hundred-pixel scale of the mat/strip composition.
+- Lin, T.-Y. et al. "Focal Loss for Dense Object Detection", *ICCV*, 2017.
+- Law, H. and Deng, J. "CornerNet: Detecting Objects as Paired Keypoints",
+  *ECCV*, 2018.
+- Zhou, X., Wang, D., Krähenbühl, P. "Objects as Points", arXiv:1904.07850,
+  2019.
+  — The penalty-reduced focal loss and the centre-heatmap-plus-offset
+  formulation. One positive against ~10⁴ negatives per frame makes plain BCE
+  unusable here.
+- Sun, J. et al. "LoFTR: Detector-Free Local Feature Matching with
+  Transformers", *CVPR*, 2021.
+  — Considered as the cross-attention alternative; noted as the upgrade path
+  if correlation-based disambiguation plateaus.
+
+## 8. Training procedure
+
+- Loshchilov, I. and Hutter, F. "Decoupled Weight Decay Regularization",
+  *ICLR*, 2019. — AdamW.
+- Smith, L. N. and Topin, N. "Super-Convergence: Very Fast Training of Neural
+  Networks Using Large Learning Rates", arXiv:1708.07120. — the one-cycle
+  learning-rate schedule.
+- Ioffe, S. and Szegedy, C. "Batch Normalization: Accelerating Deep Network
+  Training by Reducing Internal Covariate Shift", *ICML*, 2015.
+
+## 9. Augmentation choices
+
+| Augmentation | Justification |
+|---|---|
+| Dihedral (8 square symmetries) | Wafer layouts appear at arbitrary orientation relative to the stage; applied jointly to reference and search so the pair stays consistent. |
+| Independent photometric jitter (gamma, gain, offset, noise) on each frame | Reference and search are separate acquisitions at different dose and detector settings — §2. The model must not assume a shared exposure. |
+| Multiplicative (speckle) noise, σ ∈ [0.05, 0.40] | Added after failure analysis: speckle was the strongest predictor of a wrong-repeat lock-on (standardised effect +0.59). Because it scales with signal it survives per-image standardisation, unlike additive noise — see §2 on detector gain variation. |
+| Impulse (salt-and-pepper) noise | Dead/hot detector pixels and discharge events — §2. |
+| Per-image standardisation | Same reason; the cheapest way to make two differently-exposed frames comparable. |
+| Randomised acquisition conditions per sample | Training on one fixed operating point overfits to a perfectly-calibrated column. Ranges span the `low`…`severe` levels used by the upstream baseline evaluation. |
+| Random search-window crop | Compute (a 512 px window costs ~4× less than the full frame for the same single positive) and translation augmentation. |
+| Multi-crop generation (many references per canvas) | The 10000² canvas dominates generation cost; extra reference crops are nearly free, giving 8× the training scenes for ~1× the cost. |
+
+---
+
+## 10. Edge brightening, rotation and magnification variation
+
+The problem statement requires the dataset generator to model "independent
+sensor noise per image, edge-brightening (mimicking SEM behavior), blur,
+rotation, and scaling variations". Noise and blur are covered in §2; the
+remaining three are implemented in `driftsense/generate.py` (`PoseParams`,
+`apply_edge_brightening`, `search_affine`) and exposed on
+`generate_dataset.py` as `--edge-brightening`, `--rotation-deg` and
+`--magnification`. All three default to the nominal no-op, so the shipped
+splits reproduce byte-for-byte.
+
+### Edge brightening (secondary-electron edge effect)
+
+Secondary electrons are emitted within a few nanometres of the surface, so
+their escape probability rises sharply where the surface is tilted or a
+feature edge is exposed: the interaction volume intersects more free surface.
+The consequence is the single most recognisable feature of an SE image —
+edges read brighter than either adjacent flat region, so structures appear
+outlined rather than flatly shaded. We model it to first order as an additive
+term proportional to local gradient magnitude, which is the standard
+approximation of the sec θ tilt dependence for small local slopes.
+
+- Goldstein, J. I. *et al.* **Scanning Electron Microscopy and X-Ray
+  Microanalysis**, Springer. The standard text; the edge/tilt contrast
+  mechanism and the sec θ yield dependence.
+- Reimer, L. **Scanning Electron Microscopy: Physics of Image Formation and
+  Microanalysis**, Springer Series in Optical Sciences. Secondary-electron
+  yield versus surface tilt and the resulting edge contrast.
+- Seiler, H. "Secondary electron emission in the scanning electron
+  microscope." *Journal of Applied Physics* 54, R1 (1983).
+  <https://doi.org/10.1063/1.332840> — review of SE yield, escape depth and
+  the angular dependence that produces edge brightening.
+
+### Rotation and magnification variation
+
+Stage rotation and residual calibration error between the high- and
+low-magnification acquisitions leave the two frames related by more than a
+pure translation. The ranges implemented (about ±2° and a 9–11× ratio) follow
+the problem statement rather than being derived here.
+
+- Sutton, M. A., Orteu, J.-J. and Schreier, H. **Image Correlation for Shape,
+  Motion and Deformation Measurements**, Springer. Affine (scale + rotation +
+  translation) image relation and its estimation, the standard framing for
+  correlation under pose.
+- Carter, W. C., Cannon, R. M. *et al.* and the wider SEM-metrology
+  literature on magnification calibration: reported magnification carries a
+  few percent uncertainty unless calibrated against a traceable pitch
+  standard, which is the basis for treating the ratio as a range.
+- See also §3, which cites the scan-distortion literature underlying the
+  shear/drift model applied in the same imaging step.
+
+### Polygon scaling (Set B, ±20%)
+
+Phase 2 names "polygon scaling ±20%" among the Set B degradations. It is
+modelled as a *multiplicative* CD change applied to every drawn feature with
+the pitch held fixed (`GenerationParams.polygon_scale_fraction`), which is
+what across-wafer and across-field CD variation actually does: exposure dose
+and etch bias move linewidth, they do not move the placement grid.
+
+- Mack, C. **Fundamental Principles of Optical Lithography**, Wiley, 2007.
+  — Dose/focus move CD while the mask pitch is fixed; the basis for scaling
+  feature width without scaling pitch.
+- Bunday, B. *et al.* "CD-SEM measurement uncertainty and CD uniformity",
+  *Proc. SPIE Metrology, Inspection, and Process Control*. — Reported
+  across-field and across-wafer CD uniformity budgets, the physical
+  justification for a double-digit percentage range.
+
+**Why it is not `linewidth_bias_nm`.** That knob is additive in nanometres, so
+a fixed value is a different *relative* change on a 20 nm line than on a 45 nm
+one and cannot express a uniform ±20% across the twelve architecture presets.
+The two are kept as separate parameters and sampled independently.
+
+**Note on sampling.** Rotation and off-nominal magnification are applied as a
+single affine sampling step against a pre-blurred canvas, not as a resize
+followed by a rotate. Each resampling pass costs interpolation blur, and
+composing them keeps the ground truth exactly invertible — the matrix that
+renders the frame is the matrix that maps the label (verified to <0.1 px in
+`tests/test_generator.py`).

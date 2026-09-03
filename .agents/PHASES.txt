@@ -1,0 +1,39 @@
+[23:18] GPU PHASE: training 40 epochs on 169 shards
+[23:26] GPU PHASE: training 40 epochs on 169 shards
+[23:29] === round 1: waiting for training to finish ===
+[02:26] training stopped after 40 epochs
+[02:26] === evaluating weights/driftsense_p6.pt on the full 2500-pair set (gpu) ===
+[02:34] RESULT round 1: Set B credit 0.7463   total 73.36 / 85
+[02:34]   reference: shipped 0.6986, 8-epoch checkpoint 0.7158
+  total 73.26   loc 0.8229 (A 0.9477 B 0.7209)   scale 0.9051  rot 0.9030  F1 0.8261  AUC 0.9871
+  correct-rejections 456   real instances declined 148   absent accepted 44
+
+Best: score (shipped) >= 0.1909
+  total 73.80   loc 0.8334 (A 0.9511 B 0.7371)   scale 0.9018  rot 0.8992  F1 0.8390  AUC 0.9871
+  correct-rejections 430   real instances declined 95   absent accepted 70
+
+  gain vs shipped: +0.54 points (held-out estimate 73.62)
+[02:34] VERDICT: Set B improved materially (0.7463 vs 0.7158). More training is justified.
+[02:34] === fetching more Set C shards (rejection is the weak half) ===
+[02:34] queued 60 shards of set C across 6 workers
+[02:34] DONE set C  pool=169 shards, 84500 pairs
+[02:34] === round 2 training ===
+[02:35] === round 2: waiting for training to finish ===
+[04:50] training stopped after 40 epochs
+[04:50] NOTE watchdog raised: [02:26:48] ALERT training process gone without a completion marker
+[04:50] === evaluating weights/driftsense_p6.pt on the full 2500-pair set (gpu) ===
+[04:57] RESULT round 2: Set B credit 0.7463   total 73.36 / 85
+[04:57]   reference: shipped 0.6986, 8-epoch checkpoint 0.7463
+  total 73.26   loc 0.8229 (A 0.9477 B 0.7209)   scale 0.9051  rot 0.9030  F1 0.8261  AUC 0.9871
+  correct-rejections 456   real instances declined 148   absent accepted 44
+
+Best: score (shipped) >= 0.1909
+  total 73.80   loc 0.8334 (A 0.9511 B 0.7371)   scale 0.9018  rot 0.8992  F1 0.8390  AUC 0.9871
+  correct-rejections 430   real instances declined 95   absent accepted 70
+
+  gain vs shipped: +0.54 points (held-out estimate 73.62)
+[04:57] VERDICT: Set B did not improve materially (0.7463 vs 0.7463). More training is NOT justified -- stopping.
+[04:57] === CPU runtime check (efficiency component -- must be CPU, idle) ===
+  median 3.12s   mean 3.06s   p90 3.86s   max 3.95s
+  budget: median<=5s OK   max<20s OK
+[04:58] ALLPHASESDONE
