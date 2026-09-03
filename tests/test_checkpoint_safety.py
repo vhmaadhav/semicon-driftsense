@@ -34,9 +34,13 @@ def test_no_unrestricted_pickle_loading_on_inference_paths():
         # Any virtualenv, not just the two that existed when this was written:
         # a second env (venv-train, venv-hf) puts torch's own source inside the
         # walk, and torch uses weights_only=False in ~40 places of its own.
+        # phase1/ is the frozen pre-Phase-2 archive, not a reachable inference
+        # path from anything at root -- its own train.py --resume line is the
+        # same accepted pattern the root train.py exemption below covers.
         dirnames[:] = [d for d in dirnames
                        if d not in (".git", "__pycache__", "graphify-out",
-                                    ".skill-port", ".dsh", ".sdd", ".venv")
+                                    ".skill-port", ".dsh", ".sdd", ".venv",
+                                    "phase1")
                        and not d.startswith("venv")
                        and not os.path.exists(os.path.join(dirpath, d, "pyvenv.cfg"))]
         for name in filenames:
