@@ -419,10 +419,10 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 
 ## Building the submission ZIP
 
-The graded artifact is a ZIP the organizers extract and run, not a link to this
-repo, so it is built from an explicit allow-list rather than from an archive of
-`main` — which would otherwise carry `phase1/`, `.agents/`, and 48 MB of unused
-checkpoints into whatever a judge opens.
+The submission form points judges to this GitHub repository. For reproducibility
+and artifact validation, a clean submission ZIP can also be built locally from
+an explicit allow-list rather than archiving all of `main` — which would otherwise
+carry `phase1/`, `.agents/`, and 48 MB of unused checkpoints into the artifact.
 
 ```bash
 python scripts/build_submission_zip.py --out dist/submission.zip
