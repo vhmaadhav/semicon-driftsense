@@ -222,10 +222,10 @@ than one hypothesis recovers nearly all of them.
 
 ### Where the remaining points are
 
-[`IMPROVING.md`](IMPROVING.md) records the measured standing against each
-scoring component, the two ceilings that bound it — the ≤1px tier is capped by
-a σ≈1 px per-row jitter floor in the label, and extra pose hypotheses beyond
-three are exhausted — and the ranked work that is still worth doing.
+See `FAILURE_ANALYSIS.md`'s per-mode findings for the measured standing
+against each scoring component and the two ceilings that bound it — the ≤1px
+tier is capped by a σ≈1 px per-row jitter floor in the label, and extra pose
+hypotheses beyond three are exhausted.
 
 Note on weights: `weights/driftsense.pt` is unchanged from Phase 1. Every gain
 here is inference-side; the Phase 2 fine-tune produced no validation
