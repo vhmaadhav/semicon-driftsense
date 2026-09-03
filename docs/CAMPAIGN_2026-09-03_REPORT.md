@@ -1,5 +1,14 @@
 # Drift-Sense CPU Benchmark — Consolidated Report (post-campaign, 2026-09-03)
 
+> **Superseded 2026-09-03 (PR #48 review).** The fused confidence described
+> below was measured against the incumbent on an untouched 500-pair holdout
+> and **lost 0.43 points** (paired bootstrap P(better) = 0.011), while moving
+> rejection F1 0.8958 -> 0.8663, away from the +4 bonus gate. It is NOT
+> shipped: `SHIPPED_CONFIDENCE="legacy_min"` at threshold 0.18. The numbers
+> below stand as the record of the experiment, not of the shipped decode.
+
+
+
 > **Rebase note (2026-09-03, pre-PR):** this campaign was originally developed
 > against phase2 @ fb81629 and then rebased onto `origin/phase2` @ b3949a5,
 > which had moved 23 commits ahead (Set C fine-tune weights, channels_last CPU

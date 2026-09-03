@@ -11,6 +11,8 @@ exists to make an accidental refit of the shipped constants fail loudly: the
 pinned literals below must equal the constants in calibration.py, and any
 change to either is a deliberate, reviewable act.
 """
+import sys
+
 import numpy as np
 import pytest
 
@@ -175,18 +177,46 @@ def test_shipped_features_are_frozen_and_ordered():
     assert set(SHIPPED_COEFS) == set(_SHIPPED_ORDER)
 
 
+# Literal copies of the fitted constants. These MUST be typed out rather than
+# read back from driftsense.calibration -- an `expected` dict built from
+# SHIPPED_COEFS freezes nothing, because editing the source moves both sides of
+# the comparison together. (That tautology is exactly what the first version of
+# this test did, and it is the reason the pin is spelled out here.)
+_FROZEN_COEFS = {
+    "score":       8.792353455411558,
+    "zncc":        4.771002619826103,
+    "peak_ratio":  -0.22820720932034558,
+    "pose_peak":   -6.636234556838288,
+    "psr":         0.001277399759015737,
+    "apce":        3.981647734693036e-05,
+}
+_FROZEN_INTERCEPT = -0.6718057933029007
+
+
 def test_shipped_constants_are_frozen():
     """A refit must be a deliberate, reviewed change, not a silent drift."""
-    expected = {
-        "score": SHIPPED_COEFS["score"], "zncc": SHIPPED_COEFS["zncc"],
-        "peak_ratio": SHIPPED_COEFS["peak_ratio"],
-        "pose_peak": SHIPPED_COEFS["pose_peak"],
-        "psr": SHIPPED_COEFS["psr"], "apce": SHIPPED_COEFS["apce"],
-    }
-    # Pin the *values* by round-trip: any edit changes this vector's checksum.
-    vec = [float(expected[f]) for f in _SHIPPED_ORDER] + [float(SHIPPED_INTERCEPT)]
+    assert set(SHIPPED_COEFS) == set(_FROZEN_COEFS)
+    for f, want in _FROZEN_COEFS.items():
+        assert float(SHIPPED_COEFS[f]) == pytest.approx(want, rel=0, abs=1e-15), (
+            f"SHIPPED_COEFS[{f!r}] changed: {SHIPPED_COEFS[f]!r} != {want!r}. "
+            "Refitting is fine, but update this literal in the same commit so "
+            "the change is reviewed.")
+    assert float(SHIPPED_INTERCEPT) == pytest.approx(_FROZEN_INTERCEPT, rel=0, abs=1e-15)
+    vec = [float(SHIPPED_COEFS[f]) for f in _SHIPPED_ORDER] + [float(SHIPPED_INTERCEPT)]
     assert all(np.isfinite(vec)), "a non-finite constant would poison every score"
-    assert abs(float(SHIPPED_INTERCEPT) - (-0.6718057933029007)) < 1e-12
+
+
+def test_frozen_pin_is_not_tautological():
+    """Guard the guard: prove the pin above compares against real literals.
+
+    If someone rewrites _FROZEN_COEFS to read from SHIPPED_COEFS, this fails.
+    """
+    import inspect
+    src = inspect.getsource(sys.modules[__name__])
+    block = src.split("_FROZEN_COEFS = {", 1)[1].split("}", 1)[0]
+    assert "SHIPPED_COEFS" not in block, (
+        "_FROZEN_COEFS must contain literal numbers, not values read back from "
+        "the module under test -- otherwise the freeze test passes for any refit")
 
 
 def test_shipped_output_is_finite_and_in_unit_interval():
@@ -229,8 +259,14 @@ def test_nan_pose_peak_does_not_silently_force_found_zero():
         f"got {conf} vs {SHIPPED_THRESHOLD}")
 
 
-def test_locate_phase2_explicit_pose_yields_a_finite_confidence():
-    """End-to-end cover of the pose= path that produces the NaN feature."""
+def test_locate_phase2_explicit_pose_yields_a_finite_confidence(monkeypatch):
+    """End-to-end cover of the pose= path that produces the NaN feature.
+
+    The shipped default is `legacy_min`, whose min() branch never touches
+    `calibrate_shipped` -- so this test MUST force the fused6 branch, or it
+    silently stops covering the regression it exists for. fused6 is retained as
+    a future toggle, and this is the only branch-level integration test of it.
+    """
     pytest.importorskip("cv2")
     pytest.importorskip("torch")
     import cv2
@@ -247,11 +283,20 @@ def test_locate_phase2_explicit_pose_yields_a_finite_confidence():
     search[400:400 + th, 400:400 + tw] = tpl
 
     import infer as I
+    from driftsense import matching as M
     loaded = I.load_model("weights/driftsense.pt")
     if loaded is None:
         pytest.skip("weights unavailable")
     model, device = loaded
+
+    monkeypatch.setattr(M, "SHIPPED_CONFIDENCE", "fused6", raising=True)
     res = locate_phase2(model, ref, search, device, pose=(10.0, 0.0))
     assert np.isfinite(res["confidence"]), (
-        "explicit-pose decode produced a non-finite confidence; the NaN "
-        "pose_peak guard has regressed")
+        "explicit-pose decode produced a non-finite confidence on the fused6 "
+        "branch; the NaN pose_peak guard has regressed")
+    assert 0.0 <= res["confidence"] <= 1.0, "fused6 must emit a probability"
+
+    # And the legacy branch must stay finite too.
+    monkeypatch.setattr(M, "SHIPPED_CONFIDENCE", "legacy_min", raising=True)
+    res2 = locate_phase2(model, ref, search, device, pose=(10.0, 0.0))
+    assert np.isfinite(res2["confidence"])

@@ -202,7 +202,8 @@ def main():
                                         verification=a.verification,
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
-                # The reported confidence (see locate_phase2): fused 6-feature
+                # The reported confidence (see locate_phase2): currently the legacy
+                # min(network score, native ZNCC); optionally the fused 6-feature
                 # calibrated P(present) on the model path, raw ZNCC on the
                 # fallback path.
                 score = float(res.get("confidence", res.get("score", 0.0)))

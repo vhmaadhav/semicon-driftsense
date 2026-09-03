@@ -1,5 +1,14 @@
 # Inference-level tweaks: side-by-side score log
 
+> **Superseded 2026-09-03 (PR #48 review).** The fused confidence described
+> below was measured against the incumbent on an untouched 500-pair holdout
+> and **lost 0.43 points** (paired bootstrap P(better) = 0.011), while moving
+> rejection F1 0.8958 -> 0.8663, away from the +4 bonus gate. It is NOT
+> shipped: `SHIPPED_CONFIDENCE="legacy_min"` at threshold 0.18. The numbers
+> below stand as the record of the experiment, not of the shipped decode.
+
+
+
 **IMPORTANT (2026-08-31, issue #22 P0):** the absolute subtotals below were
 produced by the pre-fix scorer that let declined present pairs keep
 localisation/pose credit. Corrected re-score of the same CSVs:

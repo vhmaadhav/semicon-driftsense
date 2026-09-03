@@ -202,10 +202,15 @@ SHIPPED_INTERCEPT = -0.6718057933029007
 def calibrate_shipped(features: dict) -> float:
     """Shipped P(present) from the six statistics locate() already computes.
 
+    NOT the shipped statistic. `SHIPPED_CONFIDENCE` is "legacy_min" and
+    `SHIPPED_THRESHOLD` is 0.18; this logistic is retained behind that constant
+    after measuring out (-0.43 on an untouched holdout, P(better) = 0.011 --
+    see driftsense/config.py). If it is re-enabled it must be paired with its
+    own threshold of 0.4870, because the statistic and the threshold are one
+    unit system.
+
     `features` must carry every name in SHIPPED_FEATURES (extra keys are
-    ignored). Matched against driftsense.config.SHIPPED_THRESHOLD = 0.4870
-    (downward-biased re-tune on the 2,250 holdout, same convention as the
-    historical 0.18 on the legacy min() statistic).
+    ignored).
 
     **Non-finite features are imputed to 0.0, matching the fit exactly.**
     `locate_phase2` deliberately sets `pose_peak = NaN` for explicit-pose

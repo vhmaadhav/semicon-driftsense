@@ -1327,7 +1327,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     # driftsense.config.SHIPPED_CONFIDENCE (the ONE definition; the parity
     # test pins register.py and eval_ext.py to it):
     #
-    # "fused6" (shipped): a 6-feature logistic over statistics this decode
+    # "fused6" (implemented, NOT shipped -- measured out, see config): a
+    # 6-feature logistic over statistics this decode
     # already computes -- score, zncc, peak_ratio, pose_peak, psr, apce
     # (driftsense.calibration.calibrate(), frozen constants, zero inference
     # cost). Held-out 4-fold CV on the 2,250-pair holdout: AUC 0.9877 ->

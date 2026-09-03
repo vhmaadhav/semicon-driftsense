@@ -40,7 +40,8 @@ from __future__ import annotations
 # The parity test pins register.py and eval_ext.py to this module's values.
 SHIPPED_CONFIDENCE = "legacy_min"
 
-# Found threshold. UNITS CHANGE (2026-09-03): with SHIPPED_CONFIDENCE="fused6"
+# Found threshold, in the units of whichever SHIPPED_CONFIDENCE is active.
+# With SHIPPED_CONFIDENCE="fused6" (NOT the current default)
 # the score column is a calibrated P(present) and this threshold lives in
 # those units (0.4870; re-tuned on the 2,250 holdout against the total rubric
 # with the downward bias convention -- declined present pairs forfeit
