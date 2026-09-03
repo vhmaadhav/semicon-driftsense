@@ -97,6 +97,20 @@ def main():
                          "promotion gate, so zncc stays the default")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch threads; 0 leaves the default")
+    ap.add_argument("--allow-fallback", action="store_true",
+                    help="if the learned model cannot load, decode the whole "
+                         "batch with the classical ZNCC fallback instead of "
+                         "aborting. OFF by default: the competition requires "
+                         "weights to ship locally, so a failed model load "
+                         "means the submission package/runtime itself is "
+                         "broken, and the fallback is a materially different "
+                         "algorithm -- silently swapping to it on the graded "
+                         "run is exactly what issue #36 flagged. This is a "
+                         "local/debug escape hatch; the organizer's required "
+                         "command does not pass it, so the graded run either "
+                         "gets the measured learned-model decode or an "
+                         "unmistakable startup failure, never an unnoticed "
+                         "algorithm substitution.")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
 
@@ -120,17 +134,35 @@ def main():
         return p if os.path.isabs(p) else os.path.join(base, p)
 
     model, device = I.load_model(a.weights) or (None, None)
+    if model is None and not a.allow_fallback:
+        # FAIL CLOSED (issue #36 default). Weights ship inside the ZIP and
+        # the competition requires them to load locally, so a failed load
+        # means the submission package/runtime is broken, not that a
+        # degraded-but-valid run should ship instead. Aborting before
+        # predictions.csv exists at all is a loud, unmistakable failure a
+        # judge harness can act on -- the alternative (silently decoding the
+        # whole batch with a materially different classical algorithm) is
+        # exactly the failure mode issue #36 exists to close. Pass
+        # --allow-fallback to opt back into that behaviour locally.
+        raise SystemExit(
+            "FATAL: learned model failed to load from "
+            f"{a.weights!r} -- refusing to write {a.output!r} with the "
+            "classical ZNCC fallback (issue #36). Check the weights path/"
+            "integrity and the PyTorch install. Pass --allow-fallback to "
+            "decode this batch with the classical fallback instead "
+            "(local/debug only -- the graded command does not do this).")
     if model is None:
-        # Unconditional -- NOT gated by --quiet. A packaging/runtime problem
-        # that silently degrades the entire scored run to a materially
-        # weaker classical matcher (issue #36) must be impossible to miss in
-        # the run's own logs, not just a startup line among many.
+        # Unconditional -- NOT gated by --quiet. Only reachable with
+        # --allow-fallback: a packaging/runtime problem that degrades the
+        # entire run to a materially weaker classical matcher must be
+        # impossible to miss in the run's own logs, not just a startup line
+        # among many.
         print("=" * 72, file=sys.stderr)
-        print("[FALLBACK] Learned model unavailable -- EVERY pair in this run "
-              "will be decoded by the classical ZNCC fallback, not the "
-              "trained network. This is materially weaker on periodic "
-              "layouts. Check weights path/integrity and the PyTorch "
-              "install before trusting this run's scores.", file=sys.stderr)
+        print("[FALLBACK] --allow-fallback set and the learned model is "
+              "unavailable -- EVERY pair in this run will be decoded by the "
+              "classical ZNCC fallback, not the trained network. This is "
+              "materially weaker on periodic layouts and is NOT what the "
+              "organizer's required command runs.", file=sys.stderr)
         print("=" * 72, file=sys.stderr)
 
     os.makedirs(os.path.dirname(os.path.abspath(a.output)) or ".", exist_ok=True)

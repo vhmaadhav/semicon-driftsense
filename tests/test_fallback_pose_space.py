@@ -98,7 +98,9 @@ def test_legacy_fallback_threshold_is_a_distinct_calibrated_value():
 def test_register_uses_legacy_threshold_only_on_the_fallback_path(tmp_path, monkeypatch):
     """End-to-end: force register.main() onto the no-weights path and prove
     it is gated by LEGACY_FALLBACK_THRESHOLD, not the caller's --threshold
-    (which the CLI help now documents as learned-path-only)."""
+    (which the CLI help now documents as learned-path-only). Requires
+    --allow-fallback explicitly, since the default (below) is now to fail
+    closed on a model-load failure rather than decode with it."""
     pytest.importorskip("cv2")
     import cv2
 
@@ -121,7 +123,7 @@ def test_register_uses_legacy_threshold_only_on_the_fallback_path(tmp_path, monk
     monkeypatch.setattr(register, "LEGACY_FALLBACK_THRESHOLD", 1.01)
 
     argv = ["register.py", "--input", str(csv_path), "--output", str(out_path),
-            "--quiet"]
+            "--quiet", "--allow-fallback"]
     old_argv = sys.argv
     sys.argv = argv
     try:
@@ -136,3 +138,78 @@ def test_register_uses_legacy_threshold_only_on_the_fallback_path(tmp_path, monk
         "an unreachable LEGACY_FALLBACK_THRESHOLD=1.01 should decline every "
         "pair on the fallback path -- found=1 means register.py is not "
         "actually reading this constant for the no-weights path")
+
+
+def test_register_fails_closed_by_default_on_model_load_failure(tmp_path, monkeypatch):
+    """The strategic fix: the organizer's required command
+    (`register.py --input ... --output ...`, no --allow-fallback) must abort
+    loudly rather than silently decode the batch with a materially different
+    algorithm. predictions.csv must not exist afterward -- a partial/wrong
+    file being present is itself a hazard if something downstream globs for
+    it."""
+    pytest.importorskip("cv2")
+    import cv2
+
+    reference, search, _ = _rotated_scaled_pair(z=10.0, theta=0.0)
+    rp, sp = str(tmp_path / "reference.png"), str(tmp_path / "search.png")
+    cv2.imwrite(rp, reference)
+    cv2.imwrite(sp, search)
+
+    csv_path = tmp_path / "pairs.csv"
+    out_path = tmp_path / "predictions.csv"
+    csv_path.write_text(f"pair_id,reference,search\nP0001,{rp},{sp}\n")
+
+    import register
+    import infer as I
+
+    monkeypatch.setattr(I, "load_model", lambda *a, **k: None)
+
+    argv = ["register.py", "--input", str(csv_path), "--output", str(out_path),
+            "--quiet"]
+    old_argv = sys.argv
+    sys.argv = argv
+    try:
+        with pytest.raises(SystemExit):
+            register.main()
+    finally:
+        sys.argv = old_argv
+
+    assert not out_path.exists(), (
+        "register.py must fail BEFORE creating predictions.csv when the "
+        "model can't load and --allow-fallback was not passed -- finding "
+        "the file here means it fell through to the fallback silently")
+
+
+def test_register_allow_fallback_flag_opts_back_into_the_old_behaviour(tmp_path, monkeypatch):
+    """--allow-fallback is the explicit, local-only escape hatch: with it
+    set, a model-load failure must still produce a complete predictions.csv
+    via the classical fallback rather than aborting."""
+    pytest.importorskip("cv2")
+    import cv2
+
+    reference, search, _ = _rotated_scaled_pair(z=10.0, theta=0.0)
+    rp, sp = str(tmp_path / "reference.png"), str(tmp_path / "search.png")
+    cv2.imwrite(rp, reference)
+    cv2.imwrite(sp, search)
+
+    csv_path = tmp_path / "pairs.csv"
+    out_path = tmp_path / "predictions.csv"
+    csv_path.write_text(f"pair_id,reference,search\nP0001,{rp},{sp}\n")
+
+    import register
+    import infer as I
+
+    monkeypatch.setattr(I, "load_model", lambda *a, **k: None)
+
+    argv = ["register.py", "--input", str(csv_path), "--output", str(out_path),
+            "--quiet", "--allow-fallback"]
+    old_argv = sys.argv
+    sys.argv = argv
+    try:
+        register.main()
+    finally:
+        sys.argv = old_argv
+
+    with open(out_path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 1
