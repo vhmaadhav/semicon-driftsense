@@ -1,4 +1,7 @@
-output/
+# output/ is generated data and stays ignored, except the final fixed
+# 20-pair audit package, which ships in-repo (un-ignored from the root
+# .gitignore). Regenerate with: python generate_phase2.py --output-dir
+# output --seed 45045 --pairs 20 --force
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -2,6 +2,13 @@
 data/
 sample/
 output/
+# Exception to output/: the final fixed 20-pair generator audit package ships
+# in-repo because the submission form only takes a GitHub repo link. See
+# generator/README.md (Phase 2 deliverable).
+!generator/output/
+
+# Built submission artifacts (rebuild with scripts/build_submission_zip.py).
+dist/
 
 # Environment
 venv/

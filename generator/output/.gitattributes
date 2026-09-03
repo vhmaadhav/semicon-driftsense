@@ -1,0 +1,11 @@
+# The section 7 audit package must be readable from a plain `git clone` and
+# from GitHub's "Download ZIP", neither of which resolves Git LFS. Stored as
+# ordinary blobs, this overrides `*.png filter=lfs` in generator/.gitattributes
+# for this directory and below (reference/ and search/).
+#
+# Cost: ~34 MB in the pack. That is the price of a judge being able to open
+# contact_sheet.png and the 40 pair images without git-lfs installed. The
+# builder (scripts/build_submission_zip.py) also refuses to write a ZIP
+# containing LFS pointers, but that guard only protects the ZIP -- this
+# protects the repository itself.
+*.png !filter !diff !merge -text
