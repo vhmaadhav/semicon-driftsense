@@ -62,18 +62,9 @@ SEA_KEYS = ("search", "search_path", "sea", "search_image", "wide", "wide_path",
 
 
 def cap_threads(requested=0):
-    """Cap the torch and OpenCV thread pools to one sane value.
-
-    The judge box is 4-core CPU-only. torch's intra-op default and OpenCV's
-    pool both size themselves to every physical core, so without an explicit
-    cap they oversubscribe 4 cores catastrophically (grader harness measured
-    7.08 s/pair against 1.58 s in a tuned env on the same pairs). Default:
-    min(4, os.cpu_count()); the --threads flag overrides for experiments.
-    set_flush_denormal is x86-flavoured (avoids the denormal stalls of FP32
-    near-zero activation outputs) and is best-effort: on platforms where it
-    raises (e.g. ARM) we simply keep denormals.
-    """
-    n = requested if requested else min(4, os.cpu_count() or 4)
+    """Set torch and OpenCV thread pools to maximum available cores or requested amount."""
+    avail = os.cpu_count() or 1
+    n = requested if requested > 0 else avail
     try:
         import torch
         torch.set_num_threads(n)
@@ -136,11 +127,8 @@ def main():
 
     if a.threads:
         import torch
-        torch.set_num_threads(a.threads)
-
-    # Thread sanity before any heavy work (model load touches torch and
-    # conv2d; the coarse sweep touches cv2). --threads overrides the default.
-    cap_threads(a.threads)
+    avail_cores = os.cpu_count() or 1
+    active_threads = cap_threads(a.threads)
 
     with open(a.input, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -166,6 +154,15 @@ def main():
     is_stderr_tty = sys.stderr.isatty()
     total_rows = len(rows)
 
+    def format_line(label: str, val: str, inner_width: int = 74) -> str:
+        prefix = f"  {label}: "
+        rem = inner_width - len(prefix)
+        val_str = str(val)
+        if len(val_str) > rem:
+            val_str = val_str[:rem - 3] + "..."
+        line = f"{prefix}{val_str}"
+        return f"║ {line:<{inner_width}} ║"
+
     if not is_stderr_tty:
         print("# per-pair seconds", file=sys.stderr)
 
@@ -175,10 +172,10 @@ def main():
             "╔══════════════════════════════════════════════════════════════════════════════╗",
             "║               🔬 DRIFTSENSE PHASE 2: SUBPIXEL SEM REGISTRATION              ║",
             "╠══════════════════════════════════════════════════════════════════════════════╣",
-            "║  Architecture:  Learned ConvEncoder + Refined oneDNN NHWC AVX-512 Fused      ║",
-            f"║  Dataset:       {total_rows:<4} pairs ({os.path.basename(a.input):<44}) ║",
-            f"║  Hardware Cap:  {a.threads or 'auto (4 cores)'} CPU thread(s) capped                                  ║",
-            f"║  Predictions:   {os.path.abspath(a.output):<60} ║",
+            format_line("Pipeline", "Learned ConvEncoder + Refined oneDNN AVX-512 Fused"),
+            format_line("Dataset", f"{total_rows} image pairs ({os.path.basename(a.input)})"),
+            format_line("Hardware", f"{active_threads} active threads ({avail_cores} CPU cores detected)"),
+            format_line("Predictions", os.path.abspath(a.output)),
             "╚══════════════════════════════════════════════════════════════════════════════╝",
             ""
         ]
@@ -297,11 +294,11 @@ def main():
             "╔══════════════════════════════════════════════════════════════════════════════╗",
             "║                   ⚡ DRIFTSENSE PHASE 2 INFERENCE COMPLETE ⚡                ║",
             "╠══════════════════════════════════════════════════════════════════════════════╣",
-            f"║  Dataset Processed:  {total_rows:<6} pairs              Total Wall Time:  {format_time(t_total):<10} ║",
-            f"║  Latency Median:     {np.median(t):.3f}s               Latency Mean:     {np.mean(t):.3f}s      ║",
-            f"║  Min / Max Latency:  {t.min():.2f}s / {t.max():.2f}s          P90 Latency:      {np.percentile(t, 90):.3f}s      ║",
-            f"║  Throughput Rate:    {total_rows/t_total:.2f} pairs/sec         Pairs Found:      {found_count}/{total_rows} ({found_count/total_rows*100:.1f}%) ║",
-            f"║  Predictions Saved:  {os.path.abspath(a.output):<54} ║",
+            format_line("Processed", f"{total_rows} pairs (Total Wall Time: {format_time(t_total)})"),
+            format_line("Latency", f"Median: {np.median(t):.3f}s | Mean: {np.mean(t):.3f}s | P90: {np.percentile(t, 90):.3f}s"),
+            format_line("Throughput", f"{total_rows/t_total:.2f} pairs/sec (Min: {t.min():.2f}s | Max: {t.max():.2f}s)"),
+            format_line("Accepted", f"{found_count}/{total_rows} pairs ({found_count/total_rows*100:.1f}%)"),
+            format_line("Predictions", os.path.abspath(a.output)),
             "╚══════════════════════════════════════════════════════════════════════════════╝",
             ""
         ]
