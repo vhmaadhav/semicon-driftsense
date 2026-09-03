@@ -17,6 +17,7 @@ search frame that is not exactly 1000 px still localises correctly.
 from __future__ import annotations
 
 import cv2
+import os
 import warnings
 
 import numpy as np
@@ -317,16 +318,22 @@ RERANK_MULTIPLIER = 2
 # Rotation-aware re-ranking of the scale shortlist (issue #37). OFF by default.
 #
 # The mechanism is sound -- ranking every scale at rot=0 can discard a true
-# basin that only separates at its own rotation -- but enabling it changes the
-# *shipped decoder*, and the full-2,250 A/B for it has not been run. Turning it
-# on without that evidence would swap the final decode on argument alone right
-# before submission. With this False, `pose_candidates` reproduces the previous
-# `peaks[:k]` ranking exactly: the shortlist is sliced straight to k and no
-# rotation scan is cached, so the refine loop takes its original direct-scan
-# path (pinned by tests/test_pose_rotation_ranking.py).
+# basin that only separates at its own rotation -- and the full-2,250 A/B has
+# now been run: candidate recall improved (recall@1 80.23% -> 84.06%,
+# never-offered 137 -> 130, true basin gained on 8 pairs and lost on 0), but
+# the rubric subtotal moved -0.003/85 (76.942 -> 76.939; Set A +0.0009,
+# Set B -0.0021) -- under the +0.35 promotion gate, so RERANK_ROTATION stays
+# False. The wrong tiles this would fix mostly migrate to selector failures
+# (issue #5) instead of disappearing. See tests/test_pose_rotation_ranking.py
+# and scripts/trace_candidates.py for the regression coverage and the tracing
+# tool the A/B was built on. With this False, `pose_candidates` reproduces the
+# previous `peaks[:k]` ranking exactly: the shortlist is sliced straight to k
+# and no rotation scan is cached, so the refine loop takes its original
+# direct-scan path (pinned by tests/test_pose_rotation_ranking.py).
 #
-# To enable: set this True, run the full 2,250-pair A/B, and record the paired
-# delta per component before changing the default.
+# Reconsider only if downstream selector behaviour (issue #5) changes enough
+# to change this A/B's verdict -- re-run the full 2,250-pair A/B and record
+# the paired delta per component before changing the default.
 RERANK_ROTATION = False
 
 
@@ -577,23 +584,36 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
         out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
                                       scale_bounds, rotation_bounds))
 
-    # Same-basin candidate deduplication was tried here and REMOVED (PR #51
-    # review round 2). The idea was that a candidate inside a kept candidate's
-    # polish window is redundant. That reasoning is wrong at this point in the
-    # pipeline: dedup runs BEFORE neural localisation and canonicalisation, and
-    # polish_pose only re-fits the pose around an already-chosen (x, y) -- so
-    # two nearby pose hypotheses can still put the network on different
-    # periodic repeats of a lattice.
+    # Same-basin candidate deduplication -- OFF by default (PR #51 review
+    # round 2). Set DRIFTSENSE_DEDUP=1 to enable.
     #
-    # Measured on all 600 internal pairs, dedup on vs off:
+    # The idea: a candidate whose pose lies inside a kept candidate's polish
+    # window is redundant, because polish_pose will search that window anyway.
+    # The flaw the review caught: that argument is about POSE, but dedup runs
+    # BEFORE neural localisation and canonicalisation, and polish_pose only
+    # re-fits pose around an already-chosen (x, y). Two nearby pose hypotheses
+    # can still put the network on different periodic repeats of a lattice, so
+    # radius consistency was never evidence of localisation safety.
+    #
+    # Measured on all 600 internal pairs, on vs off:
     #   0/600 found flips and 0 crossings of the 5 px cliff, but 123/600
     #   localisation TIER crossings, max |dx| 0.695 px, max |dscore| 0.194;
-    #   S3 subtotal 81.30 with dedup against 81.42 without it;
+    #   S3 subtotal 81.30 with it against 81.42 without; mean 81.45 vs 81.49;
     #   latency median 0.964 s with against 0.960 s without -- it saves nothing.
     #
-    # A change that moves a fifth of the tiers, costs 0.12 points on one set
-    # and buys no time is not a trade, so it is deleted rather than left behind
-    # a flag. Evidence: .agents/PR51_CAMPAIGN.md.
+    # So on this data it is not a speed/accuracy trade, it is a pure loss, and
+    # it does not ship. It is kept rather than deleted because the mechanism is
+    # sound in principle and a future set with genuinely clustered candidates
+    # could pay for it -- but enabling it means re-running the 600-pair A/B,
+    # not assuming the numbers above transfer. Evidence:
+    # .agents/PR51_CAMPAIGN.md.
+    if os.environ.get("DRIFTSENSE_DEDUP", "0") != "0":
+        deduped = []
+        for c in out:
+            if not any(abs(c[0] - d[0]) < abs(d[0]) * POLISH_SCALE_BAND
+                       and abs(c[1] - d[1]) < POLISH_ROT_BAND for d in deduped):
+                deduped.append(c)
+        out = deduped or out
     return out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
 
 

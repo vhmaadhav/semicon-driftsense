@@ -101,13 +101,19 @@ And the latency it existed to buy, back-to-back on an idle machine:
 
 **Dedup saves nothing** -- 0.996x, inside the noise, and off is fractionally
 faster. It moves a fifth of the localisation tiers and costs 0.12 points on S3.
-A change that perturbs that much, costs points on one set and buys no time is
-not a trade, so it is **deleted** rather than left behind a flag, in keeping
-with how `coarse_fft.py` was handled in PR #48.
+On this data it is not a speed/accuracy trade, it is a pure loss, so **it does
+not ship**: `DRIFTSENSE_DEDUP` defaults to `0`.
 
-`tests/test_early_exit_gates.py::test_pose_candidates_never_merges_nearby_hypotheses`
-is the regression guard: it stubs the refinement to return identical poses for
-every candidate and asserts the candidate list does not collapse.
+The code is kept rather than deleted because the mechanism is sound in
+principle and a set with genuinely clustered candidates could pay for it. That
+is a hypothesis, not a result -- there is no evidence of an upside on any data
+measured here, and enabling the flag means re-running this 600-pair A/B rather
+than assuming these numbers transfer.
+
+Two regression guards in `tests/test_early_exit_gates.py`: one stubs the
+refinement to return identical poses and asserts the candidate list does **not**
+collapse under the shipped default; the other asserts it **does** collapse with
+`DRIFTSENSE_DEDUP=1`, so the flag cannot rot into dead code.
 
 ## 4. Polish budget: one set said revert, three sets said wash
 

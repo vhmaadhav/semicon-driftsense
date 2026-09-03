@@ -86,8 +86,8 @@ def test_polish_bands_are_the_documented_ones():
 def test_pose_candidates_never_merges_nearby_hypotheses(monkeypatch):
     """No candidate is dropped on pose proximity before neural localisation.
 
-    The regression guard for the removed deduplication. How many coarse peaks
-    a frame yields is data-dependent, so the count alone proves nothing;
+    The regression guard for the default-off deduplication. How many coarse
+    peaks a frame yields is data-dependent, so the count alone proves nothing;
     instead the refinement is stubbed twice on the SAME frame -- once returning
     a distinct pose per candidate, once returning identical poses for all of
     them. Deduplication would collapse the identical run and leave the distinct
@@ -108,6 +108,7 @@ def test_pose_candidates_never_merges_nearby_hypotheses(monkeypatch):
             return (10.0 + (0.5 * i if distinct else 0.0), 0.0, 1.0 - 0.01 * i)
         return _f
 
+    monkeypatch.delenv("DRIFTSENSE_DEDUP", raising=False)   # the shipped default
     monkeypatch.setattr(M, "_refine_pose_local", stub(distinct=True))
     n_distinct = len(M.pose_candidates(ref, search, k=3, coarse_scales=5))
     monkeypatch.setattr(M, "_refine_pose_local", stub(distinct=False))
@@ -115,8 +116,37 @@ def test_pose_candidates_never_merges_nearby_hypotheses(monkeypatch):
 
     assert n_distinct >= 1
     assert n_identical == n_distinct, (
-        f"identical poses collapsed {n_distinct} -> {n_identical}: something is "
-        "still deduplicating candidates before the network sees them")
+        f"identical poses collapsed {n_distinct} -> {n_identical}: candidates "
+        "are being deduplicated before the network sees them, but dedup is "
+        "supposed to be off unless DRIFTSENSE_DEDUP is set")
+
+
+def test_dedup_flag_enables_the_merge(monkeypatch):
+    """The opt-in path still works -- and firing it is what the default avoids.
+
+    Enabling DRIFTSENSE_DEDUP must actually collapse identical poses. If it
+    did not, the flag would be dead code pretending to be a switch.
+    """
+    import numpy as np
+    import driftsense.matching as M
+    rng = np.random.default_rng(3)
+    ref = rng.integers(0, 255, (100, 100), dtype=np.uint8)
+    search = rng.integers(0, 255, (600, 600), dtype=np.uint8)
+    calls = {"i": 0}
+
+    def identical(*a, **kw):
+        calls["i"] += 1
+        return (10.0, 0.0, 1.0 - 0.01 * calls["i"])
+
+    monkeypatch.setattr(M, "_refine_pose_local", identical)
+    monkeypatch.delenv("DRIFTSENSE_DEDUP", raising=False)
+    n_off = len(M.pose_candidates(ref, search, k=3, coarse_scales=5))
+    calls["i"] = 0
+    monkeypatch.setenv("DRIFTSENSE_DEDUP", "1")
+    n_on = len(M.pose_candidates(ref, search, k=3, coarse_scales=5))
+    if n_off > 1:
+        assert n_on == 1, "DRIFTSENSE_DEDUP=1 did not merge identical poses"
+    assert n_on <= n_off
 
 
 @pytest.mark.parametrize("gate", EARLY_EXIT_GATES)

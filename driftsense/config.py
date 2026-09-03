@@ -11,6 +11,17 @@ These are calibrated choices, not spec-derived constants:
 * SHIPPED_THRESHOLD was swept against the *total* rubric on the external
   validation set (register.py history; F1-optimal thresholds sit too high
   because a declined present pair forfeits localisation + pose).
+* LEGACY_FALLBACK_THRESHOLD gates the no-weights classical ZNCC path only
+  (register.py, when the learned model fails to load -- issue #36). Its
+  score is raw ZNCC, not the network-calibrated statistic SHIPPED_THRESHOLD
+  was swept against, so reusing SHIPPED_THRESHOLD there is a unit mismatch:
+  raw NCC on a periodic layout runs high even on wrong/absent matches. Set
+  to 0.55, the docx spec's own naive-baseline reference calibration for
+  exactly this coarse-NCC statistic (also this repo's
+  generator/src/phase2_audit.py default). Deliberately conservative: this
+  path only ever runs on a packaging/runtime failure, where a wrong
+  confident answer costs far more (forfeits localisation + pose, and hurts
+  rejection F1) than a correct decline.
 * SHIPPED_BAND = False: the difference-of-Gaussians pre-filter on the coarse
   sweep costs points on both architectures (register.py measurement
   +0.439 / +0.509, PR #18 reached the same conclusion separately).
@@ -65,15 +76,25 @@ EARLY_EXIT_GATES = (
 SHIPPED_CONFIDENCE = "legacy_min"
 
 # Found threshold, in the units of whichever SHIPPED_CONFIDENCE is active.
-# With SHIPPED_CONFIDENCE="fused6" (NOT the current default)
-# the score column is a calibrated P(present) and this threshold lives in
-# those units (0.4870; re-tuned on the 2,250 holdout against the total rubric
-# with the downward bias convention -- declined present pairs forfeit
-# localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b). The
-# historical 0.18 gated the legacy min() statistic and is kept ONLY for the
-# no-weights ZNCC fallback path in register.py, whose score is raw ZNCC.
+# The statistic and its threshold are ONE unit system -- change both or
+# neither (tests/test_submission_parity.py pins the coupling, not the value).
+#
+# Current: SHIPPED_CONFIDENCE="legacy_min", so 0.18 gates min(net, zncc) on the
+# shipped learned path. It is the shipped threshold, NOT a fallback value --
+# the fallback has its own gate below.
+#
+# If SHIPPED_CONFIDENCE is ever set back to "fused6", this must move to 0.4870
+# at the same time: there the score column is a calibrated P(present) and 0.18
+# in those units decides nothing (re-tuned on the 2,250 holdout against the
+# total rubric with the downward bias convention -- declined present pairs
+# forfeit localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b).
 SHIPPED_THRESHOLD = 0.18
-LEGACY_FALLBACK_THRESHOLD = 0.18
+# The no-weights ZNCC fallback in register.py scores a raw NCC, which is
+# neither unit system above, so it carries its own gate. Raised 0.18 -> 0.55 on
+# origin/phase2 (#54, issue #36) when the fallback stopped being a silent
+# substitution: it now fails closed unless --allow-fallback is passed, and its
+# gate is calibrated for raw NCC rather than inherited from the learned path.
+LEGACY_FALLBACK_THRESHOLD = 0.55
 
 # 2026-09-03, PR #48 review: fused6 was measured against legacy_min on ONE
 # decode (features recorded with --features, both statistics recomputed
