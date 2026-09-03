@@ -356,9 +356,9 @@ def _golden_max(f, lo: float, hi: float, iters: int = 8) -> tuple[float, float]:
 
 def _refine_pose_local(reference, search, f0: float, r0: float,
                        span_s: float, span_r: float,
-                       scale_bounds, rotation_bounds, rounds: int = 2):
-    """Golden-section polish of one (scale, rotation) hypothesis, on a crop
-    around its own peak so each hypothesis is judged on its own best window."""
+                       scale_bounds, rotation_bounds, rounds: int = 1, iters: int = 4):
+    """Fast polish of one (scale, rotation) hypothesis for candidate generation,
+    on a crop around its peak. Deep polish is done downstream by polish_pose."""
     lo_s, hi_s = scale_bounds
     lo_r, hi_r = rotation_bounds
     tpl = make_template(reference, f0, r0)
@@ -377,8 +377,8 @@ def _refine_pose_local(reference, search, f0: float, r0: float,
 
     f, r, peak = f0, r0, fine(f0, r0)
     for _ in range(rounds):
-        f, peak = _golden_max(lambda v: fine(v, r), max(f - span_s, lo_s), min(f + span_s, hi_s))
-        r, peak = _golden_max(lambda v: fine(f, v), max(r - span_r, lo_r), min(r + span_r, hi_r))
+        f, peak = _golden_max(lambda v: fine(v, r), max(f - span_s, lo_s), min(f + span_s, hi_s), iters=iters)
+        r, peak = _golden_max(lambda v: fine(f, v), max(r - span_r, lo_r), min(r + span_r, hi_r), iters=iters)
         span_s, span_r = span_s / 3.0, span_r / 3.0
     return float(f), float(r), float(peak)
 
@@ -549,7 +549,15 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
               else float(max(rots, key=lambda r: coarse(f0, r))))
         out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
                                       scale_bounds, rotation_bounds))
-    return out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
+
+    # Basin deduplication: if two candidates fall in the same scale/rotation basin,
+    # downstream polish_pose already searches across +/-3% scale and +/-0.8 deg,
+    # so evaluating duplicate hypotheses in the neural network is redundant.
+    deduped = []
+    for c in out:
+        if not any(abs(c[0] - d[0]) < 0.35 and abs(c[1] - d[1]) < 1.0 for d in deduped):
+            deduped.append(c)
+    return deduped or out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
 
 
 def choose_pose_wide(reference: np.ndarray, search: np.ndarray,
@@ -1132,6 +1140,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     if denoise and denoise >= 3:
         search_corr = cv2.medianBlur(search, int(denoise) | 1)
 
+    search_corr_std = standardize(search_corr / 255.0) if refine else None
+
     def attempt(m: float, rot: float) -> dict:
         nonlocal verification_secs
         canon, M = canonicalize_search(search, m, rot)
@@ -1146,7 +1156,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         template = None
         if refine:
             template = make_template(reference, m, rot)
-            rx, ry, zn = refine_zncc(standardize(search_corr / 255.0),
+            rx, ry, zn = refine_zncc(search_corr_std,
                                      standardize(template / 255.0),
                                      cx, cy, radius=refine_radius)
             if np.hypot(rx - cx, ry - cy) <= 10.0:
@@ -1199,11 +1209,19 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             # candidate verifies strongly enough there is nothing for the rest to
             # win. The network is ~86% of a pair and is paid once per hypothesis,
             # so stopping here is close to a 3x saving on the pairs that take it.
-            # Off by default: this trades a small chance of missing a better
-            # hypothesis for runtime, and the threshold has to be earned on data.
             if (early_exit_zncc is not None
                     and len(candidates) < len(cands)
                     and r.get("zncc", -np.inf) >= early_exit_zncc):
+                break
+            # Uncontested top candidate exit: when hypothesis 1 exhibits high
+            # network score, strong ZNCC verification, no rival peak, and a clear
+            # coarse lead over runner-up, remaining candidates cannot overturn it.
+            if (len(candidates) == 1
+                    and len(cands) > 1
+                    and r.get("score", 0.0) >= 0.75
+                    and r.get("zncc", -np.inf) >= 0.75
+                    and r.get("peak_ratio", 1.0) <= 0.35
+                    and (cands[0][2] - cands[1][2] >= 0.05)):
                 break
         best = choose(candidates)
 
