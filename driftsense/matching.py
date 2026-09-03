@@ -286,7 +286,7 @@ DRIFT_CLAMP_K = 2.0        # clamp = clip(K * measured drift sd, 2.0, DRIFT_MAX_
 # resolution, is what fails. See .agents/PHASE2_STATE.md for the next lever
 # (a rank-transform coarse score, which is robust to the impulse noise that
 # dominates these failures).
-COARSE_SCALES = 17
+COARSE_SCALES = 13
 
 # E3 pruning gate (inference-efficiency plan, task 2 / issue #7): skip a grid
 # point's make_template+_peak_score when its already-evaluated left neighbour
@@ -422,7 +422,7 @@ def _odd_point_pruned(prev: float, nxt: float, kth: float,
 def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
-                    coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
+                    coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 7,
                     refine_span_scales: int = 17, band: bool = True,
                     prune_margin: float | None = E3_PRUNE_MARGIN,
                     rerank_rotation: bool = RERANK_ROTATION) -> list:
@@ -1011,7 +1011,7 @@ def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
 def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
                 magnification: float, rotation_deg: float,
                 scale_band: float = 0.03, rot_band: float = 0.8,
-                rounds: int = 2, iters: int = 7) -> tuple[float, float, float]:
+                rounds: int = 1, iters: int = 6) -> tuple[float, float, float]:
     """Re-fit (scale, rotation) against a known match location.
 
     The first pose estimate is made before the match is located, from a coarse
@@ -1147,11 +1147,23 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
 
     search_corr_std = standardize(search_corr / 255.0) if refine else None
 
+    ref_feat = None
+    if model is not None and hasattr(model, "encoder") and device is not None:
+        from driftsense.model import TEMPLATE_SIZE
+        import torch.nn.functional as F
+        nominal_tpl = make_template(reference, float(SCALE), 0.0)
+        tpl_n = standardize(nominal_tpl / 255.0)
+        t_nom = torch.from_numpy(tpl_n)[None, None].to(device)
+        if t_nom.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
+            t_nom = F.interpolate(t_nom, size=(TEMPLATE_SIZE, TEMPLATE_SIZE), mode="area")
+        ref_feat = model.encoder(t_nom)
+
     def attempt(m: float, rot: float) -> dict:
         nonlocal verification_secs
         canon, M = canonicalize_search(search, m, rot)
         coarse = locate(model, reference, canon, device, refine=False,
-                        factor=float(SCALE), rotation_deg=0.0, **kw)
+                        factor=float(SCALE), rotation_deg=0.0,
+                        ref_feat=ref_feat, **kw)
         cx, cy = uncanonicalize_point(M, coarse["x"], coarse["y"])
         out = dict(coarse)
         out.update({"x": cx, "y": cy, "scale": float(m), "theta": float(rot),
