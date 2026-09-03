@@ -49,29 +49,66 @@ DEFAULT_WEIGHTS = os.path.join(HERE, "weights", "driftsense.pt")
 from driftsense.policy import ROUTE_THRESHOLD  # noqa: E402,F401
 
 
-def zncc_fallback(reference: np.ndarray, search: np.ndarray) -> dict:
-    """Classical multi-scale ZNCC, dependency-free apart from OpenCV.
+def _pose_template(reference: np.ndarray, scale: float, theta: float) -> np.ndarray:
+    """Reference reduced by `scale` and rotated by `theta`, one affine step.
 
-    Only used when the learned model cannot be loaded. It is materially worse
-    on periodic layouts -- it latches onto the wrong repeat -- but it keeps
-    the script runnable in any environment.
+    Mirrors the pose convention `generator/src/phase2_audit.py::make_template`
+    uses for the same purpose (area-resize to the nominal footprint, then
+    rotate about its own centre) so the fallback's coarse search actually
+    samples the disclosed Phase 2 pose space instead of a Phase-1-shaped
+    translation-only search.
     """
-    from driftsense.matching import template_hypotheses
+    h, w = reference.shape[:2]
+    fh, fw = h / float(scale), w / float(scale)
+    th_px, tw_px = max(int(round(fh)), 1), max(int(round(fw)), 1)
+    base = cv2.resize(reference, (tw_px, th_px), interpolation=cv2.INTER_AREA)
+    if theta == 0.0:
+        return base
+    matrix = cv2.getRotationMatrix2D(((tw_px - 1) / 2.0, (th_px - 1) / 2.0), theta, 1.0)
+    return cv2.warpAffine(base, matrix, (tw_px, th_px), flags=cv2.INTER_LINEAR,
+                          borderMode=cv2.BORDER_REPLICATE)
+
+
+def zncc_fallback(reference: np.ndarray, search: np.ndarray) -> dict:
+    """Classical multi-scale, multi-rotation ZNCC, dependency-free apart
+    from OpenCV.
+
+    Only used when the learned model cannot be loaded. It is materially
+    worse than the network on periodic layouts -- it has no way to resolve
+    which of several near-identical repeats is correct -- but it now
+    searches the pose space Phase 2 actually discloses: `z` in
+    `PHASE2_SCALE_BOUNDS`, `theta` in `PHASE2_ROTATION_BOUNDS`, a 0.5x / 1deg
+    coarse grid (the same grid the docx spec's own naive-baseline reference
+    implementation uses). The previous version searched a fixed ~9x-11x
+    window with no rotation at all -- correct only by luck outside that
+    narrow band, which on the disclosed [8,12] range is most of it (issue
+    #36). Returns the coarse-grid `scale`/`theta` estimate too, instead of
+    hard-coding scale=10/theta=0, so a fallback run at least reports what it
+    actually found rather than a value it never tested.
+    """
+    from driftsense.matching import PHASE2_ROTATION_BOUNDS, PHASE2_SCALE_BOUNDS
+
+    s_lo, s_hi = PHASE2_SCALE_BOUNDS
+    r_lo, r_hi = PHASE2_ROTATION_BOUNDS
+    scales = np.arange(s_lo, s_hi + 1e-9, 0.5)
+    thetas = np.arange(r_lo, r_hi + 1e-9, 1.0)
+
     best = None
-    for scale in [f * m for f in template_hypotheses(reference)
-                  for m in (0.9, 0.95, 1.0, 1.05, 1.1)]:
-        tw = max(int(round(reference.shape[1] / scale)), 1)
-        th = max(int(round(reference.shape[0] / scale)), 1)
-        if tw >= search.shape[1] or th >= search.shape[0]:
-            continue
-        tmpl = cv2.resize(reference, (tw, th), interpolation=cv2.INTER_AREA)
-        res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
-        _, score, _, loc = cv2.minMaxLoc(res)
-        if best is None or score > best["score"]:
-            best = {"x": loc[0] + tw / 2.0, "y": loc[1] + th / 2.0,
-                    "score": float(score), "method": "zncc-fallback"}
+    for scale in scales:
+        for theta in thetas:
+            tmpl = _pose_template(reference, float(scale), float(theta))
+            th_px, tw_px = tmpl.shape[:2]
+            if tw_px >= search.shape[1] or th_px >= search.shape[0]:
+                continue
+            res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
+            _, score, _, loc = cv2.minMaxLoc(res)
+            if best is None or score > best["score"]:
+                best = {"x": loc[0] + tw_px / 2.0, "y": loc[1] + th_px / 2.0,
+                        "scale": float(scale), "theta": float(theta),
+                        "score": float(score), "method": "zncc-fallback"}
     if best is None:
         return {"x": search.shape[1] / 2.0, "y": search.shape[0] / 2.0,
+                "scale": 10.0, "theta": 0.0,
                 "score": 0.0, "method": "center-fallback"}
     return best
 
