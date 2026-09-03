@@ -92,9 +92,10 @@ the current checkpoint. Treat the table above as a conservative floor;
 `FAILURE_ANALYSIS.md` carries the itemized, dated findings for everything
 since.
 
-### Spec-composition campaign (5 × 200 pairs, reference machine)
+### Spec-composition campaign (5 × 200 pairs, local x86 emulation of the published reference constraints)
 
-A second, independent measurement on the reference machine: five 200-pair sets
+A second, independent measurement under the published reference constraints,
+emulated on local x86 hardware: five 200-pair sets
 (seeds 1–5) composed **A70 / B70 / C40 / D20** per slide 4, built by our
 `judging/organizer_generator/gen_200.py` set-builder (shipped with PR #58).
 That script implements the spec recipe on top of the vendored
@@ -121,7 +122,9 @@ Per-set results (seeds 1–5):
 
 Context: the earlier campaign (PR #51) measured on an Apple M4, arm64, while
 the task material names a 4-core x86 CPU with 8 GB RAM, no GPU, no network and
-Python 3.11 — this is that measurement, on five sets instead of three so the
+Python 3.11; this campaign emulates those constraints on local x86 hardware —
+each cap read back and verified from inside the running process — on five sets
+instead of three so the
 between-set spread is visible. Latency pooled over all 1,000 pairs, idle
 machine, 4-thread cap: median 1.147 s, mean 1.221 s, p90 1.883 s, p99 2.083 s,
 max 2.191 s — zero pairs over the 5 s median budget, none within 9 s of the
@@ -138,7 +141,8 @@ a difference under about a point is not a result at this sample size.
 Those figures are 2,250 pairs of `data/ext_p2`, which is the harder and more
 conservative of the two and **remains the planning number of record**.
 
-Set B is the whole of the remaining gap, and inside it the loss is monotone in
+Within this internal spec-composition campaign, Set B accounts for essentially
+all of the observed gap, and inside it the loss is monotone in
 severity: credit 0.964 / 0.911 / 0.833 / **0.699** at severity levels 1–4
 (350 B pairs). Severity 4 alone costs ~1.5 of the 5.5 missing points. Of the 9
 present pairs wrongly declined across 1,000, 8 were severity 3–4 and every one
@@ -175,9 +179,12 @@ the set-builder's `--legacy-severity-pin` flag (shipped with PR #58).
 
 One caveat bounds this the other way: mapping level 4 to `severity_continuous
 = 1.0` puts a quarter of Set B at the generator's **ceiling**. Slide 4 discloses
-that four levels exist, not how hard they are. If the organizers' level 4 is
-milder than our ceiling, the true figure lies inside **[79.54, 81.57]** — the
-same interval this A/B brackets. We plan on 79.54.
+that four levels exist, not how hard they are — the organizer severity
+parameters are undisclosed, and their blind data need not vary only along this
+generator severity scalar. Under our two internal severity constructions, this
+sensitivity experiment brackets the **synthetic-campaign** score at
+**79.54–81.57**; the organizer blind score is not implied to lie in this
+interval. We plan on 79.54.
 
 **Runtime**, measured end-to-end with `register.py`, shipped 4-thread cap:
 
@@ -188,9 +195,10 @@ same interval this A/B brackets. We plan on 79.54.
 | Apple M4, arm64 (development machine) | 600 | 0.960 s | 1.343 s | 1.637 s | n/a — not x86 |
 | x86 (AMD Ryzen, 4-thread cap) | — | 2.66 s | 6.16 s | 7.16 s | thread cap only, cores not pinned |
 
-The first two rows are the reference-machine measurement: a 4-core x86 box with
-8 GB and no GPU, emulated with the cap **read back from inside the running
-process** rather than assumed. The full campaign log — per-set rubric files,
+The first two rows are the reference-machine-constrained local x86 campaign: a
+4-core x86 box with 8 GB and no GPU, emulated with the cap **read back from
+inside the running process** rather than assumed. The full campaign log —
+per-set rubric files,
 per-run environment evidence and the cross-set aggregate — ships with PR #58
 (the `judging/` tree and `.agents/JUDGEBOX_X86_CAMPAIGN.md`); this section
 carries the summary.
@@ -416,7 +424,7 @@ empirical validation of why: [`TRAINING.md` §2](TRAINING.md).
 
 ## Further reading
 
-- The reference-machine judging campaign — constraint evidence, the 5-set rubric table, and why 81.45/81.93 was withdrawn — ships with PR #58 (`.agents/JUDGEBOX_X86_CAMPAIGN.md`)
+- The reference-machine-constrained local x86 judging campaign — constraint evidence, the 5-set rubric table, and why 81.45/81.93 was withdrawn — ships with PR #58 (`.agents/JUDGEBOX_X86_CAMPAIGN.md`)
 - [`FAILURE_ANALYSIS.md`](FAILURE_ANALYSIS.md) — current failure modes, what was tried and measured, what's still open
 - [`TRAINING.md`](TRAINING.md) — full training methodology, checkpoint selection, reproduction
 - [`CITATIONS.md`](CITATIONS.md) — references behind the physics, noise, and design choices
