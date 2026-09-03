@@ -541,12 +541,17 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     span_s = (hi_s - lo_s) / (refine_span_scales - 1)
     span_r = (hi_r - lo_r) / (coarse_rotations - 1)
     out = []
-    for i in ranked:
+    best_r0 = None
+    for idx, i in enumerate(ranked):
         f0 = float(grid[i])
-        # The rotation scan was already paid for in the re-rank above; the
-        # single-peak path falls back to a direct scan.
-        r0 = (rot_best[i][1] if i in rot_best
-              else float(max(rots, key=lambda r: coarse(f0, r))))
+        # The microscope rotation angle is a rigid physical specimen property
+        # across the frame; the top-ranked coarse candidate estimates the angle.
+        if idx == 0 or best_r0 is None:
+            r0 = (rot_best[i][1] if i in rot_best
+                  else float(max(rots, key=lambda r: coarse(f0, r))))
+            best_r0 = r0
+        else:
+            r0 = best_r0
         out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
                                       scale_bounds, rotation_bounds))
 
@@ -1213,15 +1218,22 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                     and len(candidates) < len(cands)
                     and r.get("zncc", -np.inf) >= early_exit_zncc):
                 break
-            # Uncontested top candidate exit: when hypothesis 1 exhibits high
-            # network score, strong ZNCC verification, no rival peak, and a clear
-            # coarse lead over runner-up, remaining candidates cannot overturn it.
+            # Slam-dunk match on hypothesis 1: when the neural network confirms
+            # hypothesis 1 with overwhelming confidence (>=0.85), high native ZNCC
+            # (>=0.75), and practically zero rival peak (<=0.25), no candidate can beat it.
             if (len(candidates) == 1
                     and len(cands) > 1
-                    and r.get("score", 0.0) >= 0.75
+                    and r.get("score", 0.0) >= 0.85
                     and r.get("zncc", -np.inf) >= 0.75
+                    and r.get("peak_ratio", 1.0) <= 0.25):
+                break
+            # Clear coarse lead over runner-up + solid verification:
+            if (len(candidates) == 1
+                    and len(cands) > 1
+                    and r.get("score", 0.0) >= 0.72
+                    and r.get("zncc", -np.inf) >= 0.72
                     and r.get("peak_ratio", 1.0) <= 0.35
-                    and (cands[0][2] - cands[1][2] >= 0.05)):
+                    and (cands[0][2] - cands[1][2] >= 0.04)):
                 break
         best = choose(candidates)
 
