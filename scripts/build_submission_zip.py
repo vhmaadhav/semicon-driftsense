@@ -161,7 +161,11 @@ PRUNE_DIRS = {"__pycache__", ".pytest_cache", ".ipynb_checkpoints", ".git",
 # it by full path, rather than dropping "output" from PRUNE_DIRS, keeps every
 # unrelated output/ directory excluded.
 PRUNE_EXCEPTIONS = {"generator/output"}
-PRUNE_GLOBS = ["*.pyc", "*.pyo", "*.tmp", ".DS_Store", "*~", "*.orig", "*.rej"]
+PRUNE_GLOBS = ["*.pyc", "*.pyo", "*.tmp", ".DS_Store", "*~", "*.orig", "*.rej",
+               # Git plumbing means nothing in an extraction. generator/
+               # output/.gitattributes exists only to keep the images out of
+               # LFS in the repository; it is not submission content.
+               ".gitattributes", ".gitignore", ".gitkeep"]
 
 # Sanity floor for the shipped checkpoint: a truncated file or an unfetched
 # LFS pointer is small, loads as garbage, and is easy to miss by eye.
