@@ -286,7 +286,7 @@ DRIFT_CLAMP_K = 2.0        # clamp = clip(K * measured drift sd, 2.0, DRIFT_MAX_
 # resolution, is what fails. See .agents/PHASE2_STATE.md for the next lever
 # (a rank-transform coarse score, which is robust to the impulse noise that
 # dominates these failures).
-COARSE_SCALES = 13
+COARSE_SCALES = 17
 
 # E3 pruning gate (inference-efficiency plan, task 2 / issue #7): skip a grid
 # point's make_template+_peak_score when its already-evaluated left neighbour
@@ -422,7 +422,7 @@ def _odd_point_pruned(prev: float, nxt: float, kth: float,
 def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
-                    coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 7,
+                    coarse_scales: int = COARSE_SCALES, coarse_rotations: int = 11,
                     refine_span_scales: int = 17, band: bool = True,
                     prune_margin: float | None = E3_PRUNE_MARGIN,
                     rerank_rotation: bool = RERANK_ROTATION) -> list:
@@ -544,14 +544,8 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     best_r0 = None
     for idx, i in enumerate(ranked):
         f0 = float(grid[i])
-        # The microscope rotation angle is a rigid physical specimen property
-        # across the frame; the top-ranked coarse candidate estimates the angle.
-        if idx == 0 or best_r0 is None:
-            r0 = (rot_best[i][1] if i in rot_best
-                  else float(max(rots, key=lambda r: coarse(f0, r))))
-            best_r0 = r0
-        else:
-            r0 = best_r0
+        r0 = (rot_best[i][1] if i in rot_best
+              else float(max(rots, key=lambda r: coarse(f0, r))))
         out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
                                       scale_bounds, rotation_bounds))
 
