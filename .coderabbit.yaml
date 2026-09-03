@@ -15,7 +15,8 @@ reviews:
     enabled: true
     drafts: false
     base_branches:
-      - phase2              # this repo's PRs target phase2, not main
+      - main                # main is now the active/submission branch (post #56/#57)
+      - phase2
   path_filters:
     # Experiment artifacts and bulk data: never reviewable, huge, noisy
     - "!**/.agents/**"
