@@ -38,6 +38,30 @@ from __future__ import annotations
 #             0.9915. Zero inference cost, no decode change.
 #   "legacy_min": the historical min(network score, native ZNCC).
 # The parity test pins register.py and eval_ext.py to this module's values.
+# --------------------------------------------------------------------------
+# Uncontested-hypothesis early exit (PR #51).
+#
+# pose_candidates returns hypotheses already ranked by coarse peak, and
+# choose() takes the highest native ZNCC, so a first hypothesis that verifies
+# strongly enough cannot be beaten by the ones behind it. The network is ~86%
+# of a pair and is paid once per hypothesis, so skipping the rest is close to
+# a 3x saving on the pairs that qualify.
+#
+# The gates live HERE, not as literals in matching.py, because the PR that
+# introduced them documented one rule (0.88 / 0.55 / 0.30) and implemented
+# another -- exactly the drift a single definition prevents. Each gate is
+# (min network score, min native ZNCC, max peak_ratio, min coarse-peak gap to
+# the runner-up); None means that term is not tested. A gate fires only on the
+# FIRST hypothesis, and only when a second hypothesis exists.
+#
+# Both gates are validated in .agents/PR51_CAMPAIGN.md against a full
+# no-early-exit decode of the same pairs; tests/test_early_exit_gates.py pins
+# these numbers so the documentation and the code cannot drift apart again.
+EARLY_EXIT_GATES = (
+    (0.85, 0.75, 0.25, None),   # uncontested: no rival peak worth checking
+    (0.72, 0.72, 0.35, 0.04),   # clear coarse lead over the runner-up
+)
+
 SHIPPED_CONFIDENCE = "legacy_min"
 
 # Found threshold, in the units of whichever SHIPPED_CONFIDENCE is active.

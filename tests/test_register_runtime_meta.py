@@ -114,3 +114,45 @@ def test_stdout_free_of_timing_metadata(tiny_pairs, tmp_path):
     for line in p.stdout.splitlines():
         assert not line.startswith("#"), line
     assert "wrote 2 rows to" in p.stdout
+
+
+def test_piped_stdout_is_plain_text(tiny_pairs, tmp_path):
+    """No ANSI escapes when stdout is not a terminal.
+
+    The dashboard is for humans; a redirected run must stay greppable, and a
+    log full of escape sequences is neither greppable nor reviewable.
+    """
+    out_csv, p = _run_register(tiny_pairs, tmp_path)
+    assert "\033" not in p.stdout, "ANSI escape leaked into a piped stdout"
+    assert "\033" not in p.stderr
+
+
+def test_interactive_run_keeps_timings_out_of_the_terminal(tiny_pairs, tmp_path):
+    """On a tty the per-pair records go to a sidecar file, not the screen.
+
+    One '# t,<pair>,<secs>' line per pair would scroll the dashboard away, so
+    an interactive run routes them to '<output>.timing'. They must still all
+    be there -- suppressing them outright would lose the per-pair audit trail
+    (PR #51 review).
+    """
+    pty = pytest.importorskip("pty")
+    out_csv = str(tmp_path / "preds_tty.csv")
+    chunks = []
+    status = pty.spawn(
+        [sys.executable, REGISTER, "--input", tiny_pairs, "--output", out_csv],
+        lambda fd: (lambda d: (chunks.append(d), d)[1])(os.read(fd, 4096)))
+    assert status == 0 or os.waitstatus_to_exitcode(status) == 0
+    screen = b"".join(chunks).decode("utf-8", "replace")
+
+    assert "# t," not in screen, "per-pair timing lines reached the terminal"
+    assert "# per-pair seconds" not in screen
+    # the one-line summary is still on stderr, and the CSV is still correct
+    assert re.search(r"# runtime: median [0-9.]+ p90 [0-9.]+ max [0-9.]+ n=2", screen)
+    assert "wrote 2 rows to" in screen
+
+    sidecar = out_csv + ".timing"
+    assert os.path.exists(sidecar), "interactive run dropped the timing records"
+    body = open(sidecar).read()
+    assert "# per-pair seconds" in body
+    assert [pid for pid, _ in re.findall(r"^# t,([^,]+),([0-9.]+)$", body, re.M)] \
+        == ["ta", "tb"]

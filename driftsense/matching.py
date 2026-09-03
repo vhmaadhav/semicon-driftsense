@@ -24,7 +24,7 @@ import torch
 import torch.nn.functional as F
 
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
-from driftsense.config import SHIPPED_CONFIDENCE
+from driftsense.config import SHIPPED_CONFIDENCE, EARLY_EXIT_GATES
 from driftsense.verification import (
     common_band,
     dog_feature,
@@ -330,6 +330,13 @@ RERANK_MULTIPLIER = 2
 RERANK_ROTATION = False
 
 
+# Half-width of the window polish_pose re-fits over, and therefore the radius
+# inside which two pose hypotheses are the same basin (see pose_candidates).
+# scale is a FRACTION of the magnification; rotation is absolute degrees.
+POLISH_SCALE_BAND = 0.03
+POLISH_ROT_BAND = 0.8
+
+
 def _golden_max(f, lo: float, hi: float, iters: int = 8) -> tuple[float, float]:
     """Maximise a unimodal f on [lo, hi]. Returns (argmax, max).
 
@@ -357,8 +364,28 @@ def _golden_max(f, lo: float, hi: float, iters: int = 8) -> tuple[float, float]:
 def _refine_pose_local(reference, search, f0: float, r0: float,
                        span_s: float, span_r: float,
                        scale_bounds, rotation_bounds, rounds: int = 1, iters: int = 4):
-    """Fast polish of one (scale, rotation) hypothesis for candidate generation,
-    on a crop around its peak. Deep polish is done downstream by polish_pose."""
+    """Cheap golden-section polish of one (scale, rotation) hypothesis, on a
+    crop around its own peak so each hypothesis is judged on its own window.
+
+    This stage only has to RANK basins; the winner's pose is then re-fit by
+    polish_pose against the located match. So the budget is 1 round x 4
+    iterations here, against the deeper search downstream.
+
+    The budget was measured, not assumed (.agents/PR51_CAMPAIGN.md). Against
+    the pre-PR-#51 2x8 here plus polish_pose 2x7, over three independent
+    200-pair sets:
+
+        set     1x4 + 1x6      2x8 + 2x7
+        S1        81.13          81.34
+        S2        81.93          81.52
+        S3        81.30          81.32
+        mean      81.45          81.39
+
+    A single set says the deeper budget is worth +0.21; three sets say the
+    difference is a wash (0.06 of a point against a 0.4 per-set spread), and
+    the deeper one is 1.55x slower on an idle machine (median 1.421 s/pair vs
+    0.915 s). Accuracy is the ranked metric, so a real accuracy gain would win
+    -- there is not one to buy here."""
     lo_s, hi_s = scale_bounds
     lo_r, hi_r = rotation_bounds
     tpl = make_template(reference, f0, r0)
@@ -549,12 +576,22 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
         out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
                                       scale_bounds, rotation_bounds))
 
-    # Basin deduplication: if two candidates fall in the same scale/rotation basin,
-    # downstream polish_pose already searches across +/-3% scale and +/-0.8 deg,
-    # so evaluating duplicate hypotheses in the neural network is redundant.
+    # Basin deduplication: a candidate that already lies inside the polish
+    # window of a kept candidate cannot reach a different optimum, because
+    # polish_pose will search that whole window from the kept one anyway --
+    # so paying a network forward pass for it buys nothing.
+    #
+    # The radius is DERIVED from the polish bands rather than written out as
+    # literals (PR #51 review, item 6): an interim revision deduped at
+    # +/-0.35 scale and +/-1.0 deg while polish covered only +/-3% (~0.30 at
+    # m=10) and +/-0.8 deg, so it could discard a hypothesis the refinement
+    # could never have reached from the survivor. Tying the two together makes
+    # that class of mistake impossible: widen the polish band and the dedup
+    # radius follows, never the other way round.
     deduped = []
     for c in out:
-        if not any(abs(c[0] - d[0]) < 0.35 and abs(c[1] - d[1]) < 1.0 for d in deduped):
+        if not any(abs(c[0] - d[0]) < abs(d[0]) * POLISH_SCALE_BAND
+                   and abs(c[1] - d[1]) < POLISH_ROT_BAND for d in deduped):
             deduped.append(c)
     return deduped or out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
 
@@ -1004,7 +1041,8 @@ def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
 
 def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
                 magnification: float, rotation_deg: float,
-                scale_band: float = 0.03, rot_band: float = 0.8,
+                scale_band: float = POLISH_SCALE_BAND,
+                rot_band: float = POLISH_ROT_BAND,
                 rounds: int = 1, iters: int = 6) -> tuple[float, float, float]:
     """Re-fit (scale, rotation) against a known match location.
 
@@ -1059,6 +1097,25 @@ def polish_pose(reference: np.ndarray, search: np.ndarray, x: float, y: float,
 
 
 @torch.no_grad()
+def _early_exit_fires(result: dict, coarse_gap: float) -> bool:
+    """True when the first hypothesis is uncontested under any configured gate.
+
+    `result` is one attempt()'s output; `coarse_gap` is the first hypothesis's
+    coarse peak minus the runner-up's. Missing statistics take the value that
+    FAILS the gate, so an incomplete result can never trigger an early exit.
+    """
+    score = float(result.get("score", 0.0))
+    zncc = float(result.get("zncc", -np.inf))
+    ratio = float(result.get("peak_ratio", 1.0))
+    if not (np.isfinite(score) and np.isfinite(zncc) and np.isfinite(ratio)):
+        return False
+    for min_score, min_zncc, max_ratio, min_gap in EARLY_EXIT_GATES:
+        if (score >= min_score and zncc >= min_zncc and ratio <= max_ratio
+                and (min_gap is None or coarse_gap >= min_gap)):
+            return True
+    return False
+
+
 def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine: bool = True, pose: tuple[float, float] | None = None,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
@@ -1224,22 +1281,12 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                     and len(candidates) < len(cands)
                     and r.get("zncc", -np.inf) >= early_exit_zncc):
                 break
-            # Slam-dunk match on hypothesis 1: when the neural network confirms
-            # hypothesis 1 with overwhelming confidence (>=0.85), high native ZNCC
-            # (>=0.75), and practically zero rival peak (<=0.25), no candidate can beat it.
-            if (len(candidates) == 1
-                    and len(cands) > 1
-                    and r.get("score", 0.0) >= 0.85
-                    and r.get("zncc", -np.inf) >= 0.75
-                    and r.get("peak_ratio", 1.0) <= 0.25):
-                break
-            # Clear coarse lead over runner-up + solid verification:
-            if (len(candidates) == 1
-                    and len(cands) > 1
-                    and r.get("score", 0.0) >= 0.72
-                    and r.get("zncc", -np.inf) >= 0.72
-                    and r.get("peak_ratio", 1.0) <= 0.35
-                    and (cands[0][2] - cands[1][2] >= 0.04)):
+            # Uncontested-hypothesis early exit. The gates are defined once in
+            # driftsense.config.EARLY_EXIT_GATES -- see that block for what each
+            # term means and where the numbers were validated. They fire only on
+            # the first hypothesis, and only when there is a second one to skip.
+            if len(candidates) == 1 and len(cands) > 1 and _early_exit_fires(
+                    r, cands[0][2] - cands[1][2]):
                 break
         best = choose(candidates)
 
