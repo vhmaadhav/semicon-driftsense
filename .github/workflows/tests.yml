@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: [main, phase2, cleanup/phase2-mainline]
+    branches: [phase1, phase2]
   pull_request:
 
 jobs:

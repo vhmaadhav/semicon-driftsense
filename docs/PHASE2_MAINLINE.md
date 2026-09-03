@@ -1,6 +1,8 @@
 # Phase 2 mainline policy
 
-`main` represents the current Phase 2 system.
+`phase2` is the repository's default branch and represents the current Phase 2
+system. `main` was renamed to `phase1` and frozen as a historical snapshot of
+the pre-Phase-2 baseline; it receives no further changes.
 
 The canonical runtime contract is `register.py` plus `driftsense/`, the shipped
 checkpoint `weights/driftsense.pt`, pinned `requirements.txt`, and the required
