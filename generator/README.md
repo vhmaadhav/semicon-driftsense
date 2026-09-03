@@ -15,8 +15,15 @@ statement (SEMICON India Hackathon 2026 / i4C). No dataset is provided by
 the hackathon -- this generates physically-grounded Reference/Search image
 pairs (DRAM-style or FinFET-style structures) with ground truth.
 
+Geometry, Phase 1 nominal:
+
 - Reference: 1000x1000 px @ 1 nm/px (1 um FOV)
 - Search: 1000x1000 px @ 10 nm/px (10 um FOV)
+
+Phase 2 keeps the Reference fixed at 1 nm/px and *sweeps* the Search pixel
+size over z in [8, 12] nm/px (8-12 um FOV) rather than pinning it at 10.
+The 10 nm/px line above is the Phase 1 special case z = 10; see the Phase 2
+section immediately below for the range the audit package actually spans.
 
 ## Phase 2 deliverable: the fixed 20-pair audit package
 
