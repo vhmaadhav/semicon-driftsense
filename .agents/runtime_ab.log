@@ -1,7 +1,0 @@
-=== driftsense_p6_last ===
-  median 3.51s   mean 3.40s   p90 4.47s   max 4.60s
-  budget: median<=5s OK   max<20s OK
-=== driftsense_p9_last ===
-  median 3.56s   mean 3.45s   p90 4.44s   max 4.61s
-  budget: median<=5s OK   max<20s OK
-RUNTIMEDONE

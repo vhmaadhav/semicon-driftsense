@@ -32,13 +32,22 @@ weights/*_last.pt
 results/*/
 .pytest_cache/
 
-# Working notes, measured results and agent context. Shared with the team:
-# .agents/PHASE2_STATE.md is the single source of truth for where Phase 2
-# stands, and the ext_*.csv files are the per-pair results every number in
-# README.md and IMPROVING.md is computed from.
-# NOTE: PHASE2_ADDENDUM.md is transcribed from a briefing deck marked
-# "Applied Materials Confidential". This repository is private; keep it that
-# way, or drop that one file.
+# Working notes, measured results and agent context — LOCAL ONLY, never
+# tracked. This directory was tracked until the repository turned out to be
+# public, which the earlier note here wrongly assumed it was not. Two things
+# in it must not be published:
+#
+#   PHASE2_ADDENDUM.md              transcribed from a briefing deck marked
+#                                   "Applied Materials Confidential"
+#   ORGANIZER_PHASE2_GROUND_TRUTH.md  organizer task materials, and it quotes
+#                                   the organizers' private SharePoint share
+#                                   link — a capability URL that grants
+#                                   anyone holding it access to their folder
+#
+# The rest is internal evidence (PHASE2_STATE.md, the ext_*.csv per-pair
+# results the README numbers are computed from). Keep it on disk, share it
+# with the team out of band, but do not commit it.
+.agents/
 
 # Per-epoch training checkpoints (--keep-epochs); only the promoted weights ship.
 weights/*_e[0-9]*.pt

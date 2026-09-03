@@ -1,6 +1,0 @@
-pairs 200  present 160  absent 40
-LOCALISATION  credit 0.872   <=1px 68%  <=2px 88%  <=3px 93%  <=5px 94%   median 0.55px
-POSE          scale 0.785 (med 0.86%)   rotation 0.875 (med 0.11 deg)   [scored on located pairs]
-REJECTION     best F1 0.981 @ score>=0.2576 (tp 157 fp 3 fn 3)
-CALIBRATION   AUC(score vs correctness) 0.993
-RUNTIME       median 3.31s  p90 4.38s  max 5.20s   [4 threads]

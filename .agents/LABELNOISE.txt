@@ -1,9 +1,0 @@
-[06:09] === GPU: 30 epochs from p6_last with the label-noise-weighted offset loss ===
-[09:30] training exited after 30 epochs
-[09:30] === GPU: evaluate weights/driftsense_p8_last.pt on the 2250 held-out A/B/C pairs ===
-p8_last: total 75.40/85 at t=0.1986  locA 0.9669  locB 0.7733  F1 0.8756  AUC 0.9869
-shipped: total 75.35/85 at t=0.1907  locA 0.9680  locB 0.7689  F1 0.8779  AUC 0.9873
-[09:38] VERDICT: label-noise weighting WINS (set B 0.7733 vs 0.7689, total 75.40 vs 75.35).
-[09:38]   NOT auto-shipped -- weights/driftsense.pt is left alone for a human to confirm.
-[09:38]   To ship:  cp weights/driftsense_p8_last.pt weights/driftsense.pt   (threshold 0.1986)
-[09:38] LABELNOISEDONE
