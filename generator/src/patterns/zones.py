@@ -23,7 +23,7 @@ import numpy as np
 
 from src.patterns.dram import generate_dram_canvas
 from src.patterns.finfet import generate_finfet_canvas
-from src.presets import presets_for_kind, scaled_pitch_presets
+from src.presets import get_preset, presets_for_kind, scaled_pitch_presets
 
 _GENERATORS = {"dram": generate_dram_canvas, "finfet": generate_finfet_canvas}
 
@@ -79,6 +79,7 @@ def generate_zone_canvas(
     corner_rounding_px: float = 0.0,
     polygon_scale_fraction: float = 0.0,
     pitch_factor: float = 1.0,
+    preset_name: str | None = None,
 ) -> dict:
     """Tile independently-generated mats of `kind` across the canvas,
     separated by strip material. Returns dict with the canvas plus mat/strip
@@ -91,8 +92,14 @@ def generate_zone_canvas(
     (Phase 2 Set C) without reusing the same pitch support.
     """
     generator = _GENERATORS[kind]
-    presets = (presets_for_kind(kind) if pitch_factor == 1.0
-               else scaled_pitch_presets(kind, pitch_factor))
+    if preset_name is not None and pitch_factor == 1.0:
+        preset = get_preset(preset_name)
+        if preset["kind"] != kind:
+            raise ValueError(f"preset {preset_name!r} is not a {kind} preset")
+        presets = [preset]
+    else:
+        presets = (presets_for_kind(kind) if pitch_factor == 1.0
+                   else scaled_pitch_presets(kind, pitch_factor))
 
     canvas = _strip_routing_texture(size_px, rng)
 
