@@ -330,9 +330,10 @@ RERANK_MULTIPLIER = 2
 RERANK_ROTATION = False
 
 
-# Half-width of the window polish_pose re-fits over, and therefore the radius
-# inside which two pose hypotheses are the same basin (see pose_candidates).
-# scale is a FRACTION of the magnification; rotation is absolute degrees.
+# Half-width of the window polish_pose re-fits over. scale is a FRACTION of
+# the magnification; rotation is absolute degrees. (These also served as a
+# candidate-dedup radius until PR #51 review round 2 measured dedup out; see
+# pose_candidates.)
 POLISH_SCALE_BAND = 0.03
 POLISH_ROT_BAND = 0.8
 
@@ -576,24 +577,24 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
         out.append(_refine_pose_local(reference, search, f0, r0, span_s, span_r,
                                       scale_bounds, rotation_bounds))
 
-    # Basin deduplication: a candidate that already lies inside the polish
-    # window of a kept candidate cannot reach a different optimum, because
-    # polish_pose will search that whole window from the kept one anyway --
-    # so paying a network forward pass for it buys nothing.
+    # Same-basin candidate deduplication was tried here and REMOVED (PR #51
+    # review round 2). The idea was that a candidate inside a kept candidate's
+    # polish window is redundant. That reasoning is wrong at this point in the
+    # pipeline: dedup runs BEFORE neural localisation and canonicalisation, and
+    # polish_pose only re-fits the pose around an already-chosen (x, y) -- so
+    # two nearby pose hypotheses can still put the network on different
+    # periodic repeats of a lattice.
     #
-    # The radius is DERIVED from the polish bands rather than written out as
-    # literals (PR #51 review, item 6): an interim revision deduped at
-    # +/-0.35 scale and +/-1.0 deg while polish covered only +/-3% (~0.30 at
-    # m=10) and +/-0.8 deg, so it could discard a hypothesis the refinement
-    # could never have reached from the survivor. Tying the two together makes
-    # that class of mistake impossible: widen the polish band and the dedup
-    # radius follows, never the other way round.
-    deduped = []
-    for c in out:
-        if not any(abs(c[0] - d[0]) < abs(d[0]) * POLISH_SCALE_BAND
-                   and abs(c[1] - d[1]) < POLISH_ROT_BAND for d in deduped):
-            deduped.append(c)
-    return deduped or out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
+    # Measured on all 600 internal pairs, dedup on vs off:
+    #   0/600 found flips and 0 crossings of the 5 px cliff, but 123/600
+    #   localisation TIER crossings, max |dx| 0.695 px, max |dscore| 0.194;
+    #   S3 subtotal 81.30 with dedup against 81.42 without it;
+    #   latency median 0.964 s with against 0.960 s without -- it saves nothing.
+    #
+    # A change that moves a fifth of the tiers, costs 0.12 points on one set
+    # and buys no time is not a trade, so it is deleted rather than left behind
+    # a flag. Evidence: .agents/PR51_CAMPAIGN.md.
+    return out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
 
 
 def choose_pose_wide(reference: np.ndarray, search: np.ndarray,

@@ -1,11 +1,22 @@
 # Drift-Sense CPU Benchmark — Consolidated Report (post-campaign, 2026-09-03)
 
+> # HISTORICAL EXPERIMENT RECORD — NOT THE SHIPPED CONFIGURATION
+>
+> **Nothing in this file describes what ships.** It is the record of an
+> experiment that was measured and rejected. Do not quote a number from it as
+> a property of the pipeline.
+>
+> The canonical current report is **`.agents/PR51_CAMPAIGN.md`**.
+>
 > **Superseded 2026-09-03 (PR #48 review).** The fused confidence described
 > below was measured against the incumbent on an untouched 500-pair holdout
 > and **lost 0.43 points** (paired bootstrap P(better) = 0.011), while moving
 > rejection F1 0.8958 -> 0.8663, away from the +4 bonus gate. It is NOT
-> shipped: `SHIPPED_CONFIDENCE="legacy_min"` at threshold 0.18. The numbers
-> below stand as the record of the experiment, not of the shipped decode.
+> shipped: `SHIPPED_CONFIDENCE="legacy_min"` at threshold 0.18.
+>
+> Superseded again 2026-09-03 (PR #51 review): the shipped decode now also
+> carries a 4-thread cap, Conv+BN folding, an uncontested-hypothesis early
+> exit and same-basin candidate dedup, none of which are described here.
 
 
 
@@ -41,7 +52,7 @@ divided by pair count for comparability.
 
 * The 39.27/19.71/1.000/N-A row reproduces the pre-campaign measurement
   byte-for-byte on coordinates and found decisions — the shipped changes were
-  deliberately coordinate-preserving; see "What shipped".
+  deliberately coordinate-preserving; see "What this campaign PROPOSED".
 * **Runtime note (the honest one):** on the grader-harness protocol
   (untuned `register.py`, no thread caps, foreign 4-core box) the original
   report read 7.08 s/pair. The shipped build now caps threads at process start;
@@ -55,10 +66,15 @@ divided by pair count for comparability.
   pairs are localised ≤5 px — a single correctness class). The calibration
   evidence is the 2,250-pair held-out CV below.
 
-## What shipped (inference-only, zero weight changes)
+## What this campaign PROPOSED (inference-only, zero weight changes)
 
-1. **Fused confidence statistic** (`driftsense/calibration.py::calibrate_shipped`,
-   selected by `SHIPPED_CONFIDENCE="fused6"` in `driftsense/config.py`): a
+> Read the heading literally: **proposed**, not shipped. Item 1 below was
+> rejected on measurement and is not in the shipped decode. Items 2-3 did
+> ship, in the amended form recorded in `.agents/PR51_CAMPAIGN.md`.
+
+1. **Fused confidence statistic — REJECTED, NOT SHIPPED**
+   (`driftsense/calibration.py::calibrate_shipped`; the shipped selector is
+   `SHIPPED_CONFIDENCE="legacy_min"` at threshold 0.18, *not* `"fused6"`): a
    6-feature logistic over statistics the decode already computes —
    `score, zncc, peak_ratio, pose_peak, psr, apce` — with frozen constants fit
    on the full 2,250-pair holdout after 4-fold CV. **Held-out AUC

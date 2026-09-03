@@ -1,17 +1,20 @@
-"""The early-exit gates and the candidate-dedup radius are pinned here.
+"""The early-exit gates and the pose-polish bands are pinned here.
 
-Both were flagged in the PR #51 review for the same reason: the numbers in the
-prose did not match the numbers in the code (the PR described a 0.88 / 0.55 /
-0.30 rule while the implementation used 0.72 / 0.72 / 0.35 / 0.04), and the
-dedup radius was wider than the refinement window it was justified by.
+The gates were flagged in the PR #51 review because the numbers in the prose
+did not match the numbers in the code (the PR described a 0.88 / 0.55 / 0.30
+rule while the implementation used 0.72 / 0.72 / 0.35 / 0.04).
 
 These tests exist so that class of drift fails CI instead of shipping:
 
 * the gate constants are frozen as literals, so editing `config.py` without
   editing the documentation breaks the build;
 * `_early_exit_fires` is exercised at its boundaries and on degenerate input;
-* the dedup radius is asserted to lie INSIDE the polish window, which is the
-  property that makes deduplication safe rather than merely cheap.
+* the polish bands are pinned, since the docs quote them by value;
+* `pose_candidates` is asserted to return every hypothesis it was asked for.
+  Candidate deduplication used to drop some here on a pose-space heuristic; a
+  600-pair A/B measured it out (123 localisation tier crossings, -0.12 points
+  on S3, no latency saved) and it was removed, so this is the guard against it
+  coming back.
 """
 import numpy as np
 import pytest
@@ -62,37 +65,58 @@ def test_missing_or_non_finite_statistics_never_exit_early():
     assert not _early_exit_fires(_r(0.99, 0.99, np.nan), 10.0)
 
 
-def test_dedup_radius_lies_inside_the_polish_window():
-    """The safety property behind deduplication.
+def test_polish_bands_are_the_documented_ones():
+    """polish_pose's window is the value the docs and comments quote.
 
-    Two candidates are merged only when the survivor's polish window already
-    covers the discarded one, so the discarded hypothesis could not have
-    reached an optimum the survivor cannot. That holds exactly when the dedup
-    radius is not wider than the polish band -- here they are the same object.
+    These constants used to double as a candidate-dedup radius. Dedup was
+    measured out and removed in PR #51 review round 2 (123/600 localisation
+    tier crossings, -0.12 points on S3, and no latency saved --
+    .agents/PR51_CAMPAIGN.md), so they now describe only the pose re-fit
+    window. Pinned because FAILURE_ANALYSIS.md and the module comments quote
+    them by value.
     """
     import inspect
     sig = inspect.signature(polish_pose)
     assert sig.parameters["scale_band"].default == POLISH_SCALE_BAND
     assert sig.parameters["rot_band"].default == POLISH_ROT_BAND
-    # And the values are the documented ones.
     assert POLISH_SCALE_BAND == 0.03
     assert POLISH_ROT_BAND == 0.8
 
 
-def test_dedup_merges_only_within_the_basin():
-    """Behavioural check on the rule pose_candidates applies."""
-    def same_basin(a, b):
-        return (abs(a[0] - b[0]) < abs(b[0]) * POLISH_SCALE_BAND
-                and abs(a[1] - b[1]) < POLISH_ROT_BAND)
+def test_pose_candidates_never_merges_nearby_hypotheses(monkeypatch):
+    """No candidate is dropped on pose proximity before neural localisation.
 
-    keep = (10.0, 0.0)
-    assert same_basin((10.2, 0.5), keep)          # inside both bands
-    assert not same_basin((10.31, 0.5), keep)     # outside +/-3% of 10.0
-    assert not same_basin((10.2, 0.9), keep)      # outside +/-0.8 deg
-    # The old radius (0.35 scale, 1.0 deg) merged pairs the polish could not
-    # reach; that must no longer happen.
-    assert not same_basin((10.34, 0.0), keep)
-    assert not same_basin((10.0, 0.95), keep)
+    The regression guard for the removed deduplication. How many coarse peaks
+    a frame yields is data-dependent, so the count alone proves nothing;
+    instead the refinement is stubbed twice on the SAME frame -- once returning
+    a distinct pose per candidate, once returning identical poses for all of
+    them. Deduplication would collapse the identical run and leave the distinct
+    one alone, so equal lengths is exactly the property that it is gone.
+    """
+    import numpy as np
+    import driftsense.matching as M
+    rng = np.random.default_rng(3)
+    ref = rng.integers(0, 255, (100, 100), dtype=np.uint8)
+    search = rng.integers(0, 255, (600, 600), dtype=np.uint8)
+
+    def stub(distinct):
+        state = {"i": 0}
+
+        def _f(*a, **kw):
+            i = state["i"]
+            state["i"] += 1
+            return (10.0 + (0.5 * i if distinct else 0.0), 0.0, 1.0 - 0.01 * i)
+        return _f
+
+    monkeypatch.setattr(M, "_refine_pose_local", stub(distinct=True))
+    n_distinct = len(M.pose_candidates(ref, search, k=3, coarse_scales=5))
+    monkeypatch.setattr(M, "_refine_pose_local", stub(distinct=False))
+    n_identical = len(M.pose_candidates(ref, search, k=3, coarse_scales=5))
+
+    assert n_distinct >= 1
+    assert n_identical == n_distinct, (
+        f"identical poses collapsed {n_distinct} -> {n_identical}: something is "
+        "still deduplicating candidates before the network sees them")
 
 
 @pytest.mark.parametrize("gate", EARLY_EXIT_GATES)

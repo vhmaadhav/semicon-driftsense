@@ -156,3 +156,23 @@ def test_interactive_run_keeps_timings_out_of_the_terminal(tiny_pairs, tmp_path)
     assert "# per-pair seconds" in body
     assert [pid for pid, _ in re.findall(r"^# t,([^,]+),([0-9.]+)$", body, re.M)] \
         == ["ta", "tb"]
+
+
+def test_nested_output_directory_is_created(tiny_pairs, tmp_path):
+    """A nested --output path must work when its directory does not exist.
+
+    Issue #52: an interim revision of this branch deleted the
+    `os.makedirs(os.path.dirname(...))` call, so `--output results/preds.csv`
+    raised FileNotFoundError and lost the entire run. The judge names the
+    output path, so this is not a hypothetical.
+    """
+    out_csv = str(tmp_path / "results" / "nested" / "predictions.csv")
+    assert not os.path.exists(os.path.dirname(out_csv))
+    p = subprocess.run(
+        [sys.executable, REGISTER, "--input", tiny_pairs, "--output", out_csv],
+        capture_output=True, text=True, cwd=REPO_ROOT)
+    assert p.returncode == 0, p.stderr
+    assert os.path.exists(out_csv), "nested output directory was not created"
+    with open(out_csv, newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert [r["pair_id"] for r in rows] == ["ta", "tb"]
