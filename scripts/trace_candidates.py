@@ -41,9 +41,6 @@ import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, HERE)
-
-from driftsense.config import SHIPPED_BAND  # noqa: E402
 
 # Near-GT basin tolerances on the REFINED candidate. Three levels are reported
 # rather than one so the recall figure cannot be read as a threshold chosen to
@@ -51,14 +48,55 @@ from driftsense.config import SHIPPED_BAND  # noqa: E402
 # right basin, and the refine/polish stages routinely carry it to the credit
 # tiers from there.
 TOLS = {
-    "tight": (0.01, 0.5),    # the rubric's top pose tier
+    # The rubric's top pose tier is scale <=1% AND rotation <=0.25 deg (the
+    # 1.00-credit row); 0.5 deg is the SECOND rotation tier (0.60 credit),
+    # not the top one -- do not relabel this back without re-checking the
+    # published credit table.
+    "tight": (0.01, 0.25),
     "basin": (0.02, 1.0),    # primary
     "loose": (0.05, 2.0),    # generous, still unambiguously not a wrong tile
 }
 
 
+def _assert_loaded_from(module, root: str) -> None:
+    """Fail loudly if `module` did not actually load from under `root`.
+
+    Import order is what silently broke --root before: once a package is in
+    sys.modules, a later sys.path.insert(0, ...) does not move it. Every
+    driftsense/infer import in this script is guarded by this check instead
+    of trusting sys.path alone.
+    """
+    loaded_from = os.path.abspath(getattr(module, "__file__", ""))
+    root = os.path.abspath(root)
+    if os.path.commonpath([loaded_from, root]) != root:
+        raise RuntimeError(
+            f"{module.__name__} loaded from {loaded_from!r}, which is NOT "
+            f"under the requested root {root!r} -- another copy of it is "
+            "already cached in this process (check for a stray import "
+            "earlier in the module, or PYTHONPATH). Refusing to silently "
+            "trace the wrong tree.")
+
+
+def _resolve_root_config(root: str):
+    """Import driftsense.config from `root` specifically, verified.
+
+    Must run before ANY other driftsense/infer import in this process --
+    that is the whole fix. The old top-level `from driftsense.config import
+    SHIPPED_BAND` ran before argparse had even parsed --root, on every
+    process (the parent, and every forked/spawned worker), so it always
+    loaded from HERE regardless of --root.
+    """
+    root = os.path.abspath(root)
+    sys.path.insert(0, root)
+    import driftsense.config as config
+    _assert_loaded_from(config, root)
+    return config.SHIPPED_BAND
+
+
 def _worker(job):
     root, shard_dir, row, threads, k, coarse, band = job
+    # Nothing under driftsense/infer may be imported above this line in this
+    # file -- see _resolve_root_config's docstring.
     sys.path.insert(0, root)
     import torch
     torch.set_num_threads(threads)
@@ -67,7 +105,9 @@ def _worker(job):
     # the machine N-fold.
     cv2.setNumThreads(threads)
     import infer as I
-    from driftsense.matching import pose_candidates
+    import driftsense.matching as matching
+    _assert_loaded_from(matching, root)
+    pose_candidates = matching.pose_candidates
 
     ref = I.read_gray(os.path.join(shard_dir, row["reference_path"]))
     sea = I.read_gray(os.path.join(shard_dir, row["search_path"]))
@@ -103,7 +143,10 @@ def main():
     ap.add_argument("--root", default=HERE,
                     help="repo root whose driftsense/ is under test -- point "
                          "this at a second worktree to trace the other arm of "
-                         "an A/B without swapping branches")
+                         "an A/B without swapping branches. Verified: the "
+                         "loaded driftsense.config/matching modules must "
+                         "actually resolve under this root, or the run "
+                         "aborts rather than silently tracing the wrong tree.")
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--threads", type=int, default=4)
@@ -114,8 +157,12 @@ def main():
                          "which is SHIPPED_BAND")
     a = ap.parse_args()
 
+    # Resolve --root and SHIPPED_BAND from it BEFORE any other driftsense
+    # import in this process, in the parent -- see _resolve_root_config.
+    shipped_band = _resolve_root_config(a.root)
+
     import multiprocessing as mp
-    band = True if a.band else SHIPPED_BAND
+    band = True if a.band else shipped_band
     tasks = []
     for d in a.shards:
         man = pd.read_csv(os.path.join(d, "manifest.csv"))

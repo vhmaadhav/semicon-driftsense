@@ -316,16 +316,22 @@ RERANK_MULTIPLIER = 2
 # Rotation-aware re-ranking of the scale shortlist (issue #37). OFF by default.
 #
 # The mechanism is sound -- ranking every scale at rot=0 can discard a true
-# basin that only separates at its own rotation -- but enabling it changes the
-# *shipped decoder*, and the full-2,250 A/B for it has not been run. Turning it
-# on without that evidence would swap the final decode on argument alone right
-# before submission. With this False, `pose_candidates` reproduces the previous
-# `peaks[:k]` ranking exactly: the shortlist is sliced straight to k and no
-# rotation scan is cached, so the refine loop takes its original direct-scan
-# path (pinned by tests/test_pose_rotation_ranking.py).
+# basin that only separates at its own rotation -- and the full-2,250 A/B has
+# now been run: candidate recall improved (recall@1 80.23% -> 84.06%,
+# never-offered 137 -> 130, true basin gained on 8 pairs and lost on 0), but
+# the rubric subtotal moved -0.003/85 (76.942 -> 76.939; Set A +0.0009,
+# Set B -0.0021) -- under the +0.35 promotion gate, so RERANK_ROTATION stays
+# False. The wrong tiles this would fix mostly migrate to selector failures
+# (issue #5) instead of disappearing. See tests/test_pose_rotation_ranking.py
+# and scripts/trace_candidates.py for the regression coverage and the tracing
+# tool the A/B was built on. With this False, `pose_candidates` reproduces the
+# previous `peaks[:k]` ranking exactly: the shortlist is sliced straight to k
+# and no rotation scan is cached, so the refine loop takes its original
+# direct-scan path (pinned by tests/test_pose_rotation_ranking.py).
 #
-# To enable: set this True, run the full 2,250-pair A/B, and record the paired
-# delta per component before changing the default.
+# Reconsider only if downstream selector behaviour (issue #5) changes enough
+# to change this A/B's verdict -- re-run the full 2,250-pair A/B and record
+# the paired delta per component before changing the default.
 RERANK_ROTATION = False
 
 
