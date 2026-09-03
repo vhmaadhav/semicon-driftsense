@@ -11,6 +11,17 @@ These are calibrated choices, not spec-derived constants:
 * SHIPPED_THRESHOLD was swept against the *total* rubric on the external
   validation set (register.py history; F1-optimal thresholds sit too high
   because a declined present pair forfeits localisation + pose).
+* LEGACY_FALLBACK_THRESHOLD gates the no-weights classical ZNCC path only
+  (register.py, when the learned model fails to load -- issue #36). Its
+  score is raw ZNCC, not the network-calibrated statistic SHIPPED_THRESHOLD
+  was swept against, so reusing SHIPPED_THRESHOLD there is a unit mismatch:
+  raw NCC on a periodic layout runs high even on wrong/absent matches. Set
+  to 0.55, the docx spec's own naive-baseline reference calibration for
+  exactly this coarse-NCC statistic (also this repo's
+  generator/src/phase2_audit.py default). Deliberately conservative: this
+  path only ever runs on a packaging/runtime failure, where a wrong
+  confident answer costs far more (forfeits localisation + pose, and hurts
+  rejection F1) than a correct decline.
 * SHIPPED_BAND = False: the difference-of-Gaussians pre-filter on the coarse
   sweep costs points on both architectures (register.py measurement
   +0.439 / +0.509, PR #18 reached the same conclusion separately).
@@ -30,6 +41,7 @@ SHIPPED_SUBPIXEL_ROWS = True: the native-ZNCC winner; consensus/majority
 from __future__ import annotations
 
 SHIPPED_THRESHOLD = 0.18
+LEGACY_FALLBACK_THRESHOLD = 0.55
 SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True

@@ -46,6 +46,7 @@ from driftsense.matching import locate_phase2  # noqa: E402
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
 from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402,F401
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
+from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
@@ -78,7 +79,14 @@ def main():
     ap.add_argument("--output", required=True, help="predictions.csv")
     ap.add_argument("--weights", default=I.DEFAULT_WEIGHTS)
     ap.add_argument("--threshold", type=float, default=DEFAULT_FOUND_THRESHOLD,
-                    help="score at or above which a pair is reported found")
+                    help="confidence at or above which a pair is reported found. "
+                         "Applies to the LEARNED path only: the statistic and the "
+                         "threshold are one unit system, so when the weights cannot "
+                         "load and the ZNCC fallback runs, this value is ignored and "
+                         "the fallback uses its own calibrated "
+                         "LEGACY_FALLBACK_THRESHOLD instead -- a network-calibrated "
+                         "threshold applied to a raw NCC score would decide nothing "
+                         "meaningful (issue #36)")
     ap.add_argument("--verification", default="zncc",
                     help="hypothesis selector: zncc (default) | consensus | majority. "
                          "consensus overrides the native-ZNCC winner only when the rank "
@@ -89,6 +97,20 @@ def main():
                          "promotion gate, so zncc stays the default")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch threads; 0 leaves the default")
+    ap.add_argument("--allow-fallback", action="store_true",
+                    help="if the learned model cannot load, decode the whole "
+                         "batch with the classical ZNCC fallback instead of "
+                         "aborting. OFF by default: the competition requires "
+                         "weights to ship locally, so a failed model load "
+                         "means the submission package/runtime itself is "
+                         "broken, and the fallback is a materially different "
+                         "algorithm -- silently swapping to it on the graded "
+                         "run is exactly what issue #36 flagged. This is a "
+                         "local/debug escape hatch; the organizer's required "
+                         "command does not pass it, so the graded run either "
+                         "gets the measured learned-model decode or an "
+                         "unmistakable startup failure, never an unnoticed "
+                         "algorithm substitution.")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
 
@@ -112,6 +134,36 @@ def main():
         return p if os.path.isabs(p) else os.path.join(base, p)
 
     model, device = I.load_model(a.weights) or (None, None)
+    if model is None and not a.allow_fallback:
+        # FAIL CLOSED (issue #36 default). Weights ship inside the ZIP and
+        # the competition requires them to load locally, so a failed load
+        # means the submission package/runtime is broken, not that a
+        # degraded-but-valid run should ship instead. Aborting before
+        # predictions.csv exists at all is a loud, unmistakable failure a
+        # judge harness can act on -- the alternative (silently decoding the
+        # whole batch with a materially different classical algorithm) is
+        # exactly the failure mode issue #36 exists to close. Pass
+        # --allow-fallback to opt back into that behaviour locally.
+        raise SystemExit(
+            "FATAL: learned model failed to load from "
+            f"{a.weights!r} -- refusing to write {a.output!r} with the "
+            "classical ZNCC fallback (issue #36). Check the weights path/"
+            "integrity and the PyTorch install. Pass --allow-fallback to "
+            "decode this batch with the classical fallback instead "
+            "(local/debug only -- the graded command does not do this).")
+    if model is None:
+        # Unconditional -- NOT gated by --quiet. Only reachable with
+        # --allow-fallback: a packaging/runtime problem that degrades the
+        # entire run to a materially weaker classical matcher must be
+        # impossible to miss in the run's own logs, not just a startup line
+        # among many.
+        print("=" * 72, file=sys.stderr)
+        print("[FALLBACK] --allow-fallback set and the learned model is "
+              "unavailable -- EVERY pair in this run will be decoded by the "
+              "classical ZNCC fallback, not the trained network. This is "
+              "materially weaker on periodic layouts and is NOT what the "
+              "organizer's required command runs.", file=sys.stderr)
+        print("=" * 72, file=sys.stderr)
 
     os.makedirs(os.path.dirname(os.path.abspath(a.output)) or ".", exist_ok=True)
     times = []
@@ -129,9 +181,15 @@ def main():
                 ref = I.read_gray(resolve(r[ref_col]))
                 sea = I.read_gray(resolve(r[sea_col]))
                 if model is None:
+                    # The classical fallback searches the actual disclosed
+                    # Phase 2 pose space (issue #36) and reports its own
+                    # coarse-grid scale/theta estimate -- it no longer
+                    # hard-codes scale=10/theta=0, and its raw-NCC score is
+                    # gated by LEGACY_FALLBACK_THRESHOLD (a different unit
+                    # system than SHIPPED_THRESHOLD, calibrated separately)
+                    # rather than the caller's --threshold.
                     res = I.zncc_fallback(ref, sea)
-                    res.setdefault("scale", 10.0)
-                    res.setdefault("theta", 0.0)
+                    threshold = LEGACY_FALLBACK_THRESHOLD
                 else:
                     # band=False: the difference-of-Gaussians pre-filter on
                     # the coarse sweep costs points on both architectures.
@@ -145,9 +203,10 @@ def main():
                                         verification=a.verification,
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
+                    threshold = a.threshold
                 # min(network score, full-resolution ZNCC); see locate_phase2.
                 score = float(res.get("confidence", res.get("score", 0.0)))
-                found = int(score >= a.threshold)
+                found = int(score >= threshold)
                 out.update({
                     "x": f'{float(res["x"]):.4f}' if found else 0,
                     "y": f'{float(res["y"]):.4f}' if found else 0,
@@ -178,6 +237,15 @@ def main():
         if t.max() > 20:
             print(f"WARNING: {int((t>20).sum())} pair(s) exceeded the 20 s hard timeout",
                   file=sys.stderr)
+
+    if model is None:
+        # Repeated at the end, unconditionally: a log truncated to its tail
+        # (the common case when something is skimmed after the fact) must
+        # still show this.
+        print(f"[FALLBACK] All {len(rows)} row(s) in {a.output} were decoded "
+              "by the classical ZNCC fallback, not the trained model. "
+              "Scores/pose are not representative of the shipped Phase 2 "
+              "decode.", file=sys.stderr)
 
 
 if __name__ == "__main__":
