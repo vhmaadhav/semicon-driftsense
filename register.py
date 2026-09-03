@@ -161,13 +161,12 @@ def main():
 
     os.makedirs(os.path.dirname(os.path.abspath(a.output)) or ".", exist_ok=True)
     times = []
-    # Per-pair timing metadata goes to stderr only: stdout stays the human
-    # progress stream and the predictions file stays byte-identical.
-    print("# per-pair seconds", file=sys.stderr)
-    t_start = time.perf_counter()
-    found_count = 0
     is_tty = sys.stdout.isatty()
+    is_stderr_tty = sys.stderr.isatty()
     total_rows = len(rows)
+
+    if not is_stderr_tty:
+        print("# per-pair seconds", file=sys.stderr)
 
     def format_time(seconds: float) -> str:
         m = int(seconds // 60)
@@ -179,8 +178,6 @@ def main():
         w.writeheader()
         for n, r in enumerate(rows):
             pid = r[id_col]
-            # Declined answer, overwritten below on success. Constructed first
-            # so that any failure path still has a complete row to write.
             out = {"pair_id": pid, "x": 0, "y": 0, "theta": 0, "scale": 0,
                    "found": 0, "score": 0.0}
             t0 = time.perf_counter()
@@ -217,7 +214,9 @@ def main():
                 found_count += 1
             dt = time.perf_counter() - t0
             times.append(dt)
-            print(f"# t,{pid},{dt:.3f}", file=sys.stderr)
+
+            if not is_stderr_tty:
+                print(f"# t,{pid},{dt:.3f}", file=sys.stderr)
 
             if not a.quiet:
                 cur_n = n + 1
@@ -229,17 +228,16 @@ def main():
                 pct = (cur_n / total_rows) * 100
 
                 if is_tty:
-                    bar_len = 20
+                    bar_len = 16
                     filled = int(bar_len * cur_n / total_rows)
                     bar = "█" * filled + "░" * (bar_len - filled)
                     status = (
                         f"\r\033[K\033[1;36m[DriftSense]\033[0m "
                         f"[{bar}] \033[1;32m{pct:5.1f}%\033[0m "
-                        f"(\033[1;37m{cur_n}/{total_rows}\033[0m) "
-                        f"| \033[33m{pid:<6}\033[0m: \033[32m{dt:.2f}s\033[0m "
-                        f"| med: \033[1;35m{med:.2f}s\033[0m avg: \033[35m{mean:.2f}s\033[0m "
-                        f"| ETA: \033[1;34m{format_time(eta)}\033[0m "
-                        f"| \033[36m{found_count} found\033[0m"
+                        f"({cur_n}/{total_rows}) "
+                        f"| \033[33m{pid:<5}\033[0m: \033[32m{dt:.2f}s\033[0m "
+                        f"| med: \033[1;35m{med:.2f}s\033[0m "
+                        f"| ETA: \033[1;34m{format_time(eta)}\033[0m"
                     )
                     sys.stdout.write(status)
                     sys.stdout.flush()
