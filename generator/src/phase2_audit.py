@@ -193,8 +193,12 @@ def _seed_for(seed: int, index: int, attempt: int = 0) -> int:
 
 # Docx spec section 5: "If a crop fails, resample a different crop location
 # and retry. Cap the retries, and if nothing passes, fail loudly." The AMP
-# reference material's own generator used up to 14 attempts; this audit is a
-# fixed 20-pair set rather than a bulk run, so a smaller cap is plenty.
+# reference material's own generator used up to 14 attempts; this audit's
+# primary verifier is the stricter GLOBAL correlation peak (see
+# _global_verify), which catches ambiguity a windowed check cannot see at
+# all, so more resamples are needed to find a globally hittable crop --
+# measured worst case (B03) is 25/32. 32 stays comfortably inside the
+# generator's runtime budget (~93s for all 20 pairs end to end).
 MAX_VERIFY_ATTEMPTS = 32
 
 
