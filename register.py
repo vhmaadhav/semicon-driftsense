@@ -164,6 +164,16 @@ def main():
     # Per-pair timing metadata goes to stderr only: stdout stays the human
     # progress stream and the predictions file stays byte-identical.
     print("# per-pair seconds", file=sys.stderr)
+    t_start = time.perf_counter()
+    found_count = 0
+    is_tty = sys.stdout.isatty()
+    total_rows = len(rows)
+
+    def format_time(seconds: float) -> str:
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f"{m:02d}m {s:02d}s" if m > 0 else f"{s:02d}s"
+
     with open(a.output, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=OUT_FIELDS)
         w.writeheader()
@@ -181,31 +191,13 @@ def main():
                     res = I.zncc_fallback(ref, sea)
                     res.setdefault("scale", 10.0)
                     res.setdefault("theta", 0.0)
-                    # The fallback's score is raw ZNCC, not the fused
-                    # calibrated P(present): it gates at the LEGACY threshold
-                    # (driftsense.config.LEGACY_FALLBACK_THRESHOLD), not at
-                    # the shipped fused-units one. Only reachable when the
-                    # weights/torch are unavailable -- on the grader box they
-                    # ship inside the ZIP, so this is a degraded-mode guard.
                     threshold = LEGACY_FALLBACK_THRESHOLD
                 else:
                     threshold = a.threshold
-                    # band=False: the difference-of-Gaussians pre-filter on
-                    # the coarse sweep costs points on both architectures.
-                    # Measured independently here at +0.439 (95% CI
-                    # [+0.132, +0.767], P 99.8%) on the 0.456M model and +0.509
-                    # (P 94.2%) on the shipped 1.02M one; PR #18 reached the
-                    # same conclusion separately. The value is the shipped
-                    # decode config (driftsense.config), shared with
-                    # eval_ext.py so the evaluator decodes identically.
                     res = locate_phase2(model, ref, sea, device, refine=True,
                                         verification=a.verification,
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
-                # The reported confidence (see locate_phase2): currently the legacy
-                # min(network score, native ZNCC); optionally the fused 6-feature
-                # calibrated P(present) on the model path, raw ZNCC on the
-                # fallback path.
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= threshold)
                 out.update({
@@ -217,32 +209,73 @@ def main():
                     "score": f"{score:.6f}",
                 })
             except Exception as e:                      # noqa: BLE001
-                # Never let one bad pair cost the rest of the run, and never
-                # drop the row. SystemExit is caught too: read_gray raises
-                # SystemExit for an unreadable image, and that must zero-fill
-                # THIS row only -- not kill the whole batch.
                 print(f"[warn] pair {pid}: {type(e).__name__}: {e}", file=sys.stderr)
             except SystemExit as e:
                 print(f"[warn] pair {pid}: SystemExit: {e}", file=sys.stderr)
             w.writerow(out)
+            if out.get("found"):
+                found_count += 1
             dt = time.perf_counter() - t0
             times.append(dt)
             print(f"# t,{pid},{dt:.3f}", file=sys.stderr)
-            if not a.quiet and (n + 1) % 25 == 0:
-                print(f"  {n+1}/{len(rows)}  median {np.median(times):.2f}s", flush=True)
+
+            if not a.quiet:
+                cur_n = n + 1
+                med = float(np.median(times))
+                mean = float(np.mean(times))
+                elapsed = time.perf_counter() - t_start
+                rate = cur_n / elapsed if elapsed > 0 else 0
+                eta = (total_rows - cur_n) / rate if rate > 0 else 0
+                pct = (cur_n / total_rows) * 100
+
+                if is_tty:
+                    bar_len = 20
+                    filled = int(bar_len * cur_n / total_rows)
+                    bar = "█" * filled + "░" * (bar_len - filled)
+                    status = (
+                        f"\r\033[K\033[1;36m[DriftSense]\033[0m "
+                        f"[{bar}] \033[1;32m{pct:5.1f}%\033[0m "
+                        f"(\033[1;37m{cur_n}/{total_rows}\033[0m) "
+                        f"| \033[33m{pid:<6}\033[0m: \033[32m{dt:.2f}s\033[0m "
+                        f"| med: \033[1;35m{med:.2f}s\033[0m avg: \033[35m{mean:.2f}s\033[0m "
+                        f"| ETA: \033[1;34m{format_time(eta)}\033[0m "
+                        f"| \033[36m{found_count} found\033[0m"
+                    )
+                    sys.stdout.write(status)
+                    sys.stdout.flush()
+                elif cur_n % 10 == 0 or cur_n == total_rows:
+                    print(f"  {cur_n:3d}/{total_rows} ({pct:5.1f}%) | {pid:<6} {dt:.2f}s | "
+                          f"med: {med:.2f}s avg: {mean:.2f}s | ETA: {format_time(eta)} | "
+                          f"rate: {rate:.2f} p/s", flush=True)
                 f.flush()
 
+    t_total = time.perf_counter() - t_start
+    t = np.array(times)
     if not a.quiet:
-        t = np.array(times)
-        print(f"wrote {len(rows)} rows to {a.output}")
-        print(f"runtime: median {np.median(t):.2f}s  p90 {np.percentile(t,90):.2f}s  "
-              f"max {t.max():.2f}s  total {t.sum()/60:.1f} min")
+        if is_tty:
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+
+        box = [
+            "",
+            "╔══════════════════════════════════════════════════════════════════════════════╗",
+            "║                   ⚡ DRIFTSENSE PHASE 2 INFERENCE COMPLETE ⚡                ║",
+            "╠══════════════════════════════════════════════════════════════════════════════╣",
+            f"║  Dataset Processed:  {total_rows:<6} pairs              Total Wall Time:  {format_time(t_total):<10} ║",
+            f"║  Latency Median:     {np.median(t):.3f}s               Latency Mean:     {np.mean(t):.3f}s      ║",
+            f"║  Min / Max Latency:  {t.min():.2f}s / {t.max():.2f}s          P90 Latency:      {np.percentile(t, 90):.3f}s      ║",
+            f"║  Throughput Rate:    {total_rows/t_total:.2f} pairs/sec         Pairs Found:      {found_count}/{total_rows} ({found_count/total_rows*100:.1f}%) ║",
+            f"║  Predictions Saved:  {os.path.abspath(a.output):<54} ║",
+            "╚══════════════════════════════════════════════════════════════════════════════╝",
+            ""
+        ]
+        print("\n".join(box))
         if t.max() > 20:
             print(f"WARNING: {int((t>20).sum())} pair(s) exceeded the 20 s hard timeout",
                   file=sys.stderr)
+
     # Machine-readable runtime summary: stderr, same numbers as the stdout
     # line, for the judge harness to parse without scraping progress text.
-    t = np.array(times)
     print(f"# runtime: median {np.median(t):.2f} p90 {np.percentile(t,90):.2f} "
           f"max {t.max():.2f} n={len(t)}", file=sys.stderr)
 
