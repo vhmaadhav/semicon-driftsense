@@ -40,7 +40,7 @@ import torch
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-from driftsense.model import DriftSenseNet  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
 
 
 def main():
@@ -65,7 +65,7 @@ def main():
     print(f"averaging {len(paths)} checkpoints:")
     acc, meta = None, None
     for q in paths:
-        ck = torch.load(q, map_location=args.device, weights_only=False)
+        ck = torch.load(q, map_location=args.device, weights_only=True)
         sd = ck.get("model", ck)
         val = ck.get("val", {})
         print(f"  {os.path.basename(q):<34} epoch {str(ck.get('epoch', '?')):>3}  "

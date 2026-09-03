@@ -22,7 +22,8 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from driftsense.generate import NOISE_PRESETS, PRESETS, PoseParams, write_split  # noqa: E402
+from driftsense.generate import (  # noqa: E402
+    NOISE_PRESETS, PRESETS, PoseParams, PoseSpec, write_split)
 
 
 def main():
@@ -53,6 +54,11 @@ def main():
     p.add_argument("--edge-brightening", type=float, default=0.0)
     p.add_argument("--rotation-deg", type=float, default=0.0)
     p.add_argument("--magnification", type=float, default=10.0)
+    p.add_argument("--phase2", action="store_true",
+                   help="disclosed Phase 2 operating point: magnification 8-12x, "
+                        "rotation +/-5 deg, absent pairs at --absent-frac")
+    p.add_argument("--absent-frac", type=float, default=0.2,
+                   help="absent-pair fraction under --phase2")
     args = p.parse_args()
 
     split_dir = os.path.join(args.output_dir, args.split)
@@ -67,9 +73,13 @@ def main():
         store_templates=args.store_templates,
         start_index=args.start_index,
         progress_every=args.progress_every,
-        pose=PoseParams(edge_brightening=args.edge_brightening,
-                        rotation_deg=args.rotation_deg,
-                        magnification=args.magnification),
+        pose=(PoseSpec(rotation_deg=(-5.0, 5.0), magnification=(8.0, 12.0),
+                       edge_brightening=(args.edge_brightening,) * 2,
+                       absent_frac=args.absent_frac)
+              if args.phase2 else
+              PoseParams(edge_brightening=args.edge_brightening,
+                         rotation_deg=args.rotation_deg,
+                         magnification=args.magnification)),
     )
     # Marker written last, so a shard is only ever picked up complete. train.py
     # --refresh-pool rescans for these between epochs, which is what lets the

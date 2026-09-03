@@ -71,9 +71,18 @@ class GenerationParams:
     boundary_bias: float = 0.35
 
     # Deterministic global CD/etch bias applied to every drawn line/contact,
-    # in nm ("polygon scaling" -- positive grows features, negative shrinks
-    # them), on top of each pattern module's own per-instance jitter.
+    # in nm, on top of each pattern module's own per-instance jitter.
     linewidth_bias_nm: float = 0.0
+    # Multiplicative CD scaling of every drawn polygon, pitch left untouched.
+    # This is the Phase 2 Set B "polygon scaling +/-20%" degradation, and is
+    # deliberately separate from `linewidth_bias_nm`: an additive nm bias is a
+    # different *relative* change on a 20 nm line than on a 45 nm one, so it
+    # cannot express a fixed +/-20% across the twelve architecture presets.
+    polygon_scale_fraction: float = 0.0
+    # Latent Set B severity in [0, 1] that drove the acquisition knobs for this
+    # sample. Carried purely so it lands in the manifest -- nothing reads it
+    # during rendering -- which makes "accuracy vs severity" a one-line query.
+    severity_continuous: float = 0.0
     # Morphological corner-rounding radius (px) applied to the rendered
     # pattern mask -- real lithography/etch never produces perfectly sharp
     # polygon corners.
@@ -107,6 +116,7 @@ def generate_fine_canvas(
         FINE_CANVAS_SIZE_PX, preset, params.collapse_threshold_nm, rng,
         linewidth_bias_nm=params.linewidth_bias_nm,
         corner_rounding_px=params.corner_rounding_px,
+        polygon_scale_fraction=params.polygon_scale_fraction,
     )
 
 
@@ -114,10 +124,23 @@ def generate_fine_canvas_zoned(
     architecture: str,
     rng: np.random.Generator,
     params: GenerationParams,
+    canvas_px: int | None = None,
+    pitch_factor: float = 1.0,
+    preset_name: str | None = None,
 ) -> dict:
+    """`canvas_px` overrides the nominal 10x canvas extent. Phase 2 needs it:
+    a 1000 px search frame at magnification m covers 1000*m fine pixels, so
+    anything above 10x underfills a 10000 px canvas and the warp fills the
+    shortfall with replicated border. Defaults to the nominal size, so the
+    Phase 1 path is unchanged.
+
+    `pitch_factor` rescales the canvas's lattice-pitch pool (see
+    generate_zone_canvas); 1.0 reproduces the historical canvas. Only the
+    absent-pair branch in driftsense.generate passes anything else.
+    """
     preset = get_preset(architecture)
     return generate_zone_canvas(
-        FINE_CANVAS_SIZE_PX,
+        canvas_px or FINE_CANVAS_SIZE_PX,
         preset["kind"],
         params.collapse_threshold_nm,
         rng,
@@ -125,11 +148,15 @@ def generate_fine_canvas_zoned(
         strip_width_nm=params.strip_width_nm,
         linewidth_bias_nm=params.linewidth_bias_nm,
         corner_rounding_px=params.corner_rounding_px,
+        polygon_scale_fraction=params.polygon_scale_fraction,
+        pitch_factor=pitch_factor,
+        preset_name=preset_name,
     )
 
 
-def _pick_crop_origin(zone_result: dict, params: GenerationParams, rng: np.random.Generator) -> tuple:
-    max_offset = FINE_CANVAS_SIZE_PX - REFERENCE_SIZE_PX
+def _pick_crop_origin(zone_result: dict, params: GenerationParams, rng: np.random.Generator,
+                      canvas_px: int | None = None) -> tuple:
+    max_offset = (canvas_px or FINE_CANVAS_SIZE_PX) - REFERENCE_SIZE_PX
     strip_rects = zone_result.get("strip_rects") or []
 
     if strip_rects and rng.random() < params.boundary_bias:

@@ -38,9 +38,11 @@ def _line_mask(
     rng: np.random.Generator,
     width_jitter_fraction: float = WIDTH_JITTER_FRACTION,
     linewidth_bias_nm: float = 0.0,
+    polygon_scale_fraction: float = 0.0,
 ) -> np.ndarray:
     mask = np.zeros(size_px, dtype=bool)
-    biased_width_nm = max(width_nm + linewidth_bias_nm, 1.0)
+    biased_width_nm = max(width_nm * (1.0 + polygon_scale_fraction)
+                          + linewidth_bias_nm, 1.0)
     widths = biased_width_nm * (1.0 + rng.normal(0, width_jitter_fraction, size=len(positions)))
     widths = np.clip(widths, biased_width_nm * 0.5, biased_width_nm * 1.5)
     for i, center in enumerate(positions):
@@ -67,6 +69,7 @@ def generate_finfet_canvas(
     rng: np.random.Generator,
     linewidth_bias_nm: float = 0.0,
     corner_rounding_px: float = 0.0,
+    polygon_scale_fraction: float = 0.0,
     return_layers: bool = False,
 ):
     """Render the FinFET array. See generate_dram_canvas for the
@@ -80,10 +83,12 @@ def generate_finfet_canvas(
     col_mask = _line_mask(
         size_px, fin_positions, preset["fin_width_nm"], collapse_threshold_nm, rng,
         linewidth_bias_nm=linewidth_bias_nm,
+        polygon_scale_fraction=polygon_scale_fraction,
     )
     row_mask = _line_mask(
         size_px, gate_positions, preset["gate_length_nm"], collapse_threshold_nm, rng,
         linewidth_bias_nm=linewidth_bias_nm,
+        polygon_scale_fraction=polygon_scale_fraction,
     )
 
     fin_layer = np.zeros((size_px, size_px), dtype=np.uint8)
@@ -95,7 +100,8 @@ def generate_finfet_canvas(
     canvas[row_mask, :] = np.maximum(canvas[row_mask, :], GATE_VAL)
 
     contact_layer = np.zeros((size_px, size_px), dtype=np.uint8)
-    half = max(1, int(round(max(preset["contact_size_nm"] + linewidth_bias_nm, 1.0) / 2.0)))
+    half = max(1, int(round(max(preset["contact_size_nm"] * (1.0 + polygon_scale_fraction)
+                               + linewidth_bias_nm, 1.0) / 2.0)))
     for i, fin_x in enumerate(fin_positions):
         for j in range(len(gate_positions) - 1):
             if (i + j) % 2 == 0:

@@ -59,10 +59,13 @@ def check_split(split_dir: str, sample: int = 0, seed: int = 0) -> bool:
 
         for key in ("reference_path", "search_path"):
             path = os.path.join(split_dir, r[key])
-            if n not in pick:
-                continue
+            # Existence is checked on EVERY row -- sampling only covers the
+            # expensive image decode/shape work below. A file that is missing
+            # must be reported no matter which rows were picked.
             if not os.path.exists(path):
                 errors.append(f"id={i}: missing {key} -> {r[key]}")
+                continue
+            if n not in pick:
                 continue
             img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
             # A compact pool stores the 100x100 template in reference/; the

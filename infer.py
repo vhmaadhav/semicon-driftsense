@@ -43,46 +43,105 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 DEFAULT_WEIGHTS = os.path.join(HERE, "weights", "driftsense.pt")
-# Peak-ratio below which one view is trusted without dihedral voting.
-#
-# Measured, not guessed (scripts/tune_routing.py, 500 held-out scenes across
-# two splits). The highest threshold that reproduces full TTA *exactly* -- same
-# acc@5px, same mean, same p99 -- is 0.90 on the randomized split but only 0.70
-# on `severe`, so 0.70 is what ships: tuning to the easier split would buy
-# another 15% of speed by giving up the tail on the harder one.
-#
-# At 0.70 roughly 91-95% of scenes take the single-view path, averaging ~1.5
-# forward passes against 9 for unconditional voting -- a 6x reduction with no
-# measured cost. Voting is still there for the contested minority, which is the
-# only place it was ever earning its keep.
-ROUTE_THRESHOLD = 0.70
+# The routing threshold lives in driftsense.policy (the single definition of
+# the shipped decode -- see audit C-01); re-exported for backwards
+# compatibility with scripts that import it from here.
+from driftsense.policy import ROUTE_THRESHOLD  # noqa: E402,F401
+
+
+def _pose_template(reference: np.ndarray, scale: float, theta: float) -> np.ndarray:
+    """Reference reduced by `scale` and rotated by `theta`, one affine step.
+
+    Mirrors the pose convention `generator/src/phase2_audit.py::make_template`
+    uses for the same purpose (area-resize to the nominal footprint, then
+    rotate about its own centre) so the fallback's coarse search actually
+    samples the disclosed Phase 2 pose space instead of a Phase-1-shaped
+    translation-only search.
+    """
+    h, w = reference.shape[:2]
+    fh, fw = h / float(scale), w / float(scale)
+    th_px, tw_px = max(int(round(fh)), 1), max(int(round(fw)), 1)
+    base = cv2.resize(reference, (tw_px, th_px), interpolation=cv2.INTER_AREA)
+    if theta == 0.0:
+        return base
+    matrix = cv2.getRotationMatrix2D(((tw_px - 1) / 2.0, (th_px - 1) / 2.0), theta, 1.0)
+    return cv2.warpAffine(base, matrix, (tw_px, th_px), flags=cv2.INTER_LINEAR,
+                          borderMode=cv2.BORDER_REPLICATE)
 
 
 def zncc_fallback(reference: np.ndarray, search: np.ndarray) -> dict:
-    """Classical multi-scale ZNCC, dependency-free apart from OpenCV.
+    """Classical multi-scale, multi-rotation ZNCC, dependency-free apart
+    from OpenCV.
 
-    Only used when the learned model cannot be loaded. It is materially worse
-    on periodic layouts -- it latches onto the wrong repeat -- but it keeps
-    the script runnable in any environment.
+    Only used when the learned model cannot be loaded. It is materially
+    worse than the network on periodic layouts -- it has no way to resolve
+    which of several near-identical repeats is correct -- but it now
+    searches the pose space Phase 2 actually discloses: `z` in
+    `PHASE2_SCALE_BOUNDS`, `theta` in `PHASE2_ROTATION_BOUNDS`, a 0.5x / 1deg
+    coarse grid (the same grid the docx spec's own naive-baseline reference
+    implementation uses). The previous version searched a fixed ~9x-11x
+    window with no rotation at all -- correct only by luck outside that
+    narrow band, which on the disclosed [8,12] range is most of it (issue
+    #36). Returns the coarse-grid `scale`/`theta` estimate too, instead of
+    hard-coding scale=10/theta=0, so a fallback run at least reports what it
+    actually found rather than a value it never tested.
     """
-    from driftsense.matching import template_hypotheses
+    from driftsense.matching import PHASE2_ROTATION_BOUNDS, PHASE2_SCALE_BOUNDS
+
+    s_lo, s_hi = PHASE2_SCALE_BOUNDS
+    r_lo, r_hi = PHASE2_ROTATION_BOUNDS
+    scales = np.arange(s_lo, s_hi + 1e-9, 0.5)
+    thetas = np.arange(r_lo, r_hi + 1e-9, 1.0)
+
     best = None
-    for scale in [f * m for f in template_hypotheses(reference)
-                  for m in (0.9, 0.95, 1.0, 1.05, 1.1)]:
-        tw = max(int(round(reference.shape[1] / scale)), 1)
-        th = max(int(round(reference.shape[0] / scale)), 1)
-        if tw >= search.shape[1] or th >= search.shape[0]:
-            continue
-        tmpl = cv2.resize(reference, (tw, th), interpolation=cv2.INTER_AREA)
-        res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
-        _, score, _, loc = cv2.minMaxLoc(res)
-        if best is None or score > best["score"]:
-            best = {"x": loc[0] + tw / 2.0, "y": loc[1] + th / 2.0,
-                    "score": float(score), "method": "zncc-fallback"}
+    for scale in scales:
+        for theta in thetas:
+            tmpl = _pose_template(reference, float(scale), float(theta))
+            th_px, tw_px = tmpl.shape[:2]
+            if tw_px >= search.shape[1] or th_px >= search.shape[0]:
+                continue
+            res = cv2.matchTemplate(search, tmpl, cv2.TM_CCOEFF_NORMED)
+            _, score, _, loc = cv2.minMaxLoc(res)
+            if best is None or score > best["score"]:
+                best = {"x": loc[0] + tw_px / 2.0, "y": loc[1] + th_px / 2.0,
+                        "scale": float(scale), "theta": float(theta),
+                        "score": float(score), "method": "zncc-fallback"}
     if best is None:
         return {"x": search.shape[1] / 2.0, "y": search.shape[0] / 2.0,
+                "scale": 10.0, "theta": 0.0,
                 "score": 0.0, "method": "center-fallback"}
     return best
+
+
+def _fuse_conv_bn(model):
+    """Fold Conv2d -> BatchNorm2d pairs into single convolutions (eval only).
+
+    Exact: in eval mode BatchNorm applies fixed per-channel scale and shift from
+    its running statistics, which composes into the convolution's weight and
+    bias. The pass walks children in declaration order and only fuses a
+    BatchNorm whose immediately preceding sibling is the Conv2d that feeds it --
+    the pattern this model uses throughout. Anything else is left alone, so a
+    layout the pass does not understand degrades to no fusion rather than to a
+    wrong graph.
+    """
+    import torch.nn as nn
+    from torch.nn.utils.fusion import fuse_conv_bn_eval
+
+    model.eval()
+
+    def walk(mod):
+        prev_name, prev = None, None
+        for name, child in list(mod.named_children()):
+            if isinstance(child, nn.BatchNorm2d) and isinstance(prev, nn.Conv2d):
+                setattr(mod, prev_name, fuse_conv_bn_eval(prev, child))
+                setattr(mod, name, nn.Identity())
+                prev_name, prev = None, None
+            else:
+                walk(child)
+                prev_name, prev = name, child
+
+    walk(model)
+    return model
 
 
 def load_model(weights_path: str):
@@ -100,9 +159,13 @@ def load_model(weights_path: str):
         return None
 
     try:
-        ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
+        ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
         state = ckpt.get("model", ckpt)
-        model = DriftSenseNet()
+        # Checkpoints from a scaled run record their own width. Older ones do
+        # not, and must keep loading with the original defaults -- so the
+        # fallback here is the constructor's own signature, not a guess.
+        kw = ckpt.get("arch_kwargs") or {}
+        model = DriftSenseNet(**kw)
         model.load_state_dict(state)
         model.eval()
     except Exception as e:
@@ -115,7 +178,46 @@ def load_model(weights_path: str):
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
-    return model.to(device), device
+    model = model.to(device)
+
+    # CPU is the graded configuration (4 cores, no GPU, 5 s median), and there
+    # the network is 90.6% of pair time -- measured with scripts/profile_pair.py
+    # on the CPU-only venv. NCHW forces oneDNN to reorder activations on every
+    # convolution; channels_last lets it keep the blocked layout across the
+    # whole stack.
+    #
+    # Measured on 6 set B pairs, 4 threads, CPU-only torch 2.13:
+    # 4.612 -> 1.769 s/pair, a 2.61x speedup, with x/y/scale/theta/score
+    # bit-identical. It is a memory-layout choice, not an algorithm change:
+    # the convolutions compute the same values in a different traversal order.
+    #
+    # Guarded because the win is CPU-specific and the layout is only defined
+    # for 4-D weights; a failure here must not cost the run. Set
+    # DRIFTSENSE_CHANNELS_LAST=0 to fall back to NCHW on a platform where the
+    # oneDNN path misbehaves.
+    #
+    # NOT bit-identical: re-association in the blocked kernels moves x/y by up
+    # to 5.4e-06 px and score by 2.3e-06 (30 pairs across sets A/B/C). That is
+    # ~200,000x below the 1 px credit tier, but it is a numerical difference,
+    # not an exact one, and is stated as such.
+    if device.type == "cpu" and os.environ.get("DRIFTSENSE_CHANNELS_LAST", "1") != "0":
+        # Fold every BatchNorm2d into the convolution feeding it. In eval mode a
+        # BatchNorm is a fixed affine map, so this is an algebraic identity --
+        # the folded weights produce the same function with 17 fewer kernel
+        # launches and 17 fewer passes over the activations. Measured on the
+        # 924x924 search branch, 4 threads: 979.8 -> 706.3 ms, 1.39x, max output
+        # difference 5.25e-06 (float re-association only).
+        if os.environ.get("DRIFTSENSE_FUSE_BN", "1") != "0":
+            try:
+                model = _fuse_conv_bn(model)
+            except Exception as e:  # noqa: BLE001
+                print(f"[warn] conv/bn fusion skipped ({e})", file=sys.stderr)
+        try:
+            model = model.to(memory_format=torch.channels_last)
+        except Exception as e:  # noqa: BLE001
+            print(f"[warn] channels_last unavailable ({e}); using default layout",
+                  file=sys.stderr)
+    return model, device
 
 
 def read_gray(path: str) -> np.ndarray:
@@ -136,47 +238,13 @@ def predict(reference_path: str, search_path: str, weights_path: str = DEFAULT_W
         return zncc_fallback(reference, search)
 
     model, device = loaded
-    from driftsense.matching import choose_pose, locate, locate_tta
 
-    # The spec fixes the Reference at a 1 um field of view and the Search at
-    # 10 nm/px, so the pattern's footprint is ~100 px however many pixels the
-    # reference itself arrives at. Deriving the downsample factor from the
-    # images rather than hard-coding 10 keeps this correct if the graders hand
-    # us a reference at a different resolution -- where a fixed /10 would build
-    # a 10x10 template and lock onto the wrong repeat.
-    factor, rotation_deg = choose_pose(reference, search)
-
-    if tta and not want_heatmap:
-        # Adaptive routing. TTA costs 8 forward passes and buys +0.3 to +1.6
-        # points at the 5px tolerance -- but it earns that only on the scenes
-        # the network finds ambiguous, and those are a minority. Run one view
-        # first, read how contested its peak was, and pay for voting only when
-        # the decision is actually close. Accuracy is unchanged on the
-        # confident majority because voting agrees with them anyway.
-        first = locate(model, reference, search, device, refine=True,
-                       factor=factor, rotation_deg=rotation_deg)
-        if first.get("peak_ratio", 1.0) <= route_threshold:
-            first["method"] = "siamese+zncc-refine(confident)"
-            first["scale_factor"] = factor
-            first["rotation_deg"] = rotation_deg
-            first["routed"] = "fast"
-            return first
-
-        res = locate_tta(model, reference, search, device, refine=True,
-                         factor=factor, rotation_deg=rotation_deg)
-        res["method"] = "siamese+tta8+zncc-refine"
-        res["scale_factor"] = factor
-        res["rotation_deg"] = rotation_deg
-        res["routed"] = "tta"
-        return res
-
-    res = locate(model, reference, search, device, refine=True,
-                 return_heatmap=want_heatmap, factor=factor,
-                 rotation_deg=rotation_deg)
-    res["method"] = "siamese+zncc-refine"
-    res["scale_factor"] = factor
-    res["rotation_deg"] = rotation_deg
-    return res
+    # One shared decode policy with evaluate.py (audit C-01): pose estimation
+    # and adaptive routing live in driftsense.policy, not here.
+    from driftsense.policy import predict_policy
+    return predict_policy(model, reference, search, device, tta=tta,
+                          want_heatmap=want_heatmap,
+                          route_threshold=route_threshold)
 
 
 def parse_args():

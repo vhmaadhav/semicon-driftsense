@@ -1,0 +1,27 @@
+344 pairs over 3 shard(s), 3 workers
+  100/344  5.30s/pair wall  eta 21.6 min
+  200/344  5.76s/pair wall  eta 13.8 min
+  300/344  6.78s/pair wall  eta 5.0 min
+wrote .agents/ext_noband.csv
+
+==========================================================================
+EXTERNAL TEST SET — 344 pairs (A 125, B 219, C 0, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.9448     37.79
+   set A (125 pairs)        0.9632  <=5px 97.6%  <=1px 91.2%
+                                         median 0.26px
+   set B (219 pairs)        0.9297  <=5px 95.4%  <=1px 83.6%
+                                         median 0.44px
+Pose — scale (10)             credit 0.8943  med 0.43%      8.94
+Pose — rotation (10)        credit 0.9595  med 0.087deg      9.60
+Rejection (15)              F1(reject) 0.0000 @fix 0.115      0.00
+                            correct-rej 0  lost-real 12  missed-abs 0
+                            [lenient F1(present) 0.9822]
+                            [best-possible F1(reject) 0.0000 @ 0.9369]
+Calibration (10)                            AUC 0.9881      9.88
+--------------------------------------------------------------------------
+SUBTOTAL (95 measurable)                                   66.21
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

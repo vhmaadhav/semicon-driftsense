@@ -52,7 +52,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from driftsense.generate import NOISE_PRESETS, PoseParams, write_split  # noqa: E402
+from driftsense.generate import (  # noqa: E402
+    NOISE_PRESETS, PoseSpec, write_split)
 from driftsense.presets import architecture_presets  # noqa: E402
 
 
@@ -91,7 +92,79 @@ def parse_args():
                       help="effective magnification ratio (default 10.0, the "
                            "nominal 1 nm/px : 10 nm/px; 9-11 spans the range "
                            "the problem statement implies)")
+
+    ph2 = p.add_argument_group(
+        "phase 2: unknown pose and absent pairs",
+        "Phase 2 draws the pose independently for every pair and leaves a "
+        "fraction of pairs with no true instance. These ranges override the "
+        "fixed --rotation-deg / --magnification values above.")
+    ph2.add_argument("--phase2", action="store_true",
+                     help="shorthand for a Phase-2-style stress mixture: "
+                          "--magnification-range 8 12 --rotation-range -5 5 "
+                          "--absent-frac 0.2 (all effects sampled together). "
+                          "This is NOT an exact emulator of the organizers' "
+                          "separate A/B/C/D blind sets and does not reproduce "
+                          "Set D RGB")
+    ph2.add_argument("--rotation-range", type=float, nargs=2, metavar=("LO", "HI"),
+                     help="sample rotation uniformly in [LO, HI] degrees, "
+                          "CCW positive (Phase 2 bound: -5 5)")
+    ph2.add_argument("--magnification-range", type=float, nargs=2, metavar=("LO", "HI"),
+                     help="sample the magnification ratio uniformly in [LO, HI] "
+                          "(Phase 2 bound: 8 12)")
+    ph2.add_argument("--absent-frac", type=float, default=0.0, metavar="F",
+                     help="fraction of pairs whose reference has no true "
+                          "instance in the search frame, cropped instead from "
+                          "another die region of the same architecture "
+                          "(Phase 2 blind set is about 0.2)")
+    ph2.add_argument("--polygon-scale-range", type=float, nargs=2, metavar=("LO", "HI"),
+                     help="Set B polygon scaling: multiply every drawn feature's "
+                          "CD by 1+f with f uniform in [LO, HI], pitch unchanged "
+                          "(Phase 2 Set B bound: -0.2 0.2). Disabled by default, "
+                          "and when disabled no random draw is made, so the "
+                          "Phase 1 splits reproduce byte-for-byte.")
+    ph2.add_argument("--severity-range", type=float, nargs=2, metavar=("LO", "HI"),
+                     help="Set B severity ladder: draw one latent severity in "
+                          "[LO, HI] (0=nominal, 1=level 4) and move charging, "
+                          "scan distortion, defocus and shot noise together "
+                          "along it. Disabled by default; --phase2 turns it on "
+                          "over the full 0 1 range.")
     return p.parse_args()
+
+
+def build_pose_spec(args) -> PoseSpec:
+    """Fold the fixed --rotation-deg/--magnification flags and the Phase 2
+    range flags into one spec. A range wins over the corresponding fixed
+    value; absent both, the fixed value is pinned and the result is the
+    nominal no-op that reproduces the upstream imaging path."""
+    rot = tuple(args.rotation_range) if args.rotation_range else (args.rotation_deg,) * 2
+    mag = tuple(args.magnification_range) if args.magnification_range else (args.magnification,) * 2
+    absent = args.absent_frac
+    poly = tuple(args.polygon_scale_range) if args.polygon_scale_range else (0.0, 0.0)
+    sev = tuple(args.severity_range) if args.severity_range else (0.0, 0.0)
+    if args.phase2:
+        rot = tuple(args.rotation_range) if args.rotation_range else (-5.0, 5.0)
+        mag = tuple(args.magnification_range) if args.magnification_range else (8.0, 12.0)
+        absent = args.absent_frac if args.absent_frac else 0.2
+        # Set B names polygon scaling +/-20% as a degradation category, so the
+        # Phase 2 shorthand turns it on. Pass --polygon-scale-range 0 0 to
+        # generate a Set A-style split with the pose ranges but nominal CD.
+        poly = tuple(args.polygon_scale_range) if args.polygon_scale_range else (-0.2, 0.2)
+        # The shipped weights had never seen severity 4; the full range is the
+        # whole point of regenerating for Phase 2.
+        sev = tuple(args.severity_range) if args.severity_range else (0.0, 1.0)
+    if not 0.0 <= absent <= 1.0:
+        raise SystemExit("--absent-frac must be in [0, 1]")
+    for name, (lo, hi) in (("--rotation-range", rot), ("--magnification-range", mag),
+                           ("--polygon-scale-range", poly)):
+        if hi < lo:
+            raise SystemExit(f"{name}: LO must not exceed HI (got {lo} {hi})")
+    if mag[0] <= 0:
+        raise SystemExit("--magnification-range: magnification must be positive")
+    if poly[0] <= -1.0:
+        raise SystemExit("--polygon-scale-range: LO must exceed -1 (features cannot vanish)")
+    return PoseSpec(rotation_deg=rot, magnification=mag,
+                    edge_brightening=(args.edge_brightening,) * 2,
+                    absent_frac=absent, polygon_scale=poly, severity=sev)
 
 
 def main():
@@ -105,10 +178,17 @@ def main():
     print(f"architecture : {args.architecture} ({len(presets)} presets)")
     print(f"pairs        : {args.num_pairs} from {canvases} canvas(es)")
     print(f"conditions   : {args.noise}")
-    if args.edge_brightening or args.rotation_deg or args.magnification != 10.0:
-        print(f"pose/edge    : magnification {args.magnification}x, "
-              f"rotation {args.rotation_deg} deg, "
-              f"edge brightening {args.edge_brightening}")
+    spec = build_pose_spec(args)
+    if spec != PoseSpec():
+        def _fmt(lohi, unit):
+            lo, hi = lohi
+            return f"{lo:g}{unit}" if hi <= lo else f"[{lo:g}, {hi:g}]{unit}"
+        print(f"pose/edge    : magnification {_fmt(spec.magnification, 'x')}, "
+              f"rotation {_fmt(spec.rotation_deg, ' deg')}, "
+              f"edge brightening {_fmt(spec.edge_brightening, '')}")
+    if spec.absent_frac:
+        print(f"absent pairs : {spec.absent_frac:.0%} (found=0, reference from "
+              f"another die region)")
     print(f"output       : {args.output_dir}")
 
     pairs = write_split(
@@ -119,9 +199,10 @@ def main():
         architectures=presets,
         workers=args.workers,
         crops_per_canvas=args.crops_per_canvas,
-        pose=PoseParams(edge_brightening=args.edge_brightening,
-                        rotation_deg=args.rotation_deg,
-                        magnification=args.magnification),
+        pose=spec,
+        # Exact contract: the last canvas gets a partial crop budget instead
+        # of writing ceil-overshoot pairs the caller never asked for.
+        max_pairs=args.num_pairs,
     )
 
     print(f"\nWrote {pairs} pairs to {args.output_dir}")

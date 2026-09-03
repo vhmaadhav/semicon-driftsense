@@ -1,0 +1,18 @@
+# Generated data — ~15 GB. Regenerate with generate_dataset.py / scripts/gen_data.py.
+data/
+sample/
+output/
+
+# Environment
+venv/
+__pycache__/
+*.pyc
+
+# Training artifacts (the shipped weights file itself IS committed)
+logs/
+weights/*_last.pt
+
+# Evaluation output — keep the figures and metrics the README links to,
+# ignore the scratch subdirectories individual eval runs write into.
+results/*/
+.pytest_cache/

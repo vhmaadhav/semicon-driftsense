@@ -28,9 +28,244 @@ classical ZNCC baseline.
 
 ---
 
+## Phase 2 — registration under unknown pose
+
+Phase 2 keeps the Phase 1 problem and removes three assumptions: the zoom ratio
+is unknown in `[8×, 12×]`, the rotation is unknown in `±5°` and must be
+reported, and about 20% of pairs contain **no true instance** at all. The
+required output grows from `x, y` to `x, y, θ, s, found, score`.
+
+### Entry point
+
+```bash
+python register.py --input pairs.csv --output predictions.csv
+```
+
+One row per input pair, in input order: `pair_id, x, y, theta, scale, found,
+score`. A pair that fails for any reason still emits a row with `found=0` —
+a missing row scores zero, so declining is always better than disappearing.
+Runs CPU-only with no network access; weights load from `weights/`.
+
+### Results
+
+Measured on **2500 pairs from a held-out generation run** (`data/ext_p2/`,
+sets A 875 / B 875 / C 500 / D 250), scored against the published credit tiers
+with `scripts/eval_ext.py`. Two rules are enforced that a naive self-score does
+not, and both cost points:
+
+* a pair we decline (`found=0`) is credited **zero** for localisation and pose,
+  because that is what `register.py` writes and what the grader will see;
+* rejection F1 is reported with *rejection* as the positive class as well as
+  the lenient convention, because the two differ by ~1.7 points and the brief
+  does not settle which is meant.
+
+| Component | Score | Detail |
+| --------- | ----- | ------ |
+| Localisation | **0.8679** | set A 0.9705 (98.6% ≤5px, 92.5% ≤1px), set B 0.7840 (89.3% ≤5px); weighted 0.45·A + 0.55·B |
+| Pose — scale | **0.8978** | median relative error 0.42% |
+| Pose — rotation | **0.9038** | median error 0.102° |
+| Rejection | **F1 0.8878** | reject-as-positive; 0.9673 under the lenient convention |
+| Calibration | **AUC 0.9872** | `min(score, zncc)` against per-pair correctness |
+| Runtime | **~2.5 s** median | p90 ~3.0 s, single process 4 threads, idle CPU (`profile_pair.py`, Set A); machine- and config-dependent — see `.agents/INFERENCE_TWEAKS.md` |
+| Set D (bonus) | **0.938** | 94.8% ≤5px, untrained for — clears the +6 gate |
+
+**75.92 of the 85 self-measurable points** (full 2,250-pair A/B/C hold-out,
+corrected grader semantics: zero on declined pairs, threshold 0.2018,
+`verification="zncc"`, `band=False`, weights `weights/driftsense.pt`).
+Efficiency (5) is a relative ranking we cannot self-assess and the
+generator/report component (10) is judged.
+
+Measured on `data/ext_p2` — the `test` split of our own
+`driftsense_phase2_synthetic_v1` generator run (verified zero `pair_sha256`
+overlap with anything trained on). Testing-only hold-out, not organizer data.
+
+Earlier figures in this README and historical logs (72.55, 72.6, 75.51,
+76.23) were produced by older decodes and/or an unmasked scorer that let
+declined present pairs keep localisation credit; they are historical
+comparisons only. The measurement changed, not the method.
+
+### The `score` column: what our confidence means
+
+The brief leaves the confidence scale to each team and asks that the README say
+how it is formed, so that a grader can read it quickly.
+
+**Scale:** `score` lies in `[0, 1]`, higher means more confident that the
+reference really is present at the reported `(x, y)`. It is monotonic, not
+calibrated to a probability — only its ordering is claimed.
+
+**How it is formed:** it is the full-resolution ZNCC of the reference template,
+rendered at the recovered pose, against the search frame at the reported centre,
+combined with the network's own peak confidence. Both terms are already computed
+by the pipeline:
+
+* the **network confidence** is the sigmoid of the winning cell in the response
+  map — it answers *"which of these identical-looking repeats is the right one"*,
+  which is the question the network was trained on;
+* the **native ZNCC** answers *"does the reference actually sit here at full
+  resolution"* — on a wrong pose basin it is near zero while the right basin is
+  around 0.9, which is also how the pose hypotheses are arbitrated.
+
+They fail differently, which is the point of using both. The network can be
+confident on a plausible wrong repeat; ZNCC can be respectable on a heavily
+degraded frame with no true instance. Requiring *both* to be high is what
+separates present from absent.
+
+**Where the threshold comes from:** `found = 1` when the confidence clears a
+fixed threshold chosen on our own validation data — never on anything
+organizer-supplied. It is deliberately biased *low*, because the two errors do
+not cost the same: declining a pair that really did contain the target forfeits
+its localisation credit (40 pts) and its pose credit (20 pts) as well as hurting
+rejection F1, whereas accepting an absent pair only costs F1. The operating
+point is therefore chosen against the total rubric, not against F1 alone
+(`scripts/optimize_threshold.py`).
+
+**False positives vs false negatives:** we lean towards answering rather than
+declining, for the asymmetry above. Both counts are reported separately by
+`scripts/eval_ext.py`.
+
+### Verification: which hypothesis wins
+
+The pose search returns up to three candidates and one must be chosen. The
+default is native-resolution ZNCC (`verification="zncc"`), and an opt-in
+consensus mode overrides it only when a rank transform and a band-pass filter
+*both* prefer the same different candidate.
+
+Two things are worth knowing before changing this.
+
+**Verification reaches about a quarter of the remaining failures.** Of 90 Set B
+pairs that miss the 5 px tier, only 22 had a correct candidate generated and
+then not selected. The other 76% never had a right answer among the candidates
+at all, so they are a search problem, not a ranking one. The coarse sweep's
+band-pass was originally justified that way, but the full-set A/B (issue #9)
+measured it as a 0.42-point net loss and `band=False` is now the shipped
+default; the sweep's candidate-generation problem is what issue #5's rescue
+pass targets.
+
+**The textbook fix is the wrong one here.** A rank transform (Zabih & Woodfill,
+ECCV 1994) is the standard defence against impulse noise, and impulse noise is
+the second strongest discriminator of these failures. Measured as a selector it
+rescues the most failures and breaks the most successes — a net loss against
+plain ZNCC. It is available for study and is not used to select. See
+[CITATIONS §6](CITATIONS.md).
+
+### How it works
+
+The Phase 1 method is extended, not replaced. The network still does the one
+hard thing it was trained for — deciding *which* repeat is correct on
+matched-scale input — and the pose is handled around it:
+
+1. **Pose hypotheses.** Correlation against a periodic layout is multi-peaked
+   in scale: a wrong magnification can align the template with the wrong repeat
+   and outscore the true one on a low-resolution probe. The top few local
+   maxima of the coarse scale sweep are kept rather than just the best.
+2. **Canonicalisation.** Each hypothesis un-rotates and un-scales the Search
+   frame to the nominal 10×, so the network sees the input distribution it was
+   trained on.
+3. **Native-resolution verification.** Each candidate is verified by ZNCC at
+   full resolution, and the best one wins. A wrong scale basin correlates near
+   zero there while the right one is around 0.9, so the decision is easy where
+   the coarse probe could not make it.
+
+A convention bug is fixed alongside this. The nominal path labels a crop with
+the upstream formula `x0 / 10 + 50`, while the posed path mapped the crop centre
+through the rendering affine, which uses pixel-centre convention. The two differ
+by exactly `(m-1)/2m` — 0.45 px at 10×. That is invisible against a 5 px
+tolerance but is most of the budget at the 1 px tier, and it biased every posed
+training target. Confirmed by brute-force ZNCC at the true pose, which showed a
+constant +0.442 px residual in y with a standard deviation of only 0.107.
+Correcting it moved ≤1px from 57% to 68% and the median error from 0.86 px to
+0.55 px on identical scenes.
+
+4. **Pose polish.** Once ZNCC has placed the match, scale and rotation are
+   re-fit against that known location, in a window around it rather than over
+   the whole frame.
+
+Refinement deliberately happens in the **native** frame, never the canonical
+one, so the reported centre never inherits the resampling blur — the credit
+tiers pay 1.00 at 1 px against 0.40 at 5 px.
+
+#### The template had to be made continuous in scale
+
+`make_template` rendered the template with `cv2.resize` to
+`round(reference_px / m)`. Because a template is an integer number of pixels,
+the magnification it *actually realised* was `reference_px / round(reference_px / m)`
+— only **43 attainable values across [8, 12]**, in steps **0.81–1.22%** wide.
+The Phase 2 scale tier pays full credit below 1%, so the quantisation step was
+as wide as the entire full-credit band, and any search over `m` was optimising
+a piecewise-constant objective.
+
+This is the real explanation for an earlier observation that
+correlation-vs-scale was "nearly flat" inside the polish window, which had led
+to the scale result being computed and then deliberately thrown away because
+keeping it lowered scale credit from 0.860 to 0.808. The function was not flat
+because the window was too small; it was flat because it was a staircase, and
+golden-section search on a staircase returns an arbitrary point on a plateau.
+
+The fix costs nothing: the residual sub-integer scale is folded into the affine
+that was already being paid for to apply rotation. Measured realisation error
+fell from a median of **0.26%** (worst 0.55%) to **0.012%** (worst 0.021%), and
+the nominal 10× path stays bit-identical to the old one.
+
+A second, independent bias was removed at the same time. `TM_CCOEFF_NORMED` is
+normalised over the template's own support, so peak correlation rises as the
+template shrinks — and a scale search changes the template size by
+construction, which pulled the estimate towards larger magnification. The
+polish stage now pins the template canvas across its sweep so every candidate
+is scored over an identical pixel count.
+
+This matters more than it sounds. Measured against a true-pose oracle, the
+unchanged Phase 1 weights reach **99%** at the 5 px tolerance; with a single
+estimated pose they reach 83%. Every localisation failure was a pose failure —
+those pairs sat 15.8% off in scale, against 0.89% for the successes. They were
+not near-misses but confident lock-ons to the wrong repeat, and searching more
+than one hypothesis recovers nearly all of them.
+
+### Where the remaining points are
+
+[`IMPROVING.md`](IMPROVING.md) records the measured standing against each
+scoring component, the two ceilings that bound it — the ≤1px tier is capped by
+a σ≈1 px per-row jitter floor in the label, and extra pose hypotheses beyond
+three are exhausted — and the ranked work that is still worth doing.
+
+Note on weights: `weights/driftsense.pt` is unchanged from Phase 1. Every gain
+here is inference-side; the Phase 2 fine-tune produced no validation
+improvement and is not shipped.
+
+### Generating Phase 2 data
+
+```bash
+python generate_dataset.py --phase2 --num-pairs 200 --output-dir data/val_p2
+```
+
+`--phase2` samples magnification and rotation **per pair** over the disclosed
+bounds and emits absent pairs, whose reference is cropped from an independently
+generated die region of the same architecture under the same imaging
+parameters — periodically similar and entirely plausible, but with no true
+instance in the frame. The manifest gains a `found` column; absent pairs carry
+an out-of-range `-1` sentinel in every geometry column so that scoring code
+which forgets to filter on `found` fails loudly rather than quietly.
+
+The fine canvas is sized to the pose. A 1000 px frame at magnification *m*
+spans 1000·*m* fine pixels, so anything above 10× underfills the nominal
+10000 px canvas and the warp pads the shortfall with replicated border;
+below 10× the canvas is wider than the frame shows, and a crop drawn uniformly
+could land outside the visible field and still be labelled present. Both are
+handled: the canvas grows to cover the worst case in the spec, and crops are
+rejection-sampled against the affine that renders the frame. A nominal spec
+still resolves to the original 10000 px canvas, so Phase 1 splits reproduce
+byte for byte.
+
+Score a generated split against the full rubric with:
+
+```bash
+python scripts/eval_phase2.py data/val_p2
+```
+
+---
+
 ## Quick start
 
-Requires **Python 3.10–3.13** (PyTorch does not yet support 3.14).
+Requires **Python 3.11**, matching the Phase 2 reference machine. `requirements.txt` is frozen from a 3.11 environment with the CPU build of PyTorch — the reference machine has no GPU and no network.
 
 ```bash
 python3 -m venv venv && ./venv/bin/pip install -r requirements.txt
@@ -100,8 +335,10 @@ it falls back to classical multi-scale ZNCC and still prints a coordinate, so
 the script always produces a scoreable answer.
 
 **Runtime** (0.46 M parameters, no GPU required; results identical on CPU and
-GPU): ~3.8 s per pair on CPU with the default 8-way TTA, or ~0.5 s with
-`--no-tta`. Verified end to end in a clean virtualenv built only from
+GPU): ~3.8 s per pair on CPU with full 8-way TTA, ~0.5 s with `--no-tta`. The
+shipped default is the **adaptive routing** described below, which takes the
+single-view fast path on the confident majority and pays for voting only on
+contested scenes. Verified end to end in a clean virtualenv built only from
 `requirements.txt`, invoked from a directory outside the repo.
 
 **Tie-breaking.** When several candidates score within 4 % of the best, the one
@@ -130,6 +367,19 @@ toward the centre would cost accuracy.
 | [`driftsense/`](driftsense/) | the package: model, dataset, matching, losses, generation core |
 | [`generator/`](generator/) | vendored upstream synthetic-data generator (unmodified) |
 | [`scripts/`](scripts/) | development tooling: parallel generation, verification, analysis |
+
+---
+
+## Local code graph
+
+Run `/graphify .` from the repository root to build a local map of the code,
+documentation, paper, and images. It writes `graphify-out/` with an interactive
+HTML graph, `graph.json`, and `GRAPH_REPORT.md`. The directory stays out of Git
+because it contains generated views, caches, and local query memory.
+
+Use the graph for architecture questions before searching source manually. For
+example, `graphify explain "DriftSenseNet"` lists its callers and methods, while
+`graphify path "DriftSenseNet" "infer.py" --undirected` traces a dependency path.
 
 ---
 
@@ -807,6 +1057,29 @@ variations"*. Coverage:
 python generate_dataset.py --architecture mixed --num-pairs 20 \
     --edge-brightening 0.25 --rotation-deg 2.0 --magnification 9.5
 ```
+
+### Phase 2 Set B degradation coverage
+
+Phase 2 additionally names, for Set B: *charging, scan distortion, defocus,
+elevated shot noise, and polygon scaling ±20%*, in four undisclosed severity
+levels. Coverage:
+
+| required | where |
+| --- | --- |
+| charging | `charging_streak_prob`, `charging_streak_intensity` — [CITATIONS §2](CITATIONS.md) |
+| scan distortion | `shear_amplitude_px`, `drift_jitter_px`, `barrel_distortion_k` — [CITATIONS §3](CITATIONS.md) |
+| defocus | `beam_spot_size_nm`, `astigmatism_ratio` — [CITATIONS §2](CITATIONS.md) |
+| elevated shot noise | `dose_search`, `detector_noise_sigma_search`, `speckle_sigma` — [CITATIONS §2](CITATIONS.md) |
+| polygon scaling ±20% | `polygon_scale_fraction` — [CITATIONS §10](CITATIONS.md) |
+
+`polygon_scale_fraction` was added for Phase 2 and is a *multiplicative* CD
+change applied to every drawn feature with the pitch held fixed, which is what
+dose and etch bias actually do — they move linewidth, not the placement grid.
+It is deliberately a separate parameter from the pre-existing
+`linewidth_bias_nm`: that one is additive in nanometres, so a single value is a
+different *relative* change on a 20 nm line than on a 45 nm one and cannot
+express a uniform ±20% across the twelve architecture presets. Both are sampled
+independently and both are recorded per pair in the manifest.
 
 All three pose/edge knobs default to the nominal no-op, so every split reported
 above regenerates byte-for-byte. **The shipped weights were trained without

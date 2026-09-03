@@ -1,0 +1,23 @@
+[02:42] weights weights/driftsense_wide_last.pt, full 2250 pairs, no-band decode
+[02:42]   evaluating off
+[02:50]   evaluating m03
+[03:00]   evaluating m05
+[03:10]   evaluating m08
+[03:21]   evaluating m12
+[03:31]   evaluating m08d01
+[03:41] === results (paired against rescue off) ===
+config       best t  total/85     locA     locB       F1   fired%    hyp   s/pair
+---------------------------------------------------------------------------------
+off          0.1587     76.97   0.9737   0.8183   0.9061     0.0%   2.70     0.70
+m03          0.1586     76.91   0.9737   0.8187   0.9016     5.5%   3.50     0.74
+m05          0.1828     76.93   0.9737   0.8167   0.9058     6.8%   3.62     0.74
+m08          0.1589     76.95   0.9737   0.8197   0.9037     8.6%   3.77     0.75
+m12          0.1726     76.94   0.9737   0.8169   0.9060    10.1%   3.91     0.76
+m08d01       0.1570     76.92   0.9737   0.8194   0.9022     4.0%   3.77     0.75
+
+  m03      paired delta -0.069  95% CI [-0.166, +0.015]  P(better)   5.1%  -> below +0.35 gate
+  m05      paired delta -0.040  95% CI [-0.231, +0.154]  P(better)  33.9%  -> below +0.35 gate
+  m08      paired delta -0.022  95% CI [-0.158, +0.105]  P(better)  37.5%  -> below +0.35 gate
+  m12      paired delta -0.037  95% CI [-0.243, +0.164]  P(better)  35.3%  -> below +0.35 gate
+  m08d01   paired delta -0.053  95% CI [-0.181, +0.069]  P(better)  20.2%  -> below +0.35 gate
+[03:42] RESCUEDONE

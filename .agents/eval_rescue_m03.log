@@ -1,0 +1,46 @@
+2250 pairs over 5 shard(s), 3 workers
+  100/2250  0.26s/pair wall  eta 9.3 min
+  200/2250  0.25s/pair wall  eta 8.5 min
+  300/2250  0.24s/pair wall  eta 7.9 min
+  400/2250  0.24s/pair wall  eta 7.5 min
+  500/2250  0.24s/pair wall  eta 7.0 min
+  600/2250  0.24s/pair wall  eta 6.6 min
+  700/2250  0.24s/pair wall  eta 6.2 min
+  800/2250  0.24s/pair wall  eta 5.8 min
+  900/2250  0.24s/pair wall  eta 5.4 min
+  1000/2250  0.24s/pair wall  eta 5.0 min
+  1100/2250  0.24s/pair wall  eta 4.6 min
+  1200/2250  0.24s/pair wall  eta 4.3 min
+  1300/2250  0.24s/pair wall  eta 3.9 min
+  1400/2250  0.24s/pair wall  eta 3.5 min
+  1500/2250  0.25s/pair wall  eta 3.1 min
+  1600/2250  0.25s/pair wall  eta 2.7 min
+  1700/2250  0.25s/pair wall  eta 2.3 min
+  1800/2250  0.25s/pair wall  eta 1.9 min
+  1900/2250  0.25s/pair wall  eta 1.5 min
+  2000/2250  0.26s/pair wall  eta 1.1 min
+  2100/2250  0.26s/pair wall  eta 0.7 min
+  2200/2250  0.26s/pair wall  eta 0.2 min
+wrote .agents/cand_rescue_m03.csv
+
+==========================================================================
+EXTERNAL TEST SET — 2250 pairs (A 875, B 875, C 500, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8938     35.75
+   set A (875 pairs)        0.9767  <=5px 99.0%  <=1px 92.7%
+                                         median 0.32px
+   set B (875 pairs)        0.8261  <=5px 92.6%  <=1px 57.9%
+                                         median 0.82px
+Pose — scale (10)             credit 0.8947  med 0.42%      8.95
+Pose — rotation (10)        credit 0.8993  med 0.103deg      8.99
+Rejection (15)              F1(reject) 0.9066 @fix 0.201     13.60
+                            correct-rej 456  lost-real 50  missed-abs 44
+                            [lenient F1(present) 0.9731]
+                            [best-possible F1(reject) 0.9089 @ 0.2401]
+Calibration (10)                            AUC 0.9877      9.88
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   77.17
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

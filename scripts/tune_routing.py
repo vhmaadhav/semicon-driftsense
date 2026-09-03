@@ -32,7 +32,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense.matching import locate, locate_tta  # noqa: E402
-from driftsense.model import DriftSenseNet  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
 
 TOL = 5.0
 
@@ -119,8 +119,8 @@ def main():
         device = (torch.device("mps" if torch.backends.mps.is_available()
                                else "cuda" if torch.cuda.is_available() else "cpu")
                   if args.device == "auto" else torch.device(args.device))
-        ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
-        model = DriftSenseNet()
+        ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
+        model = net_from_checkpoint(ckpt)
         model.load_state_dict(ckpt.get("model", ckpt))
         model.to(device).eval()
         print(f"weights {args.weights} on {device}\n")

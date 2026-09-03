@@ -46,7 +46,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
 from driftsense.dataset import DriftSenseDataset  # noqa: E402
-from driftsense.model import DriftSenseNet  # noqa: E402
+from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
 
 
 def main():
@@ -69,8 +69,8 @@ def main():
     else:
         device = torch.device(args.device)
 
-    ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
-    model = DriftSenseNet()
+    ckpt = torch.load(args.weights, map_location="cpu", weights_only=True)
+    model = net_from_checkpoint(ckpt)
     model.load_state_dict(ckpt.get("model", ckpt))
     model.to(device)
 

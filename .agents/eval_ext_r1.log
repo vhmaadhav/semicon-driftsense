@@ -1,0 +1,46 @@
+2250 pairs over 5 shard(s), 3 workers
+  100/2250  0.22s/pair wall  eta 7.9 min
+  200/2250  0.20s/pair wall  eta 7.0 min
+  300/2250  0.20s/pair wall  eta 6.5 min
+  400/2250  0.20s/pair wall  eta 6.2 min
+  500/2250  0.20s/pair wall  eta 5.8 min
+  600/2250  0.20s/pair wall  eta 5.5 min
+  700/2250  0.20s/pair wall  eta 5.1 min
+  800/2250  0.20s/pair wall  eta 4.8 min
+  900/2250  0.20s/pair wall  eta 4.5 min
+  1000/2250  0.20s/pair wall  eta 4.1 min
+  1100/2250  0.20s/pair wall  eta 3.8 min
+  1200/2250  0.20s/pair wall  eta 3.5 min
+  1300/2250  0.20s/pair wall  eta 3.1 min
+  1400/2250  0.20s/pair wall  eta 2.8 min
+  1500/2250  0.20s/pair wall  eta 2.5 min
+  1600/2250  0.20s/pair wall  eta 2.2 min
+  1700/2250  0.20s/pair wall  eta 1.8 min
+  1800/2250  0.20s/pair wall  eta 1.5 min
+  1900/2250  0.20s/pair wall  eta 1.2 min
+  2000/2250  0.20s/pair wall  eta 0.8 min
+  2100/2250  0.20s/pair wall  eta 0.5 min
+  2200/2250  0.20s/pair wall  eta 0.2 min
+wrote .agents/ext_r1.csv
+
+==========================================================================
+EXTERNAL TEST SET — 2250 pairs (A 875, B 875, C 500, D 0)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.8395     33.58
+   set A (875 pairs)        0.9534  <=5px 96.6%  <=1px 90.5%
+                                         median 0.32px
+   set B (875 pairs)        0.7463  <=5px 83.8%  <=1px 51.9%
+                                         median 0.95px
+Pose — scale (10)             credit 0.9004  med 0.41%      9.00
+Pose — rotation (10)        credit 0.8968  med 0.104deg      8.97
+Rejection (15)              F1(reject) 0.7961 @fix 0.115     11.94
+                            correct-rej 365  lost-real 52  missed-abs 135
+                            [lenient F1(present) 0.9478]
+                            [best-possible F1(reject) 0.8401 @ 0.2008]
+Calibration (10)                            AUC 0.9871      9.87
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   73.36
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable

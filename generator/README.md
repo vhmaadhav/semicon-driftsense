@@ -52,3 +52,17 @@ pytest tests/
 ```
 streamlit run app.py
 ```
+
+## Phase 2 audit package (Issue 45)
+
+Generate and validate the fixed 20-pair audit package with:
+
+```text
+python generate_phase2.py --output-dir output --seed 45045 --pairs 20 --force
+python baseline.py --output-dir output --threshold 0.55
+python score.py --output-dir output --threshold 0.55
+python contact_sheet.py --output-dir output
+python check_submission.py --output-dir output
+```
+
+The legacy root `generate.py` entry point remains unchanged for compatibility.

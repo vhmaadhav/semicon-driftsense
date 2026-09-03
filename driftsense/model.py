@@ -142,6 +142,18 @@ def grouped_xcorr(search_feat: torch.Tensor, template_feat: torch.Tensor,
     return torch.cat(outs, dim=0)
 
 
+def net_from_checkpoint(ckpt: dict):
+    """Build the network a checkpoint was actually trained with.
+
+    Checkpoints from a scaled run record their width under `arch_kwargs`; older
+    ones predate the flag and must keep loading with the constructor's own
+    defaults. Constructing DriftSenseNet() and hoping is how a 1.02M checkpoint
+    meets a 0.456M model and raises fourteen size-mismatch errors -- which is
+    exactly what happened to every caller that did it by hand.
+    """
+    return DriftSenseNet(**(ckpt.get("arch_kwargs") or {}))
+
+
 class DriftSenseNet(nn.Module):
     """Reference + search -> (centre heatmap, sub-cell offsets).
 
@@ -155,6 +167,22 @@ class DriftSenseNet(nn.Module):
         super().__init__()
         self.encoder = Encoder(width)
         self.context = ContextBranch(width, ctx)
+        # E1 efficiency cache: the template-branch embedding is identical for
+        # every pose hypothesis of a pair (locate_phase2 canonicalizes the
+        # SEARCH, so the template tensor is byte-identical across attempts).
+        # Single-slot, keyed on the input bytes + device; never served in
+        # training mode. use_template_cache=False restores the pre-E1
+        # behaviour (every hypothesis re-encodes) -- the A/B benchmark's
+        # "existing" baseline. See tests/test_search_feat_cache.py.
+        self.use_template_cache = True
+        self._tf_cache = None
+        # Issue #21: the cache key covers the input bytes, not the parameter
+        # state -- any weight change must invalidate it. load_state_dict is
+        # the realistic mid-session mutation (e.g. two eval passes on one
+        # model instance); optimizer steps mutate in training mode, where the
+        # cache is never populated anyway.
+        self.register_load_state_dict_post_hook(
+            lambda module, incompatible_keys: setattr(module, "_tf_cache", None))
         self.corr_mix = nn.Sequential(
             nn.Conv2d(CORR_GROUPS, head, 1, bias=False),
             nn.BatchNorm2d(head),
@@ -186,15 +214,41 @@ class DriftSenseNet(nn.Module):
         nn.init.constant_(self.logit.bias, -4.0)
         nn.init.constant_(self.offset.bias, 0.0)
 
-    def forward(self, reference: torch.Tensor, search: torch.Tensor) -> dict:
+    def forward(self, reference: torch.Tensor, search: torch.Tensor,
+                ref_feat: "torch.Tensor | None" = None) -> dict:
         """reference: (B,1,1000,1000) or a pre-downsampled (B,1,100,100)
-        template. search: (B,1,H,W) with H,W multiples of the stride."""
-        if reference.shape[-1] != TEMPLATE_SIZE:
-            reference = F.interpolate(
-                reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
-                mode="area")
+        template. search: (B,1,H,W) with H,W multiples of the stride.
 
-        tf = self.encoder(reference)
+        Any reference that is not exactly TEMPLATE_SIZE square -- including a
+        non-square one that happens to be TEMPLATE_SIZE *wide* -- is area-
+        resized to the template size first, so both branches see one shape.
+
+        ref_feat: a precomputed template-branch embedding, or None to encode
+        here. Inference also consults a single-slot cache keyed on the input
+        bytes (identical templates across pose hypotheses hit it); training
+        never does."""
+        if ref_feat is not None:
+            tf = ref_feat
+        elif self.training or not self.use_template_cache:
+            # Pre-E1 behaviour: every call re-encodes, nothing is stored.
+            if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
+                reference = F.interpolate(
+                    reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
+                    mode="area")
+            tf = self.encoder(reference)
+        else:
+            key = (reference.detach().cpu().numpy().tobytes(),
+                   str(reference.device))
+            if self._tf_cache is not None and self._tf_cache[0] == key:
+                tf = self._tf_cache[1]
+            else:
+                if reference.shape[-2:] != (TEMPLATE_SIZE, TEMPLATE_SIZE):
+                    reference = F.interpolate(
+                        reference, size=(TEMPLATE_SIZE, TEMPLATE_SIZE),
+                        mode="area")
+                tf = self.encoder(reference)
+                self._tf_cache = (key, tf)
+
         sf = self.encoder(search)
 
         # L2-normalise so the match score reflects pattern agreement rather

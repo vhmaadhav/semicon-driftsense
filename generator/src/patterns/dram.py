@@ -45,6 +45,7 @@ def _line_mask(
     rng: np.random.Generator,
     width_jitter_fraction: float = WIDTH_JITTER_FRACTION,
     linewidth_bias_nm: float = 0.0,
+    polygon_scale_fraction: float = 0.0,
 ) -> np.ndarray:
     """1D boolean mask marking line + any bridged (collapsed) gaps.
 
@@ -53,7 +54,8 @@ def _line_mask(
     random jitter -- positive grows every line, negative shrinks them.
     """
     mask = np.zeros(size_px, dtype=bool)
-    biased_width_nm = max(width_nm + linewidth_bias_nm, 1.0)
+    biased_width_nm = max(width_nm * (1.0 + polygon_scale_fraction)
+                          + linewidth_bias_nm, 1.0)
     widths = biased_width_nm * (1.0 + rng.normal(0, width_jitter_fraction, size=len(positions)))
     widths = np.clip(widths, biased_width_nm * 0.5, biased_width_nm * 1.5)
     for i, center in enumerate(positions):
@@ -80,6 +82,7 @@ def generate_dram_canvas(
     rng: np.random.Generator,
     linewidth_bias_nm: float = 0.0,
     corner_rounding_px: float = 0.0,
+    polygon_scale_fraction: float = 0.0,
     return_layers: bool = False,
 ):
     """Render the DRAM cell array.
@@ -100,10 +103,12 @@ def generate_dram_canvas(
     row_mask = _line_mask(
         size_px, word_positions, preset["word_line_width_nm"], collapse_threshold_nm, rng,
         linewidth_bias_nm=linewidth_bias_nm,
+        polygon_scale_fraction=polygon_scale_fraction,
     )
     col_mask = _line_mask(
         size_px, bit_positions, preset["bit_line_width_nm"], collapse_threshold_nm, rng,
         linewidth_bias_nm=linewidth_bias_nm,
+        polygon_scale_fraction=polygon_scale_fraction,
     )
 
     word_line_layer = np.zeros((size_px, size_px), dtype=np.uint8)
@@ -115,7 +120,8 @@ def generate_dram_canvas(
     canvas[:, col_mask] = np.maximum(canvas[:, col_mask], BIT_LINE_VAL)
 
     contact_layer = np.zeros((size_px, size_px), dtype=np.uint8)
-    base_radius = max(preset["contact_diameter_nm"] + linewidth_bias_nm, 1.0) / 2.0
+    base_radius = max(preset["contact_diameter_nm"] * (1.0 + polygon_scale_fraction)
+                      + linewidth_bias_nm, 1.0) / 2.0
     for i, wl in enumerate(word_positions):
         for j, bl in enumerate(bit_positions):
             if (i + j) % 2 == 0:

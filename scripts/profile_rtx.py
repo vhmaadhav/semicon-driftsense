@@ -263,7 +263,10 @@ def main():
     g.add_argument("--batches", type=int, nargs="+", default=[8, 16, 32])
     g.add_argument("--iters", type=int, default=20)
     g.add_argument("--warmup", type=int, default=8)
-    g.add_argument("--amp", action="store_true", default=True)
+    # BooleanOptionalAction: --amp (the default) sweeps the autocast variants,
+    # --no-amp profiles fp32 only. A plain store_true with default=True made
+    # the flag permanently impossible to disable.
+    g.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True)
     g.add_argument("--vram-fraction", type=float, default=0.90,
                    help="hard cap on VRAM, as a fraction of the card. Below 1.0 so "
                         "an oversized config raises OOM instead of being silently "

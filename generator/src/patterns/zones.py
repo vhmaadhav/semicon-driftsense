@@ -23,7 +23,7 @@ import numpy as np
 
 from src.patterns.dram import generate_dram_canvas
 from src.patterns.finfet import generate_finfet_canvas
-from src.presets import presets_for_kind
+from src.presets import get_preset, presets_for_kind, scaled_pitch_presets
 
 _GENERATORS = {"dram": generate_dram_canvas, "finfet": generate_finfet_canvas}
 
@@ -77,13 +77,29 @@ def generate_zone_canvas(
     strip_width_nm: float = 320.0,
     linewidth_bias_nm: float = 0.0,
     corner_rounding_px: float = 0.0,
+    polygon_scale_fraction: float = 0.0,
+    pitch_factor: float = 1.0,
+    preset_name: str | None = None,
 ) -> dict:
     """Tile independently-generated mats of `kind` across the canvas,
     separated by strip material. Returns dict with the canvas plus mat/strip
     rectangles in px for crop-placement logic downstream.
+
+    `pitch_factor` rescales every pitch-driving preset field of the mat pool
+    (clamped into the family's legal pitch envelope). 1.0 -- the default --
+    reproduces the historical canvas byte-for-byte; it exists so an absent-
+    pair decoy can draw its lattice pitch away from the reference scene's
+    (Phase 2 Set C) without reusing the same pitch support.
     """
     generator = _GENERATORS[kind]
-    presets = presets_for_kind(kind)
+    if preset_name is not None and pitch_factor == 1.0:
+        preset = get_preset(preset_name)
+        if preset["kind"] != kind:
+            raise ValueError(f"preset {preset_name!r} is not a {kind} preset")
+        presets = [preset]
+    else:
+        presets = (presets_for_kind(kind) if pitch_factor == 1.0
+                   else scaled_pitch_presets(kind, pitch_factor))
 
     canvas = _strip_routing_texture(size_px, rng)
 
@@ -103,6 +119,7 @@ def generate_zone_canvas(
                 mat_canvas = generator(
                     mat_size, preset, collapse_threshold_nm, child_rng,
                     linewidth_bias_nm=linewidth_bias_nm, corner_rounding_px=corner_rounding_px,
+                    polygon_scale_fraction=polygon_scale_fraction,
                 )
                 canvas[y0:y1, x0:x1] = mat_canvas[:mat_h, :mat_w]
                 mat_rects.append((x0, y0, mat_w, mat_h))
