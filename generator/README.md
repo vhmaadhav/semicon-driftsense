@@ -15,8 +15,12 @@ statement (SEMICON India Hackathon 2026 / i4C). No dataset is provided by
 the hackathon -- this generates physically-grounded Reference/Search image
 pairs (DRAM-style or FinFET-style structures) with ground truth.
 
+**Phase 1 nominal acquisition** (fixed magnification). The Phase 2 package
+described below instead sweeps the Search scale over `z in [8, 12]`, so these
+two lines are the Phase 1 defaults, not a Phase 2 constraint:
+
 - Reference: 1000x1000 px @ 1 nm/px (1 um FOV)
-- Search: 1000x1000 px @ 10 nm/px (10 um FOV)
+- Search: 1000x1000 px @ 10 nm/px (10 um FOV) -- nominal `z = 10` only
 
 ## Phase 2 deliverable: the fixed 20-pair audit package
 
