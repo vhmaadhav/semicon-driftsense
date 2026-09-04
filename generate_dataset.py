@@ -155,9 +155,38 @@ def build_pose_spec(args) -> PoseSpec:
     if not 0.0 <= absent <= 1.0:
         raise SystemExit("--absent-frac must be in [0, 1]")
     for name, (lo, hi) in (("--rotation-range", rot), ("--magnification-range", mag),
-                           ("--polygon-scale-range", poly)):
+                           ("--polygon-scale-range", poly), ("--severity-range", sev)):
         if hi < lo:
             raise SystemExit(f"{name}: LO must not exceed HI (got {lo} {hi})")
+
+    # Degenerate-pin guard (issue #31).
+    #
+    # PoseSpec disables a ladder when `hi <= lo` and makes NO random draw -- that
+    # is deliberate, and it is what keeps the Phase 1 splits byte-reproducible
+    # (see the field comments on PoseSpec.severity / .polygon_scale). The
+    # consequence is a trap: a caller who pins a level with equal endpoints gets
+    # the exact OPPOSITE of what they asked for -- the nominal, EASIEST setting,
+    # on pairs whose manifest still carries the severity label they requested.
+    #
+    # This is not hypothetical. It is the defect that retracted the 81.45/81.93
+    # headline figures (README "Retired: the 81.45 / 81.93 figures"), and it is
+    # still reproducible here: `--severity-range 1.0 1.0` renders
+    # severity_continuous = 0.0 (drift 0.52-1.53 px, speckle 0.0) while
+    # `--severity-range 1.0 1.000001` renders 1.0 (drift 2.25-2.35, speckle
+    # 0.28-0.36). Compliance item G2 asks for exactly this kind of severity-
+    # weighted regeneration, so the trap sits directly in the path of that work.
+    #
+    # `0 0` stays legal for both flags: it is the documented "off" idiom
+    # (see the --phase2 note on --polygon-scale-range above).
+    for name, (lo, hi) in (("--severity-range", sev),
+                           ("--polygon-scale-range", poly)):
+        if hi == lo and (lo, hi) != (0.0, 0.0):
+            raise SystemExit(
+                f"{name} {lo} {hi}: equal endpoints DISABLE this ladder rather "
+                f"than pinning it -- no draw is made and the pairs render at the "
+                f"nominal (easiest) setting, while the manifest still reports the "
+                f"level you asked for. Widen the range instead, e.g. "
+                f"'{name} {lo} {hi + 1e-6}', or omit the flag to disable it.")
     if mag[0] <= 0:
         raise SystemExit("--magnification-range: magnification must be positive")
     if poly[0] <= -1.0:
