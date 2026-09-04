@@ -33,9 +33,34 @@ P=.agents/WIDE.txt
 say() { echo "[$(date '+%H:%M')] $*" | tee -a "$P"; }
 : > "$P"
 
+# --val-limit 100, raised from 12 (audit 2026-09-04).
+#
+# At 12 scenes the in-loop validator is blind: across this run's own 34 epochs
+# (weights/driftsense_wide_history.json) median_px took FOUR distinct values and
+# sat at the identical float 0.2989545090414367 for 28 of them, with acc@5px
+# pinned at 1.000 from epoch 3 -- while training loss fell monotonically
+# 0.7228 -> 0.2847 and had still not plateaued at the last epoch. The selection
+# score (1-acc@5px)*1000 + median_px therefore froze at epoch 3 and could never
+# be beaten, which is why weights/driftsense_wide.pt ("best") is an EPOCH-4
+# checkpoint and the actually-shipped weights came from _last, promoted by
+# external evaluation instead.
+#
+# 100 is the value the one healthy history in the repo used (driftsense_v5f,
+# n=100), and it is the only history that shows real epoch-to-epoch movement.
+# .agents/SETB_WHERE_THE_POINTS_ARE.md puts it plainly: "Fix this before
+# spending GPU hours on Set B."
+#
+# Cost: validation runs full inference per scene, so this adds roughly
+# 100 x ~1s x 34 epochs ~= 1 GPU-hour to the run. That is the price of a
+# selection signal that can actually discriminate; it buys nothing to train
+# 34 epochs and then choose among them at random.
+#
+# NOTE: in-loop selection is still only a coarse guard. Real promotion goes
+# through scripts/stream_eval.py + scripts/compare_checkpoints.py (paired
+# bootstrap, +0.35 gate) per TRAINING.md section 5.
 say "=== training 1.02M model (width 96 / ctx 48 / head 96), from scratch ==="
 ./venv-train/bin/python train.py --train-dirs data/ext_train \
-   --val-dir data/val_p2 --phase2 --val-limit 12 \
+   --val-dir data/val_p2 --phase2 --val-limit 100 \
    --width 96 --ctx 48 --head 96 \
    --jitter-power -1 --ema 0.999 \
    --lr 1.4e-3 --epochs 34 --samples-per-epoch 30000 \

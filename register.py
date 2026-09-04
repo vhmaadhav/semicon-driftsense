@@ -52,6 +52,34 @@ DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
 OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
 
+# --------------------------------------------------------------------------
+# Mass-failure detection.
+#
+# The output contract is deliberately forgiving: any pair that raises still
+# emits a declined row, because a missing row scores zero and a declined one
+# does not. The cost of that forgiveness is that a run which fails on EVERY
+# pair is, from the outside, indistinguishable from a run that confidently
+# declined every pair -- same well-formed CSV, same exit code 0.
+#
+# These thresholds are deliberately loose. They are not a quality bar; they
+# only fire on values that cannot plausibly be a real decode of a real set,
+# so a genuinely hard blind set never trips them:
+#
+#   * ERROR_FRAC 0.20 -- one pair in five raising is not bad luck on a few
+#     unreadable images, it is a broken weights file / path / decode config.
+#   * FOUND_FRAC 0.30 -- the disclosed composition is ~80% present, so
+#     declining more than 70% of a set means the confidence statistic and its
+#     threshold have come apart (the exact unit-system mismatch documented in
+#     driftsense/config.py), not that the set was hard.
+#   * MIN_PAIRS 8 -- below this the rates are too noisy to mean anything.
+#
+# Firing changes nothing about the output: rows are still written, the exit
+# code is still 0. It only makes the failure impossible to miss, in the style
+# of the [FALLBACK] banner below.
+MASS_FAILURE_ERROR_FRAC = 0.20
+MASS_FAILURE_FOUND_FRAC = 0.30
+MASS_FAILURE_MIN_PAIRS = 8
+
 # Candidate spellings for the two image columns. The addendum fixes `pair_id`
 # but publishes the rest of the pairs.csv layout separately, so accept the
 # plausible spellings rather than guess one and fail the whole run.
@@ -451,6 +479,8 @@ def main():
     times = []
     t_start = time.perf_counter()
     found_count = 0
+    error_count = 0
+    mass_failure_warned = False
     total_rows = len(rows)
 
     disp = _LiveDisplay(sys.stdout, total_rows, quiet=a.quiet)
@@ -534,12 +564,34 @@ def main():
             # drop the row. SystemExit is caught too: read_gray raises
             # SystemExit for an unreadable image, and that must zero-fill
             # THIS row only -- not kill the whole batch.
+            # NOTE on ordering: SystemExit derives from BaseException, NOT from
+            # Exception, so `except Exception` does not shadow the clause below
+            # it -- both are reachable and the order is irrelevant here.
             except Exception as e:                      # noqa: BLE001
                 disp.erase()
+                error_count += 1
                 print(f"[warn] pair {pid}: {type(e).__name__}: {e}", file=sys.stderr)
             except SystemExit as e:
                 disp.erase()
+                error_count += 1
                 print(f"[warn] pair {pid}: SystemExit: {e}", file=sys.stderr)
+            # One early alarm, the moment a run stops looking like a run. Without
+            # it a systematic failure (a bad weights file, a config typo reaching
+            # locate() through **kw, an unreadable image directory) stays a
+            # scroll of per-pair [warn] lines until the very end -- and produces a
+            # perfectly well-formed all-declined predictions.csv with exit 0.
+            if (not mass_failure_warned and n + 1 >= MASS_FAILURE_MIN_PAIRS
+                    and error_count >= MASS_FAILURE_ERROR_FRAC * (n + 1)):
+                mass_failure_warned = True
+                disp.erase()
+                print("=" * 72, file=sys.stderr)
+                print(f"[MASS FAILURE] {error_count} of the first {n + 1} pair(s) "
+                      "raised. This is a systematic failure, not bad luck on a few "
+                      "images -- check the weights, the image paths and the decode "
+                      "config. Rows are still being written (a declined row scores "
+                      "more than a missing one), but they are declines, not "
+                      "answers.", file=sys.stderr)
+                print("=" * 72, file=sys.stderr)
             w.writerow(out)
             if out.get("found"):
                 found_count += 1
@@ -600,6 +652,35 @@ def main():
     # line, for the judge harness to parse without scraping progress text.
     print(f"# runtime: median {np.median(t):.2f} p90 {np.percentile(t,90):.2f} "
           f"max {t.max():.2f} n={len(t)}", file=sys.stderr)
+
+    # End-of-run mass-failure banner. Repeated here (not only inline) because a
+    # log truncated to its tail -- the common case when something is skimmed
+    # after the fact -- must still show it. Machine-readable marker first so a
+    # harness can grep for it without parsing prose.
+    if total_rows >= MASS_FAILURE_MIN_PAIRS:
+        err_frac = error_count / total_rows
+        found_frac = found_count / total_rows
+        reasons = []
+        if err_frac >= MASS_FAILURE_ERROR_FRAC:
+            reasons.append(f"{error_count}/{total_rows} pair(s) raised "
+                           f"({err_frac:.0%}, threshold {MASS_FAILURE_ERROR_FRAC:.0%})")
+        if found_frac < MASS_FAILURE_FOUND_FRAC:
+            reasons.append(f"only {found_count}/{total_rows} reported found "
+                           f"({found_frac:.0%}, expected ~80% present)")
+        if reasons:
+            print(f"# mass_failure: errors={error_count} found={found_count} "
+                  f"n={total_rows}", file=sys.stderr)
+            print("=" * 72, file=sys.stderr)
+            print("[MASS FAILURE] This run does not look like a successful decode:",
+                  file=sys.stderr)
+            for r_ in reasons:
+                print(f"  - {r_}", file=sys.stderr)
+            print(f"  {os.path.abspath(a.output)} is complete and well-formed, but "
+                  "its rows are declines rather than answers. Verify the weights "
+                  "load, the image paths resolve, and the confidence statistic "
+                  "matches its threshold before treating this file as a result.",
+                  file=sys.stderr)
+            print("=" * 72, file=sys.stderr)
 
     if model is None:
         # Repeated at the end, unconditionally: a log truncated to its tail
