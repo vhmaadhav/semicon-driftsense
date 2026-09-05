@@ -31,6 +31,33 @@ from driftsense.stream_dataset import StreamingDriftSense
 from driftsense.engine import compute_loss, decode_batch, evaluate
 from driftsense.model import DriftSenseNet
 
+# Pose-estimate jitter applied when canonicalising a posed frame for training.
+#
+# `dataset.build_sample` undoes the pose before the network sees the frame, and
+# it does so with a *jittered* estimate on purpose -- see its docstring: "the
+# estimate the pose search will hand us at inference is not exact, so training
+# canonicalises with a jittered pose ... which makes the network tolerant of
+# precisely the mistake it will actually be given."
+#
+# The two paths carry different defaults, deliberately:
+#
+#   * STREAMING has always defaulted to (0.015, 0.30) under --phase2. Kept
+#     exactly, so every historical --stream command reproduces.
+#   * The ON-DISK path (--train-dirs) defaults to (0, 0), which is what it has
+#     always effectively used -- `pose_jitter` was never passed to
+#     DriftSenseDataset at all, so it sat at the constructor default. Every
+#     shipped Phase 2 checkpoint (p6-p9, wide, setcfull) came from this path
+#     (scripts/wide_run.sh uses --train-dirs), which means the network has only
+#     ever been trained on frames canonicalised with the EXACT ground-truth
+#     pose -- zero residual, a condition it never meets at inference.
+#
+# Wiring the flag through changes no existing command: passing --pose-jitter is
+# now the way to opt the on-disk path in. Flipping the on-disk default is a
+# training-recipe change and belongs behind a measured A/B, not behind a
+# plumbing fix.
+POSE_JITTER_STREAM_DEFAULT = (0.015, 0.30)
+POSE_JITTER_DISK_DEFAULT = (0.0, 0.0)
+
 
 def pick_device(name: str) -> torch.device:
     if name != "auto":
@@ -117,11 +144,15 @@ def parse_args():
                           "magnification 8-12x, rotation +/-5 deg, 20%% absent pairs")
     ph2.add_argument("--absent-frac", type=float, default=None,
                      help="override the absent-pair fraction (default 0.2 under --phase2)")
-    ph2.add_argument("--pose-jitter", type=float, nargs=2, default=(0.015, 0.30),
+    ph2.add_argument("--pose-jitter", type=float, nargs=2, default=None,
                      metavar=("SCALE_REL", "ROT_DEG"),
                      help="std-dev of the pose error simulated when canonicalising, "
-                          "sized to the pose search's measured residual "
-                          "(default: 1.5%% scale, 0.30 deg)")
+                          "sized to the pose search's measured residual. Applies to "
+                          "BOTH the --stream and the on-disk (--train-dirs) paths. "
+                          "Left unset, streaming keeps its historical 1.5%% scale / "
+                          "0.30 deg default under --phase2 and the on-disk path "
+                          "stays at 0 0, so every existing command reproduces; see "
+                          "POSE_JITTER_STREAM_DEFAULT for why the two differ.")
     p.add_argument("--crops-per-canvas", type=int, default=8,
                    help="reference crops per generated canvas when streaming. The "
                         "canvas dominates generation cost, so raising this cuts "
@@ -242,7 +273,8 @@ def main():
             pose_spec = PoseSpec(rotation_deg=(-5.0, 5.0), magnification=(8.0, 12.0),
                                  absent_frac=(0.2 if args.absent_frac is None
                                               else args.absent_frac))
-            jitter = tuple(args.pose_jitter)
+            jitter = (tuple(args.pose_jitter) if args.pose_jitter
+                      else POSE_JITTER_STREAM_DEFAULT)
         train_ds = StreamingDriftSense(length=args.stream_length, crop=args.crop,
                                        seed=args.seed, pose=pose_spec, pose_jitter=jitter,
                                        crops_per_canvas=args.crops_per_canvas)
@@ -257,10 +289,20 @@ def main():
         if not pool_dirs:
             raise SystemExit(f"no readable splits under {args.train_dirs} "
                              f"(a shard needs a COMPLETE marker)")
+        # pose_jitter reaches the on-disk path here. It never did before: the
+        # constructor argument existed and build_sample honoured it, but this
+        # call site omitted it, so it sat at (0, 0) for every shipped Phase 2
+        # checkpoint -- see POSE_JITTER_STREAM_DEFAULT. Unset, the value is
+        # still (0, 0), so this is plumbing, not a recipe change.
+        disk_jitter = (tuple(args.pose_jitter) if args.pose_jitter
+                       else POSE_JITTER_DISK_DEFAULT)
         train_ds = DriftSenseDataset(pool_dirs, crop=args.crop, train=True,
-                                     seed=args.seed, limit=args.limit or None)
+                                     seed=args.seed, limit=args.limit or None,
+                                     pose_jitter=disk_jitter)
         print(f"train pairs: {len(train_ds)} from {len(pool_dirs)} split(s)   "
-              f"crop: {args.crop}")
+              f"crop: {args.crop}   pose jitter: "
+              f"{disk_jitter[0]:.1%} scale / {disk_jitter[1]:.2f} deg"
+              f"{'' if any(disk_jitter) else ' (off)'}")
     val_rows = load_manifest(args.val_dir)
     print(f"val scenes: {len(val_rows)}")
 
