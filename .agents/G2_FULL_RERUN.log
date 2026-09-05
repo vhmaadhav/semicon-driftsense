@@ -1,0 +1,72 @@
+=== G2 FULL RE-RUN PROVENANCE ===
+date: 2026-09-05T17:53:46+05:30
+repo: drift-sense  branch: fix/stage0-measurement-trust  head: c1d871aa850462033e86cbad3b3fea8532697369
+dirty: 2 files
+weights: weights/driftsense.pt sha256=e6506b7c3b2ccfd4
+python: Python 3.11.16  torch: 2.13.0+cpu
+data: data/ext_p2 -> /home/pranesh/Documents/semicon/semicon-driftsense/data/ext_p2
+generator_bundle: 1f336770031301e6b776b93ab91c2bd0f85aebe7378e45bb505bbf5b68550658
+config EARLY_EXIT_GATES = ((0.85, 0.75, 0.25, None), (0.72, 0.72, 0.35, 0.04))
+config LEGACY_FALLBACK_THRESHOLD = 0.55
+config SHIPPED_BAND = False
+config SHIPPED_CONFIDENCE = 'legacy_min'
+config SHIPPED_SUBPIXEL = 'parabola'
+config SHIPPED_SUBPIXEL_ROWS = True
+config SHIPPED_THRESHOLD = 0.18
+config SHIPPED_VERIFICATION = 'zncc'
+cmd: eval_ext.py test_{A_0000,A_0001,B_0000,B_0001,C_0000,D_0000} --jobs 12 --threads 2
+==================================
+2500 pairs over 6 shard(s), 12 workers
+  100/2500  0.61s/pair wall  eta 24.2 min
+  200/2500  0.55s/pair wall  eta 21.1 min
+  300/2500  0.59s/pair wall  eta 21.6 min
+  400/2500  0.53s/pair wall  eta 18.7 min
+  500/2500  0.52s/pair wall  eta 17.3 min
+  600/2500  0.50s/pair wall  eta 16.0 min
+  700/2500  0.50s/pair wall  eta 15.1 min
+  800/2500  0.50s/pair wall  eta 14.2 min
+  900/2500  0.51s/pair wall  eta 13.6 min
+  1000/2500  0.53s/pair wall  eta 13.3 min
+  1100/2500  0.54s/pair wall  eta 12.7 min
+  1200/2500  0.56s/pair wall  eta 12.2 min
+  1300/2500  0.59s/pair wall  eta 11.9 min
+  1400/2500  0.62s/pair wall  eta 11.4 min
+  1500/2500  0.63s/pair wall  eta 10.5 min
+  1600/2500  0.65s/pair wall  eta 9.7 min
+  1700/2500  0.66s/pair wall  eta 8.8 min
+  1800/2500  0.68s/pair wall  eta 7.9 min
+  1900/2500  0.70s/pair wall  eta 7.0 min
+  2000/2500  0.72s/pair wall  eta 6.0 min
+  2100/2500  0.73s/pair wall  eta 4.8 min
+  2200/2500  0.74s/pair wall  eta 3.7 min
+  2300/2500  0.74s/pair wall  eta 2.5 min
+  2400/2500  0.74s/pair wall  eta 1.2 min
+  2500/2500  0.73s/pair wall  eta 0.0 min
+wrote .agents/G2_ext_full_shipped.csv
+
+==========================================================================
+EXTERNAL TEST SET — 2500 pairs (A 875, B 875, C 500, D 250)
+==========================================================================
+component                                       metric    points
+--------------------------------------------------------------------------
+Localisation (40)                        credit 0.9011     36.04
+   set A (875 pairs)        0.9755  <=5px 99.1%  <=1px 95.2%
+                                         median 0.30px
+   set B (875 pairs)        0.8402  <=5px 92.9%  <=1px 67.4%
+                                         median 0.59px
+Pose — scale (10)             credit 0.8967  med 0.44%      8.97
+Pose — rotation (10)        credit 0.9008  med 0.099deg      9.01
+Rejection (15)              F1(reject) 0.9126 @fix 0.180     13.69
+                            correct-rej 454  lost-real 41  missed-abs 46
+                            [lenient F1(present) 0.9752]
+                            [best-possible F1(reject) 0.9167 @ 0.1613]
+Calibration (10)                            AUC 0.9870      9.87
+   [submitted AUC (issue #27)           0.7637 -> 7.64]
+--------------------------------------------------------------------------
+SUBTOTAL (85 measurable)                                   77.58
+  + efficiency (5)          not measurable in parallel
+  + generator/report (10)   judged, not self-assessable
+
+BONUS set D (optical)       credit 0.9792  <=5px 99.6%
+                            +6 needs D>=0.40 and A-C>=0.50
+EXIT=0 at 2026-09-05T18:24:12+05:30
