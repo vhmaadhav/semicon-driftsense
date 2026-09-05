@@ -303,5 +303,115 @@ def test_build_is_reproducible(builder, tmp_path):
         assert fa.read() == fb.read()
 
 
+# --------------------------------------------------------------------------
+# Checkpoint stripping: weights/driftsense.pt ships without training state
+# (optimizer, raw_model) that inference never reads. The file ON DISK is
+# never modified -- only what the builder writes into the ZIP.
+# --------------------------------------------------------------------------
+
+def test_shipped_checkpoint_is_stripped_of_training_state(builder, tmp_path):
+    """The real archive's weights/ member must be smaller than the on-disk
+    checkpoint and carry only the ship keys -- not optimizer/raw_model."""
+    import zipfile
+
+    on_disk = os.path.getsize(os.path.join(REPO, builder.WEIGHTS_ONLY))
+    out = str(tmp_path / "submission.zip")
+    assert builder.build(out, REPO) == 0
+    with zipfile.ZipFile(out) as zf:
+        info = zf.getinfo(builder.WEIGHTS_ONLY)
+        assert info.file_size < on_disk, (
+            "shipped checkpoint is not smaller than the on-disk file -- "
+            "stripping did not take effect")
+        data = zf.read(builder.WEIGHTS_ONLY)
+
+    import io
+    import torch
+    ckpt = torch.load(io.BytesIO(data), map_location="cpu", weights_only=True)
+    assert set(ckpt.keys()) <= set(builder.CHECKPOINT_SHIP_KEYS)
+    assert "model" in ckpt
+    assert "optimizer" not in ckpt
+    assert "raw_model" not in ckpt
+
+
+def test_stripped_checkpoint_matches_the_original_model_weights(builder, tmp_path):
+    """Stripping must not perturb a single tensor -- the ship loader has to
+    build the IDENTICAL model, not just A model."""
+    import zipfile
+
+    import torch
+
+    out = str(tmp_path / "submission.zip")
+    assert builder.build(out, REPO) == 0
+    with zipfile.ZipFile(out) as zf:
+        stripped = zf.read(builder.WEIGHTS_ONLY)
+
+    import io
+    original = torch.load(os.path.join(REPO, builder.WEIGHTS_ONLY),
+                          map_location="cpu", weights_only=True)
+    shipped = torch.load(io.BytesIO(stripped), map_location="cpu",
+                         weights_only=True)
+    assert shipped["arch_kwargs"] == original["arch_kwargs"]
+    assert set(shipped["model"].keys()) == set(original["model"].keys())
+    for k in original["model"]:
+        assert torch.equal(shipped["model"][k], original["model"][k]), k
+
+
+def test_stripped_checkpoint_still_loads_via_the_ship_loader(builder, tmp_path):
+    """infer.load_model must accept the stripped file exactly as it accepts
+    the original -- this is what the graded run actually calls."""
+    import zipfile
+
+    sys.path.insert(0, REPO)
+    import infer as I
+
+    out = str(tmp_path / "submission.zip")
+    assert builder.build(out, REPO) == 0
+    with zipfile.ZipFile(out) as zf:
+        zf.extract(builder.WEIGHTS_ONLY, str(tmp_path / "extracted"))
+
+    loaded = I.load_model(str(tmp_path / "extracted" / builder.WEIGHTS_ONLY))
+    assert loaded is not None
+    model, device = loaded
+    n_params = sum(p.numel() for p in model.parameters())
+    assert n_params > 0
+
+
+def test_build_refuses_a_checkpoint_that_cannot_be_stripped(builder, tmp_path,
+                                                             monkeypatch):
+    """A checkpoint with no 'model' key must fail the build loudly, not ship
+    a broken stripped file. Shipping nothing is safer than shipping garbage."""
+    import torch
+
+    fake = tmp_path / "repo"
+    (fake / "weights").mkdir(parents=True)
+    torch.save({"not_model": torch.zeros(4)},
+              str(fake / "weights" / "driftsense.pt"))
+    (fake / "register.py").write_text("# entry point\n")
+    monkeypatch.setattr(builder, "ALLOW",
+                        ["register.py", "weights/driftsense.pt"])
+    out = str(tmp_path / "broken.zip")
+    assert builder.build(out, str(fake)) == 1
+    assert not os.path.exists(out)
+
+
+def test_on_disk_checkpoint_is_never_modified(builder, tmp_path):
+    """The builder must be read-only with respect to the source tree --
+    weights/driftsense.pt on disk carries training-resume state that a
+    future training run still needs."""
+    path = os.path.join(REPO, builder.WEIGHTS_ONLY)
+    before = os.path.getsize(path)
+    with open(path, "rb") as f:
+        before_head = f.read(64)
+
+    out = str(tmp_path / "submission.zip")
+    assert builder.build(out, REPO) == 0
+
+    after = os.path.getsize(path)
+    with open(path, "rb") as f:
+        after_head = f.read(64)
+    assert before == after
+    assert before_head == after_head
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([__file__]))
