@@ -77,7 +77,6 @@ def main():
     print(f"\n  stage breakdown (share of {total:.1f}s total):")
     for k, v in sorted(acc.items(), key=lambda kv: -kv[1]):
         print(f"    {k:<22}{v:8.2f}s  {100*v/total:5.1f}%")
-    other = total - sum(acc.values()) + acc.get("locate (network)", 0) * 0
     print(f"    {'(unattributed)':<22}{total-sum(v for k,v in acc.items() if k!='locate (network)')-acc.get('locate (network)',0):8.2f}s")
 
 

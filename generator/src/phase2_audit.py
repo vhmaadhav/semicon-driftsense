@@ -723,7 +723,6 @@ def run_score(output_dir: str | os.PathLike[str] = OUTPUT_DEFAULT,
     root = Path(output_dir)
     rows = _load_rows(root)
     baseline = run_baseline(root, threshold)["rows"]
-    by_id = {r["pair_id"]: r for r in baseline}
     verification = []
     for row in rows:
         if not int(row["present"]):

@@ -21,7 +21,7 @@ import pandas as pd                      # noqa: E402
 from matplotlib.backends.backend_pdf import PdfPages   # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from eval_ext import LOC_TIERS, ROT_TIERS, SCALE_TIERS, W_A, W_B, tier  # noqa: E402
+from eval_ext import LOC_TIERS, W_A, W_B, tier  # noqa: E402
 
 
 def cohen_d(a, b):

@@ -10,7 +10,6 @@ route and method out.
 """
 
 import csv
-import importlib.util
 import os
 import sys
 
@@ -23,7 +22,7 @@ sys.path.insert(0, REPO_ROOT)
 torch = pytest.importorskip("torch")
 cv2 = pytest.importorskip("cv2")
 
-from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
+from driftsense.model import net_from_checkpoint  # noqa: E402
 
 WEIGHTS = os.path.join(REPO_ROOT, "weights", "driftsense.pt")
 

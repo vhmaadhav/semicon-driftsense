@@ -23,7 +23,6 @@ where the images come from.
 from __future__ import annotations
 
 import numpy as np
-import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from driftsense.dataset import build_sample

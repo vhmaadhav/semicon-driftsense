@@ -8,7 +8,6 @@
 """
 
 import csv
-import importlib.util
 import os
 import sys
 

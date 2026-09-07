@@ -33,7 +33,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 REF_SIZE = 1000       # reference frame, 1 nm/px
-SEARCH_SIZE = 1000    # search frame, 10 nm/px
 SCALE = 10            # pixel-size ratio -> reference footprint is 100x100 px
 TEMPLATE_SIZE = REF_SIZE // SCALE   # 100
 STRIDE = 4            # encoder total stride

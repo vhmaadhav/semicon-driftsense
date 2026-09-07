@@ -37,7 +37,7 @@ sys.path.insert(0, HERE)
 # The shipped Phase 2 operating point, read from the ONE shared definition
 # (driftsense.config) so a default run here decodes and gates exactly what
 # register.py ships -- pinned by tests/test_submission_parity.py.
-from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
+from driftsense.config import SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS
 
 # Published Phase 2 credit tiers.

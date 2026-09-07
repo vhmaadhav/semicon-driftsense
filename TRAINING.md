@@ -231,7 +231,7 @@ scenes.
 
 ### Phase 4 - fine-tune on a large on-disk pool
 
-Run on an RTX 4060 laptop. Full detail in `RTX_LOG.md`.
+Run on an RTX 4060 laptop. Full detail in `phase1/RTX_LOG.md`.
 
 ```bash
 # 1. build a training pool (shards, each with a COMPLETE marker written last)

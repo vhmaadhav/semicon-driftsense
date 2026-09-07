@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Wait for a training run to finish, then judge it end to end, unattended.
 
-Runs the decision protocol from NIGHT_LOG.md without a human in the loop:
+Runs the decision protocol from phase1/NIGHT_LOG.md without a human in the loop:
 
 1. Wait until the run's history has `--epochs` entries and no train.py is alive.
 2. Stop pool generation, so the evaluation gets the whole machine (evaluation
@@ -22,7 +22,6 @@ Never writes weights/driftsense.pt.
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import subprocess

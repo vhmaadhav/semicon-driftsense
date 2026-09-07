@@ -576,7 +576,6 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     span_s = (hi_s - lo_s) / (refine_span_scales - 1)
     span_r = (hi_r - lo_r) / (coarse_rotations - 1)
     out = []
-    best_r0 = None
     for idx, i in enumerate(ranked):
         f0 = float(grid[i])
         r0 = (rot_best[i][1] if i in rot_best
@@ -615,60 +614,6 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
                 deduped.append(c)
         out = deduped or out
     return out or [(float(np.mean(scale_bounds)), 0.0, -np.inf)]
-
-
-def choose_pose_wide(reference: np.ndarray, search: np.ndarray,
-                     scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
-                     rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
-                     coarse_scales: int = 11, coarse_rotations: int = 11,
-                     rounds: int = 2) -> tuple[float, float, float]:
-    """Recover (factor, rotation_deg, peak_correlation) over the Phase 2 bounds.
-
-    Three stages, cheapest first, because the CPU budget is 5 s median:
-
-    1. A coarse grid over the full disclosed box, on half-resolution probes.
-       Only the ranking matters here, so resolution is wasted effort.
-    2. Localise the coarse winner's peak and crop the search frame around it.
-       Refinement only ever needs the neighbourhood of the match, and a crop
-       turns every later correlation from a 1000x1000 problem into a small one.
-    3. Alternating golden-section refinement of scale and rotation on that
-       crop, at full resolution -- which is where the 1% / 0.25 deg pose
-       tolerances are actually won.
-    """
-    lo_s, hi_s = scale_bounds
-    lo_r, hi_r = rotation_bounds
-    probe_search = _probe(search)
-
-    def coarse(factor, rot=0.0):
-        return _peak_score(probe_search, _probe(make_template(reference, factor, rot)))
-
-    best_f = max((f for f in np.linspace(lo_s, hi_s, coarse_scales)), key=lambda f: coarse(f))
-    best_r = max((r for r in np.linspace(lo_r, hi_r, coarse_rotations)),
-                 key=lambda r: coarse(best_f, r))
-
-    # Crop around the coarse peak so refinement is cheap.
-    tpl = make_template(reference, best_f, best_r)
-    res = cv2.matchTemplate(search, tpl, cv2.TM_CCOEFF_NORMED)
-    _, _, _, loc = cv2.minMaxLoc(res)
-    th, tw = tpl.shape[:2]
-    pad = int(max(th, tw) * 1.5)
-    y0 = max(int(loc[1]) - pad, 0)
-    x0 = max(int(loc[0]) - pad, 0)
-    crop = search[y0:int(loc[1]) + th + pad, x0:int(loc[0]) + tw + pad]
-
-    def fine(factor, rot):
-        return _peak_score(crop, make_template(reference, factor, rot))
-
-    span_s = (hi_s - lo_s) / (coarse_scales - 1)
-    span_r = (hi_r - lo_r) / (coarse_rotations - 1)
-    peak = fine(best_f, best_r)
-    for _ in range(rounds):
-        f_lo, f_hi = max(best_f - span_s, lo_s), min(best_f + span_s, hi_s)
-        best_f, peak = _golden_max(lambda f: fine(f, best_r), f_lo, f_hi)
-        r_lo, r_hi = max(best_r - span_r, lo_r), min(best_r + span_r, hi_r)
-        best_r, peak = _golden_max(lambda r: fine(best_f, r), r_lo, r_hi)
-        span_s, span_r = span_s / 3.0, span_r / 3.0
-    return float(best_f), float(best_r), float(peak)
 
 
 def choose_pose(reference: np.ndarray, search: np.ndarray,

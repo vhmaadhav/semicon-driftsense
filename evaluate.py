@@ -52,7 +52,7 @@ sys.path.insert(0, HERE)
 from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense import policy as policy_mod  # noqa: E402
 from driftsense.matching import zncc_only  # noqa: E402
-from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
+from driftsense.model import net_from_checkpoint  # noqa: E402
 
 TOLERANCES = (1.0, 2.0, 5.0, 10.0)
 

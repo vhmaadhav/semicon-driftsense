@@ -6,7 +6,7 @@ bug and it is silent: `driftsense/stream_dataset.py` relied on `set_epoch()` to
 advance its seed stream while `train.py` built the DataLoader with
 `persistent_workers=True`, so the workers kept a frozen copy of the dataset,
 `set_epoch()` never reached them, and "unlimited fresh data" was a fixed
-16 000-scene pool replayed every epoch (NIGHT_LOG.md). It only surfaced days
+16 000-scene pool replayed every epoch (phase1/NIGHT_LOG.md). It only surfaced days
 later, from a loss discrepancy on a resumed run.
 
 `DriftSenseDataset.set_epoch()` now re-rolls the augmentation for a second pass
@@ -26,7 +26,6 @@ import os
 import sys
 
 import cv2
-import torch
 from torch.utils.data import DataLoader
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

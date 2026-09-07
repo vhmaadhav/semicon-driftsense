@@ -11,7 +11,7 @@ state dicts -- no training, no labels, no gradients.
 
 Two things this is NOT:
 
-* It is not the 2-checkpoint *ensemble* that NIGHT_LOG.md rejected. That ran
+* It is not the 2-checkpoint *ensemble* that phase1/NIGHT_LOG.md rejected. That ran
   two models at inference and arbitrated between their proposals; this produces
   a single model with the same parameter count and the same inference cost.
 * It is not free of risk. Averaging weights from different basins produces
@@ -19,7 +19,7 @@ Two things this is NOT:
   measure -- `scripts/stream_eval.py` then `scripts/compare_checkpoints.py`.
 
 BatchNorm running statistics are averaged along with everything else. That is
-the right call here rather than re-estimating them: NIGHT_LOG.md measured BN
+the right call here rather than re-estimating them: phase1/NIGHT_LOG.md measured BN
 recalibration on clean frames and it cost a point, because the stored stats are
 the average of *augmented* batch statistics and reproducing the training-time
 normaliser is the consistent thing to do.
@@ -40,7 +40,7 @@ import torch
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 
-from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
+from driftsense.model import DriftSenseNet  # noqa: E402
 
 
 def main():

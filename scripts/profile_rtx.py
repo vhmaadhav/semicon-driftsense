@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure the three numbers that decide --batch-size, --workers and the data strategy.
 
-PORT.md step 4. Nothing here trains or writes weights.
+phase1/PORT.md step 4. Nothing here trains or writes weights.
 
     python scripts/profile_rtx.py gpu       # step throughput + peak VRAM, synthetic tensors
     python scripts/profile_rtx.py gen       # scene generation pairs/s vs worker count, with RSS
@@ -20,7 +20,6 @@ import os
 import sys
 import time
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 

@@ -7,7 +7,6 @@ that one row, must not touch y, and must be a no-op when there is no drift.
 """
 import numpy as np
 import cv2
-import pytest
 
 from driftsense.matching import (
     row_offsets, drift_row_refine, make_template, DRIFT_MAX_SHIFT,

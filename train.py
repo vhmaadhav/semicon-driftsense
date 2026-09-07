@@ -73,7 +73,7 @@ def tune_cuda(device: torch.device) -> None:
     the first few steps. TF32 and bf16 affect numerics, so the evaluation path
     deliberately stays in fp32 (see the autocast scope in main): accuracy
     numbers have to stay comparable with the Mac's, and the parity gate in
-    PORT.md checks exactly that.
+    phase1/PORT.md checks exactly that.
     """
     if device.type != "cuda":
         return
@@ -314,7 +314,7 @@ def main():
         # set_epoch(), and persistent workers keep a frozen copy of the dataset,
         # so set_epoch() never reaches them -- that is what silently turned
         # "unlimited fresh data" into a fixed 16 000-scene pool on repeat
-        # (NIGHT_LOG.md), and the same trap now applies to the on-disk pool's
+        # (phase1/NIGHT_LOG.md), and the same trap now applies to the on-disk pool's
         # per-epoch re-augmentation. Respawning workers costs seconds against a
         # multi-minute epoch. scripts/check_epoch_variety.py verifies it holds.
         persistent_workers=False,
@@ -358,7 +358,7 @@ def main():
             # the LR annealed to ~0, so restoring it would resume a schedule
             # that is over, and its epoch counter would eat most of --epochs.
             # A fine-tune wants a fresh optimizer and a fresh one-cycle at a
-            # lower max_lr, which is what phases 2 and 3 did (NIGHT_LOG.md).
+            # lower max_lr, which is what phases 2 and 3 did (phase1/NIGHT_LOG.md).
             # `best` resets too, so best-checkpoint selection is scored on this
             # run's own scale rather than against a number from another split.
             print(f"fine-tuning from {args.resume}: weights only "

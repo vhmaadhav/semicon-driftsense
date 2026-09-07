@@ -27,7 +27,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense.matching import locate, locate_tta, zncc_only  # noqa: E402
-from driftsense.model import DriftSenseNet, net_from_checkpoint, TEMPLATE_SIZE  # noqa: E402
+from driftsense.model import net_from_checkpoint, TEMPLATE_SIZE  # noqa: E402
 
 
 def draw(ax, img, title):

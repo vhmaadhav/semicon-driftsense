@@ -25,8 +25,6 @@ from torch.utils.data import Dataset
 from driftsense.matching import canonicalize_search
 from driftsense.model import SCALE, STRIDE, TEMPLATE_FEAT, TEMPLATE_SIZE
 
-SEARCH_FULL = 1000
-
 
 def load_manifest(split_dir: str) -> list[dict]:
     with open(os.path.join(split_dir, "manifest.csv")) as f:
@@ -274,7 +272,7 @@ class DriftSenseDataset(Dataset):
         crop for each pair: a second pass over the pool is a literal repeat, not
         a new view. That is invisible when the pool is read once, and expensive
         when a long run makes several passes -- which is exactly the regime the
-        streaming experiment showed matters (NIGHT_LOG.md: fresh scenes were
+        streaming experiment showed matters (phase1/NIGHT_LOG.md: fresh scenes were
         worth +2.9 points over a replayed pool).
 
         The caller must build the DataLoader with `persistent_workers=False`,

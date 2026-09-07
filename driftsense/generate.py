@@ -30,7 +30,8 @@ from src.pipeline import (  # noqa: E402
     REFERENCE_SIZE_PX, SCALE_FACTOR, GenerationParams,
     generate_fine_canvas_zoned, _pick_crop_origin,
 )
-from src.presets import PRESETS  # noqa: E402
+# Re-exported: driftsense.stream_dataset and scripts/ import PRESETS from here.
+from src.presets import PRESETS  # noqa: E402,F401
 
 SEARCH_SIZE_PX = REFERENCE_SIZE_PX  # 1000; search frame is also 1000x1000
 BOX_PX = REFERENCE_SIZE_PX // SCALE_FACTOR  # 100
