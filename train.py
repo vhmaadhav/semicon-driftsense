@@ -174,6 +174,14 @@ def parse_args():
                         "+1 down-weights high-drift pairs (their offset target is "
                         "noise), -1 up-weights them (the drift part is learnable "
                         "structure), 0 disables the weighting entirely")
+    p.add_argument("--offset-beta", type=float, default=0.1,
+                   help="smooth-L1 knee for the offset head (issue #12, B2 "
+                        "sharp-loss axis). 0.1 is the shipped operating point; "
+                        "smaller values sharpen toward the <=1px tier.")
+    p.add_argument("--fmf", action="store_true",
+                   help="enable FastMixedFilt gating on the corr_mix response "
+                        "map (issue #12, SiamABC adaptation). Off by default; "
+                        "recorded in arch_kwargs when on.")
     p.add_argument("--vram-fraction", type=float, default=0.92,
                    help="hard cap on VRAM as a fraction of the card (CUDA only). "
                         "Windows WDDM does not fail cleanly when VRAM runs out -- it "
@@ -322,6 +330,8 @@ def main():
     )
 
     arch_kwargs = {"width": args.width, "ctx": args.ctx, "head": args.head}
+    if args.fmf:
+        arch_kwargs["use_fmf"] = True
     model = DriftSenseNet(**arch_kwargs).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"parameters: {n_params/1e6:.2f}M")
@@ -428,7 +438,8 @@ def main():
             # the bf16 speedup is, and they keep it.
             if amp:
                 out = {k: v.float() for k, v in out.items()}
-            loss, parts = compute_loss(out, batch, jitter_power=args.jitter_power)
+            loss, parts = compute_loss(out, batch, jitter_power=args.jitter_power,
+                                         offset_beta=args.offset_beta)
 
             opt.zero_grad(set_to_none=True)
             loss.backward()

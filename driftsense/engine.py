@@ -52,11 +52,17 @@ LABEL_NOISE_SIGMA0 = 0.87
 def offset_loss(offset: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
                 found: torch.Tensor | None = None,
                 jitter: torch.Tensor | None = None,
-                jitter_power: float = 1.0) -> torch.Tensor:
+                jitter_power: float = 1.0,
+                beta: float = 0.1) -> torch.Tensor:
     """Smooth-L1 on the sub-cell offset, supervised only at the true cell.
 
     Absent pairs carry no true cell, so they are masked out entirely rather
     than regressed towards a placeholder.
+
+    `beta` is the smooth-L1 knee (issue #12, B2 sharp-loss axis): the shipped
+    0.1 keeps the historical operating point; smaller values sharpen the
+    objective toward the <=1px tier Set B loses (-7.72 pts). Default 0.1 =
+    bit-identical shipped behaviour.
 
     With `jitter`, each pair is weighted by sigma0^2 / (sigma0^2 + sigma_i^2),
     the usual inverse-variance form for heteroscedastic label noise, normalised
@@ -74,8 +80,8 @@ def offset_loss(offset: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
     idx = torch.arange(b, device=offset.device)
     pred = offset[idx, :, peak[:, 0], peak[:, 1]]
     if found is None and jitter is None:
-        return F.smooth_l1_loss(pred, target, beta=0.1)
-    per = F.smooth_l1_loss(pred, target, beta=0.1, reduction="none").mean(dim=1)
+        return F.smooth_l1_loss(pred, target, beta=beta)
+    per = F.smooth_l1_loss(pred, target, beta=beta, reduction="none").mean(dim=1)
     w = found if found is not None else torch.ones_like(per)
     if jitter is not None and jitter_power != 0.0 and bool((jitter > 0).any()):
         sig = LABEL_NOISE_GAIN * jitter
@@ -102,12 +108,36 @@ def offset_loss(offset: torch.Tensor, target: torch.Tensor, peak: torch.Tensor,
     return (per * w).sum() / w.sum().clamp(min=1.0)
 
 
+def transitive_loss(f_a: torch.Tensor, f_b: torch.Tensor,
+                    anchor: torch.Tensor) -> torch.Tensor:
+    """SiamABC-style transitive relation loss (arXiv:2411.18855 §3.2, +2.1pp
+    OOD AUC), as a pure function: symmetric cosine distance between two
+    augmented views of one pair (stop-grad on alternate sides, SimSiam-style
+    collapse guard) plus a regularization pull of view A toward the anchor
+    (the unaugmented representation, cf. their L_Reg toward Ft).
+
+    Issue #12. NOT yet wired into the training step: that needs dual-view
+    batches from the loader (second augmentation stream per pair). Tested in
+    tests/test_issue12.py; wire-up spec lives on issue #12.
+    """
+    def _cos(x, y):
+        x = x.flatten(1)
+        y = y.flatten(1)
+        return 1.0 - (x * y).sum(dim=1) / (
+            x.norm(dim=1).clamp(min=1e-6) * y.norm(dim=1).clamp(min=1e-6))
+
+    d_tr = 0.5 * (_cos(f_a, f_b.detach()) + _cos(f_a.detach(), f_b)).mean()
+    d_reg = _cos(f_a, anchor.detach()).mean()
+    return d_tr + d_reg
+
+
 def compute_loss(out: dict, batch: dict, offset_weight: float = 1.0,
-                 jitter_power: float = 1.0) -> tuple:
+                 jitter_power: float = 1.0,
+                 offset_beta: float = 0.1) -> tuple:
     found = batch.get("found")
     lf = focal_loss(out["logit"], batch["heat"], batch["peak"], found)
     lo = offset_loss(out["offset"], batch["offset"], batch["peak"], found,
-                     batch.get("jitter"), jitter_power)
+                     batch.get("jitter"), jitter_power, beta=offset_beta)
     return lf + offset_weight * lo, {"focal": float(lf.detach()), "offset": float(lo.detach())}
 
 

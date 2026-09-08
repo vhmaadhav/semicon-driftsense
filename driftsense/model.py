@@ -153,6 +153,37 @@ def net_from_checkpoint(ckpt: dict):
     return DriftSenseNet(**(ckpt.get("arch_kwargs") or {}))
 
 
+class FastMixedFilt(nn.Module):
+    """SiamABC-style Fast Mixed Filtration (Zaveri et al., arXiv:2411.18855
+    §3.1, Table 1: 0.034 GFLOPs / 0.395M params / 0.4ms CPU), adapted to a
+    single response map: broadcasted element-wise channel + spatial gates
+    over a shared squeezed value projection (squeeze rate 2), fused back
+    residually so an untrained gate starts near-identity.
+
+    Issue #12 (exp/issue12-retrain-wave). Off by default; enable with
+    DriftSenseNet(use_fmf=True) / train.py --fmf.
+    """
+
+    def __init__(self, c, squeeze=2):
+        super().__init__()
+        cs = max(c // squeeze, 1)
+        self.v = nn.Conv2d(c, cs, 1, bias=False)
+        self.qc = nn.Conv2d(c, cs, 1, bias=False)
+        self.qs = nn.Conv2d(c, cs, 1, bias=False)
+        self.proj = nn.Conv2d(cs, c, 1, bias=False)
+        self.bn = nn.BatchNorm2d(c)
+
+    def forward(self, x):
+        _, _, h, w = x.shape
+        v = self.v(x)
+        wch = torch.softmax(self.qc(x).flatten(2), dim=-1).view(v.shape)
+        ach = torch.sigmoid((v * wch).sum(dim=(2, 3), keepdim=True))
+        wsp = torch.softmax(self.qs(x).flatten(1), dim=1).view(v.shape)
+        asp = torch.sigmoid((v * wsp).sum(dim=1, keepdim=True))
+        fused = ach.expand(-1, -1, h, w) + asp.expand(-1, -1, h, w)
+        return x + self.bn(self.proj(fused))
+
+
 class DriftSenseNet(nn.Module):
     """Reference + search -> (centre heatmap, sub-cell offsets).
 
@@ -162,10 +193,12 @@ class DriftSenseNet(nn.Module):
     ((j + dx) * 4 + 50, (i + dy) * 4 + 50) and is continuous.
     """
 
-    def __init__(self, width=64, ctx=32, head=64):
+    def __init__(self, width=64, ctx=32, head=64, use_fmf=False):
         super().__init__()
         self.encoder = Encoder(width)
         self.context = ContextBranch(width, ctx)
+        self.use_fmf = bool(use_fmf)
+        self.fmf = FastMixedFilt(head) if self.use_fmf else None
         # E1 efficiency cache: the template-branch embedding is identical for
         # every pose hypothesis of a pair (locate_phase2 canonicalizes the
         # SEARCH, so the template tensor is byte-identical across attempts).
@@ -258,6 +291,8 @@ class DriftSenseNet(nn.Module):
 
         corr = grouped_xcorr(sf, tf)
         corr = self.corr_mix(corr)
+        if self.fmf is not None:
+            corr = self.fmf(corr)
 
         ctx = self.context(sf)
         # Align context to the response grid: response (i,j) has its centre at
