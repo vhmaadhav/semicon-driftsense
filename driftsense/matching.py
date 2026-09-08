@@ -26,6 +26,7 @@ import torch.nn.functional as F
 
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
 from driftsense.config import SHIPPED_CONFIDENCE, EARLY_EXIT_GATES
+from driftsense import vst
 from driftsense.verification import (
     common_band,
     dog_feature,
@@ -396,7 +397,17 @@ def _refine_pose_local(reference, search, f0: float, r0: float,
     -- there is not one to buy here."""
     lo_s, hi_s = scale_bounds
     lo_r, hi_r = rotation_bounds
+    # Same-domain rule as pose_candidates: transform both sides, template
+    # after rendering. The mode is resolved here rather than passed in, so the
+    # call signature stays exactly what it was -- several tests monkeypatch
+    # this function with fixed-signature spies, and this stage is only ever
+    # reached from the coarse sweep, so there is no second mode to plumb.
+    vst_mode = vst.resolve_mode("coarse")
+    if vst_mode != "none":
+        search = vst.apply(search, vst_mode)
     tpl = make_template(reference, f0, r0)
+    if vst_mode != "none":
+        tpl = vst.apply(tpl, vst_mode)
     res = cv2.matchTemplate(search, tpl, cv2.TM_CCOEFF_NORMED)
     _, _, _, loc = cv2.minMaxLoc(res)
     th, tw = tpl.shape[:2]
@@ -406,6 +417,8 @@ def _refine_pose_local(reference, search, f0: float, r0: float,
 
     def fine(f, r):
         t = make_template(reference, f, r)
+        if vst_mode != "none":
+            t = vst.apply(t, vst_mode)
         if t.shape[0] >= crop.shape[0] or t.shape[1] >= crop.shape[1]:
             return -np.inf
         return float(cv2.minMaxLoc(cv2.matchTemplate(crop, t, cv2.TM_CCOEFF_NORMED))[1])
@@ -489,12 +502,24 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     """
     lo_s, hi_s = scale_bounds
     lo_r, hi_r = rotation_bounds
+
+    # Variance stabilisation (issue #13, driftsense/vst.py). Applied at the
+    # PROBE raster, not to the inputs, and to both sides -- the search frame
+    # carries its shot noise at its own pixel size, and the template must be
+    # rendered and then transformed in the same order so the two stay in one
+    # domain. Sits before the band-pass, which is a spectral filter and
+    # commutes with neither the noise model nor the resampling.
+    vst_mode = vst.resolve_mode("coarse")
     probe_search = _probe(search)
+    if vst_mode != "none":
+        probe_search = vst.apply(probe_search, vst_mode)
     if band:
         probe_search = _band(probe_search)
 
     def coarse(f, r=0.0):
         t = _probe(make_template(reference, f, r))
+        if vst_mode != "none":
+            t = vst.apply(t, vst_mode)
         return _peak_score(probe_search, _band(t) if band else t)
 
     # One rotation grid, shared by the re-rank and the per-peak scan.

@@ -127,6 +127,27 @@ SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True
 
+# Variance-stabilising transform applied to intensities before correlation
+# (issue #13; driftsense/vst.py). ZNCC is the ML statistic under additive
+# homoscedastic Gaussian noise, while SEM shot noise is Poisson; a VST makes
+# the assumption true instead of assuming it.
+#   "none" (SHIPPED): the historical path, no transform.
+#   "anscombe": 2*sqrt(x + 3/8), parameter-free (Anscombe 1948).
+#   "gat": generalised Anscombe with (a, b) fitted per image from the local
+#          mean/variance envelope (Foi et al. 2008).
+# Per-stage overrides for experiments: DRIFTSENSE_VST_{COARSE,VERIFY,REFINE},
+# then DRIFTSENSE_VST, then this default.
+#
+# MEASURED 2026-09-08, NOT SHIPPED. 480 present Set B pairs across the full
+# severity ladder, paired, coarse stage, band=False (the shipped decode):
+# correct-candidate generation 87.7% (none) vs 88.5% (anscombe and gat),
+# i.e. rescued 14 / broke 10, net +4 of 480, McNemar exact p=0.54. No subset
+# rescues it. ZNCC is invariant to the affine part of the transform, which is
+# where the fitted gain lives, so the noise model cannot reach a normalised
+# correlation score even in principle -- see the MEASURED block in
+# driftsense/vst.py for the derivation and the full tables.
+SHIPPED_VST = "none"
+
 # Sub-pixel placement rule for the final ZNCC snap (ONE definition; applied
 # at the refine_zncc site in matching.py).
 #   "parabola" (SHIPPED): the historical 1-D parabolic fit through the peak.
