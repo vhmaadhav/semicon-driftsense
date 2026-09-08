@@ -6,7 +6,7 @@ sample, but the disclosed blind-grade composition is stratified --
 A=70, B=70, C=40 (set D=20 is excluded from the grayscale grade; the
 rejection F1 runs over exactly the 180 A/B/C pairs). This module reproduces
 that composition exactly and runs a stratified bootstrap over a per-pair
-results CSV to answer one planning question: how likely is the +6 bonus
+results CSV to answer one planning question: how likely is the +4 bonus
 (F1_reject >= 0.90 on the 180-pair grade, reject-positive) at a
 given found threshold?
 
@@ -26,7 +26,7 @@ Rubric (corrected semantics, identical credit tiers to scripts/eval_ext.py
   reject-positive;
 * calibration AUC, present-only (correct = present pair localised <=5 px).
 
-Bootstrap: N stratified draws (draw i uses RandomState(seed + i) per set so
+Bootstrap: N stratified draws (draw i uses independent per-set streams at seed + i so
 draw 0 equals a standalone stratified_draw call with the same seed), the
 rubric scored on each draw, and
 
@@ -56,9 +56,9 @@ W_A, W_B = 0.45, 0.55
 # Disclosed blind-grade composition. Set D (20 pairs, optical) is excluded
 # from the grayscale grade; the rejection F1 is over exactly these 180 pairs.
 BLIND_COMPOSITION = {"A": 70, "B": 70, "C": 40}
-BONUS_F1 = 0.90          # the +6 bonus gate used for planning:
+BONUS_F1 = 0.90          # the +4 bonus gate used for planning:
                          # F1_reject >= 0.90 (reject-positive F1)
-BONUS_WEIGHT = 4.0       # E[total + 4*P(bonus)] weighting (6 pts discounted)
+BONUS_WEIGHT = 4.0       # F1 bonus is four points; Set D bonus is separate
 # The four undisclosed Set B severity levels (slide 4). G2 warns the real
 # blind set shifts B toward 3-4 while our pool is uniform over the four, so a
 # draw can be constrained to a severity MIXTURE instead of drawing B
@@ -86,9 +86,19 @@ def tier(value, tiers):
 # Stratified draw
 # ---------------------------------------------------------------------------
 
+def _stratum_rng(seed, set_name):
+    """Stable independent stream per named set; mixtures cannot perturb A/C.
+
+    Reusing RandomState(seed) for every set selects identical positions in
+    equal-sized pools, coupling the simulated errors across A and B.
+    """
+    sequence = np.random.SeedSequence([seed, *set_name.encode("utf-8")])
+    return np.random.RandomState(sequence.generate_state(1)[0])
+
+
 def stratified_draw(df, quotas=None, seed=0):
-    """Exact stratified sample: per-set seeded shuffle (np.random.RandomState
-    permutation), take exactly the quota, union. Order-stable (rows keep the
+    """Exact stratified sample: independent per-set seeded permutations,
+    take exactly the quota, union. Order-stable (rows keep the
     original frame order).
 
     Raises ValueError (clearly) if a set is smaller than its quota.
@@ -104,7 +114,7 @@ def stratified_draw(df, quotas=None, seed=0):
                 f"quota needs {quota}; cannot draw an exact stratified "
                 f"sample from this frame"
             )
-        rng = np.random.RandomState(seed)
+        rng = _stratum_rng(seed, set_name)
         idx = rng.permutation(len(sub))[:quota]
         parts.append(sub.iloc[np.sort(idx)])
     out = pd.concat(parts)
@@ -164,7 +174,11 @@ def _blocks_for(sets, severity, set_name, quota, mix):
     behaviour, preserved exactly. With one it is one block per severity level.
     """
     if mix is None:
-        return [(np.flatnonzero(sets == set_name), quota)]
+        block = np.flatnonzero(sets == set_name)
+        if len(block) < quota:
+            raise ValueError(f"set {set_name!r} has {len(block)} rows but the "
+                             f"quota needs {quota}; cannot draw this frame")
+        return [(block, quota)]
     if severity is None:
         raise ValueError("a severity mixture was requested but the CSV has no "
                          "`severity` column to draw it from")
@@ -290,15 +304,15 @@ def bootstrap(df, thresholds=None, draws=10000, seed=0, mixes=None):
     threshold, P(F1_reject >= 0.90) over draws (reject-positive F1 -- the
     Phase 2 scoring convention) and E[total] + 4*P(bonus).
 
-    Draw i uses np.random.RandomState(seed + i) per set (fixed set order),
+    Draw i uses independent, named per-set random streams at seed + i,
     so the draw sequence is deterministic in (seed, draws, frame order) and
     shared across thresholds (which draw is taken does not depend on t).
 
     `mixes` optionally constrains a set's draw to a severity mixture, e.g.
     {"B": "10,20,35,35"} to emulate the severity-3/4-weighted Set B the jury
     says the real blind set uses (G2). A set with no entry is drawn
-    uniformly, which is the historical behaviour -- with mixes=None the draw
-    sequence is bit-identical to before this option existed.
+    uniformly. Named streams keep A/C unchanged when only B's mixture varies.
+    Draws intentionally differ from the former coupled-stream implementation.
     """
     if thresholds is None:
         thresholds = list(DEFAULT_THRESHOLDS)
@@ -321,7 +335,7 @@ def bootstrap(df, thresholds=None, draws=10000, seed=0, mixes=None):
     for i in range(draws):
         idx_parts = []
         for s in sorted(q):
-            rng = np.random.RandomState(seed + i)
+            rng = _stratum_rng(seed + i, s)
             for block, want in blocks[s]:
                 idx_parts.append(block[np.sort(rng.permutation(len(block))[:want])])
         idx = np.concatenate(idx_parts)
@@ -417,7 +431,7 @@ def _severity_sweep(df, gray, threshold, draws, seed, c_mix=None):
           + (f", Set C mixture {c_mix}" if c_mix else ", Set C drawn uniformly"))
     print()
     print(f"{'B sev 3-4':>10}{'mix (L1,L2,L3,L4)':>22}{'mean F1':>10}{'sd':>8}"
-          f"{'95% CI':>18}{'P(F1>=.90)':>12}{'+-mcse':>8}{'E[total]':>10}")
+          f"{'95% draw interval':>18}{'P(F1>=.90)':>12}{'+-mcse':>8}{'E[total]':>10}")
     print("-" * 98)
     rows = []
     for frac in SWEEP_FRACTIONS:
@@ -547,11 +561,11 @@ def main(argv=None):
     print(f"argmax E[total + 4*P(bonus)]: t = {best[0]:.4f} "
           f"(E = {best[3]['e_total_plus_bonus']:.2f})")
     print()
-    print("Caveat: loc/pose/AUC totals here use the CSV's latent columns "
-          "BEFORE the pending Set-D masking fix (Task 1) lands -- they are "
-          "provisional. F1_reject and P(F1_reject >= 0.90) depend ONLY on the "
-          "score and gt_found columns, so the bonus probabilities are final "
-          "regardless.")
+    print("Caveat: draws sample without replacement from this fixed CSV pool. "
+          "Intervals describe simulated 180-pair grades, not confidence "
+          "intervals for the population mean or guarantees on a new generator. "
+          "The +4 gate probability is conditional on this pool and mixture; "
+          "the separate Set D bonus is not included.")
     return results
 
 

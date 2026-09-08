@@ -167,8 +167,8 @@ def test_the_mixture_changes_the_grade_in_the_direction_the_data_implies():
 
 
 def test_default_path_is_unchanged_by_the_mixture_option():
-    """mixes=None must reproduce the pre-mixture draw sequence exactly --
-    the recorded gate rates were measured with it."""
+    """The omitted, empty and None mixture options must remain equivalent.
+    Independent per-set streams deliberately supersede the old sequence."""
     df = _frame()
     a = GE.bootstrap(df, thresholds=[0.18], draws=100, seed=11)[0]
     b = GE.bootstrap(df, thresholds=[0.18], draws=100, seed=11, mixes={})[0]
@@ -197,3 +197,28 @@ def test_grade_emulation_rubric_agrees_with_the_shared_scorer():
     assert fast["auc"] == pytest.approx(res["calibration"][0])
     assert fast["total"] == pytest.approx(sum(
         v[1] for k, v in res.items() if k != "calibration_submitted"))
+
+
+def test_changing_b_mixture_keeps_actual_a_c_draws_fixed(monkeypatch):
+    """A single shared RNG would let B's blocks perturb the subsequent C draw."""
+    df = _frame()
+    # Unique scores identify the real rows delivered to the F1 consumer.
+    df['score'] = (np.arange(len(df)) + .5) / len(df)
+    lookup = df.set_index('score')
+    seen = []
+    original = GE._f1
+
+    def trace(score, gt, t, positive):
+        selected = lookup.loc[score]
+        assert selected['set'].value_counts().to_dict() == {'A': 70, 'B': 70, 'C': 40}
+        seen.append({s: tuple(selected.loc[selected['set'] == s, 'pair_id'])
+                     for s in ('A', 'C')})
+        return original(score, gt, t, positive)
+
+    monkeypatch.setattr(GE, '_f1', trace)
+    arms = []
+    for mix in (None, {'B': '70,0,0,0'}, {'B': '0,0,35,35'}):
+        seen.clear()
+        GE.bootstrap(df, thresholds=[.18], draws=3, seed=7, mixes=mix)
+        arms.append(list(seen))
+    assert arms[0] == arms[1] == arms[2]
