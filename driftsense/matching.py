@@ -25,7 +25,11 @@ import torch
 import torch.nn.functional as F
 
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
-from driftsense.config import SHIPPED_CONFIDENCE, EARLY_EXIT_GATES
+from driftsense.config import (
+    DOG_OVERRIDE_MARGIN,
+    EARLY_EXIT_GATES,
+    SHIPPED_CONFIDENCE,
+)
 from driftsense.verification import (
     common_band,
     dog_feature,
@@ -1137,6 +1141,18 @@ def _early_exit_fires(result: dict, coarse_gap: float) -> bool:
     return False
 
 
+def _verify_value(candidate: dict) -> float:
+    """One hypothesis's native-ZNCC verification value, for ranking only.
+
+    `refine=False` leaves no "zncc" key at all, so the network's coarse score
+    stands in; a candidate carrying neither is worth -inf, which loses every
+    comparison rather than inventing evidence. Shared by the dog-override gate
+    and the rescue pass so the two cannot come to disagree about what "the
+    stronger candidate" means.
+    """
+    return float(candidate.get("zncc", candidate.get("score", -np.inf)))
+
+
 def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   refine: bool = True, pose: tuple[float, float] | None = None,
                   refine_radius: int = REFINE_RADIUS, polish: bool = True,
@@ -1145,7 +1161,9 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   band: bool = False, return_hypotheses: bool = False,
                   early_exit_zncc: float | None = None,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
-                  verification: str = "zncc", denoise: int = 0,
+                  verification: str = "zncc",
+                  dog_override_margin: float = DOG_OVERRIDE_MARGIN,
+                  denoise: int = 0,
                   subpixel_rows: bool = True, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
@@ -1173,25 +1191,51 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     band defaults to False: it mirrors the shipped decode (register.py passes
     band=False; the DoG pre-filter measured negative in #18/#24). Pass
     band=True only for A/B measurement.
+
+    `verification` names the selector. "zncc" is shipped; "majority" and
+    "consensus" are the measured research selectors that put the rank
+    transform and the common band on equal footing with native ZNCC.
+    "dog-override" is the guarded fourth: scripts/verify_scores.py measured
+    `zncc_dog` as the strongest alternative on Set B (net +10 recovered pairs
+    against the incumbent ZNCC's +7), but that number is an average over a
+    population where ZNCC is already right ~87% of the time, so adopting DoG
+    wholesale spends those recoveries on breakages. Under "dog-override" ZNCC
+    still owns the decision and DoG may overturn it only when DoG's argmax
+    differs AND the ZNCC margin between those two candidates is below
+    `dog_override_margin` -- i.e. only where ZNCC has abstained anyway. The
+    mode builds the DoG map and nothing else; the rank transform, the
+    expensive representation, is never paid for.
     """
     verification = str(verification).lower()
-    valid_verification = {"zncc", "majority", "consensus"}
+    valid_verification = {"zncc", "majority", "consensus", "dog-override"}
     if verification not in valid_verification:
         raise ValueError(f"verification must be one of {sorted(valid_verification)}")
 
     # The baseline path never enters this block. Research instrumentation and
-    # optional selectors share one set of full-search feature maps per pair.
-    need_verification_scores = return_hypotheses or verification != "zncc"
+    # optional selectors share one set of full-search feature maps per pair --
+    # but each mode pays for ONLY the representations it actually reads, and
+    # the difference is not cosmetic: the rank transform is a 5x5 neighbour
+    # count over the whole search frame and dominates this block's cost, while
+    # "dog-override" is a two-Gaussian difference that reads neither it nor the
+    # common band. Build the union of what the active mode needs, nothing more.
+    needed = set()
+    if return_hypotheses:
+        needed |= {"rank", "band", "dog"}
+    if verification in {"majority", "consensus"}:
+        needed |= {"rank", "band"}
+    if verification == "dog-override":
+        needed.add("dog")
     search_features = None
     verification_secs = 0.0
-    if need_verification_scores:
+    if needed:
         import time
         t_verify = time.perf_counter()
-        search_features = {
-            "rank": rank_transform(search),
-            "band": common_band(search),
-        }
-        if return_hypotheses:
+        search_features = {}
+        if "rank" in needed:
+            search_features["rank"] = rank_transform(search)
+        if "band" in needed:
+            search_features["band"] = common_band(search)
+        if "dog" in needed:
             search_features["dog"] = dog_feature(search)
         verification_secs += time.perf_counter() - t_verify
 
@@ -1256,12 +1300,16 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             t_verify = time.perf_counter()
             if template is None:
                 template = make_template(reference, m, rot)
-            out.update({
-                "rank": local_match_score(search_features["rank"],
-                                          rank_transform(template), out["x"], out["y"]),
-                "band": local_match_score(search_features["band"],
-                                          common_band(template), out["x"], out["y"]),
-            })
+            # Mirror the gating above: a mode that asked for one map pays for
+            # one template transform per hypothesis, not three.
+            if "rank" in search_features:
+                out["rank"] = local_match_score(search_features["rank"],
+                                                rank_transform(template),
+                                                out["x"], out["y"])
+            if "band" in search_features:
+                out["band"] = local_match_score(search_features["band"],
+                                                common_band(template),
+                                                out["x"], out["y"])
             if "dog" in search_features:
                 out["dog"] = local_match_score(search_features["dog"],
                                                 dog_feature(template), out["x"], out["y"])
@@ -1272,6 +1320,24 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         zncc_i = max(range(len(candidates)),
                      key=lambda i: candidates[i].get("zncc", candidates[i].get("score", -np.inf)))
         if verification == "zncc" or len(candidates) == 1:
+            return candidates[zncc_i]
+        # DoG never gets a free hand: it may only take a decision ZNCC has
+        # already declined to make. Two conditions, both required -- DoG's
+        # argmax differs from ZNCC's, and the ZNCC gap between exactly those
+        # two candidates is under epsilon. On the ~87% of pairs where ZNCC
+        # leads clearly this branch cannot fire at all, which is the whole
+        # point: the Set B +10 is spent only where there is nothing to lose.
+        # Placed ahead of the rank/band lines because this mode never built
+        # those maps, so candidates[i]["rank"] does not exist here.
+        if verification == "dog-override":
+            dog_i = max(range(len(candidates)), key=lambda i: candidates[i]["dog"])
+            if dog_i == zncc_i:
+                return candidates[zncc_i]
+            margin = _verify_value(candidates[zncc_i]) - _verify_value(candidates[dog_i])
+            # A non-finite margin means one side carries no evidence at all;
+            # keep the incumbent rather than override on a NaN comparison.
+            if np.isfinite(margin) and margin < float(dog_override_margin):
+                return candidates[dog_i]
             return candidates[zncc_i]
         rank_i = max(range(len(candidates)), key=lambda i: candidates[i]["rank"])
         band_i = max(range(len(candidates)), key=lambda i: candidates[i]["band"])
@@ -1327,9 +1393,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         if rescue_margin is not None and len(candidates) > 1:
             gate = winner_margin(candidates, best)
             if np.isfinite(gate) and gate < rescue_margin:
-                def _v(c):
-                    return float(c.get("zncc", c.get("score", -np.inf)))
-                top = sorted(candidates, key=_v, reverse=True)[:2]
+                top = sorted(candidates, key=_verify_value, reverse=True)[:2]
                 ds = abs(top[0]["scale"] - top[1]["scale"]) or 0.05
                 dr = abs(top[0]["theta"] - top[1]["theta"]) or 0.5
                 extra = [(0.5 * (top[0]["scale"] + top[1]["scale"]),
@@ -1348,8 +1412,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                     c["pose_peak"] = float("nan")
                     rescued.append(c)
                 if rescued:
-                    challenger = max(rescued, key=_v)
-                    if _v(challenger) > _v(best) + rescue_delta:
+                    challenger = max(rescued, key=_verify_value)
+                    if _verify_value(challenger) > _verify_value(best) + rescue_delta:
                         best = challenger
                         best["rescued"] = True
                     candidates.extend(rescued)
@@ -1478,14 +1542,18 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             "dog": float(r.get("dog", np.nan)),
         } for r in candidates]
         best["secs_verification"] = float(verification_secs)
-    else:
-        # Optional selectors change only the chosen hypothesis. Keep the
-        # WINNER's rank/band (drop dog — only computed under return_hypotheses):
-        # eval_ext records them, which is what lets rejector_cv.py fit the
-        # present/absent rejector on features that exist at inference time
-        # (issue #6). The default zncc path never computes them, so the result
-        # contract register.py consumes is unchanged there.
-        best.pop("dog", None)
+    # Otherwise the optional selectors change only the chosen hypothesis, and
+    # the WINNER keeps whichever verification statistics its own mode computed
+    # -- rank/band under majority and consensus, dog under dog-override.
+    # eval_ext records them, which is what lets rejector_cv.py fit the
+    # present/absent rejector on features that exist at inference time (issue
+    # #6). Nothing is stripped here any more: the feature maps are now built
+    # per-mode, so a statistic sitting on `best` is by construction one the
+    # active selector read. (This used to pop "dog", which was a no-op --
+    # under the old gating dog existed only when return_hypotheses was set,
+    # i.e. never in this branch -- and which would now silently discard the
+    # one statistic dog-override is named for.) The default zncc path computes
+    # none of them, so the contract register.py consumes is unchanged.
     return best
 
 

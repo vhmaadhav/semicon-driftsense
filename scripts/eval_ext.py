@@ -39,6 +39,7 @@ sys.path.insert(0, HERE)
 # register.py ships -- pinned by tests/test_submission_parity.py.
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS
+from driftsense.config import DOG_OVERRIDE_MARGIN
 
 # Published Phase 2 credit tiers.
 LOC_TIERS = ((1.0, 1.00), (2.0, 0.80), (3.0, 0.60), (5.0, 0.40))
@@ -59,7 +60,8 @@ def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
     (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
      coarse, band, verification, denoise, tie_tol, features,
-     early_exit, rescue_margin, rescue_delta, subpixel_rows) = job
+     early_exit, rescue_margin, rescue_delta, subpixel_rows,
+     dog_override_margin) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -83,7 +85,9 @@ def _worker(job):
                         hypotheses=hypotheses, polish=polish,
                         polish_scale=polish_scale, refit_xy=refit_xy,
                         coarse_scales=coarse, band=band,
-                        verification=verification, denoise=denoise,
+                        verification=verification,
+                        dog_override_margin=dog_override_margin,
+                        denoise=denoise,
                         tie_tol=tie_tol, early_exit_zncc=early_exit,
                         rescue_margin=rescue_margin, rescue_delta=rescue_delta,
                         subpixel_rows=subpixel_rows,
@@ -154,7 +158,8 @@ def sample_pairs(df, n: int, seed: int = 0):
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         polish_scale, refit_xy, stride, coarse, band, verification, denoise,
         tie_tol, features=False, sample=0, seed=0, early_exit=None,
-        rescue_margin=None, rescue_delta=0.0, subpixel_rows=False):
+        rescue_margin=None, rescue_delta=0.0, subpixel_rows=False,
+        dog_override_margin=DOG_OVERRIDE_MARGIN):
     import multiprocessing as mp
 
     tasks = []
@@ -169,7 +174,7 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
                           polish_scale, refit_xy, coarse, band, verification,
                           denoise, tie_tol, features,
                           early_exit, rescue_margin, rescue_delta,
-                          subpixel_rows))
+                          subpixel_rows, dog_override_margin))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
     if sample:
         rng = np.random.RandomState(seed)
@@ -387,11 +392,22 @@ def main():
                          "the hypothesis selector (the decode stays the shipped zncc "
                          "winner) -- the CSV rejector_cv.py fits on (issue #6)")
     ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
-                    choices=["zncc", "consensus", "majority"],
-                    help="hypothesis selector implemented in locate_phase2. rank/band/"
-                         "dog were measured as research scores and are NOT implemented "
+                    choices=["zncc", "consensus", "majority", "dog-override"],
+                    help="hypothesis selector implemented in locate_phase2. rank/band "
+                         "were measured as research scores and are NOT implemented "
                          "as selectors; the earlier help text advertising them was "
-                         "stale and passing them aborted the run")
+                         "stale and passing them aborted the run. dog-override is the "
+                         "one dog selector that IS wired in: native ZNCC still picks "
+                         "the winner, and the DoG pick overrides it only when the two "
+                         "disagree and the ZNCC margin between them is below "
+                         "--dog-override-margin")
+    ap.add_argument("--dog-override-margin", type=float,
+                    default=DOG_OVERRIDE_MARGIN,
+                    help="epsilon for --verification dog-override; ignored by every "
+                         "other selector. Default %(default)s (driftsense.config."
+                         "DOG_OVERRIDE_MARGIN). Sweep it offline with "
+                         "scripts/ab_dog_override.py rather than re-decoding here "
+                         "once per value")
     ap.add_argument("--denoise", type=int, default=0,
                     help="median filter kernel applied to the search frame (0=off)")
     ap.add_argument("--tie-tol", type=float, default=0.04,
@@ -423,7 +439,8 @@ def main():
                  a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed, a.early_exit,
-                 a.rescue_margin, a.rescue_delta, a.subpixel_rows)
+                 a.rescue_margin, a.rescue_delta, a.subpixel_rows,
+                 a.dog_override_margin)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

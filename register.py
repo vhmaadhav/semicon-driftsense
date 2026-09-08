@@ -47,6 +47,7 @@ from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
 from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
+from driftsense.config import DOG_OVERRIDE_MARGIN  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
@@ -361,13 +362,27 @@ def main():
                          "threshold applied to a raw NCC score would decide nothing "
                          "meaningful (issue #36)")
     ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
-                    help="hypothesis selector: zncc (default) | consensus | majority. "
+                    help="hypothesis selector: zncc (default) | consensus | majority "
+                         "| dog-override. "
                          "consensus overrides the native-ZNCC winner only when the rank "
                          "and band scores pick the same different hypothesis; it was "
                          "measured +2/0 and +1/0 rescued/broken on the PR #3 proxy; "
                          "full 2,250-pair A/B (issue #9): +0.11 total, paired CI "
                          "spans zero, 5 broken / 6 rescued -- real but under the "
-                         "promotion gate, so zncc stays the default")
+                         "promotion gate, so zncc stays the default. "
+                         "dog-override keeps the native-ZNCC winner unless the DoG "
+                         "score prefers a different hypothesis AND the ZNCC margin "
+                         "between the two is below --dog-override-margin, i.e. ZNCC "
+                         "is not confident; it is opt-in and unmeasured on the full "
+                         "set -- rank it with scripts/ab_dog_override.py first")
+    ap.add_argument("--dog-override-margin", type=float,
+                    default=DOG_OVERRIDE_MARGIN,
+                    help="epsilon for --verification dog-override: the DoG pick only "
+                         "wins when the incumbent ZNCC margin between it and the "
+                         "native-ZNCC winner is BELOW this. Ignored by every other "
+                         "selector. Default %(default)s (driftsense.config."
+                         "DOG_OVERRIDE_MARGIN); 0.0 disables every override, so the "
+                         "selector degrades exactly to zncc.")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch/OpenCV thread cap. 0 (default) auto-caps to "
                          "min(4, CPU cores) to match the 4-core reference "
@@ -515,6 +530,7 @@ def main():
                     # eval_ext.py so the evaluator decodes identically.
                     res = locate_phase2(model, ref, sea, device, refine=True,
                                         verification=a.verification,
+                                        dog_override_margin=a.dog_override_margin,
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
                 # The reported confidence (see locate_phase2): the shipped

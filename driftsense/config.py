@@ -127,6 +127,23 @@ SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True
 
+# Epsilon for the "dog-override" selector in matching.locate_phase2. A research
+# knob, NOT a shipped one: the default selector stays SHIPPED_VERIFICATION =
+# "zncc" and no default decode reads this value.
+#
+# scripts/verify_scores.py measured `zncc_dog` as the best alternative selector
+# on Set B -- net +10 recovered pairs against the incumbent ZNCC's +7 -- and it
+# was never wired into inference. Swapping the selector wholesale is the wrong
+# trade: DoG wins only on the *contested* decisions, and on the ~87% of pairs
+# ZNCC already gets right it can only break things (the same asymmetry that
+# sank the rescue pass and the band pre-filter above). So the override leaves
+# ZNCC owning the decision and lets DoG take it only when DoG disagrees AND the
+# ZNCC margin between the two candidates is below this value -- i.e. only where
+# ZNCC has effectively abstained. 0.05 is a deliberately narrow starting point
+# chosen to reach the ties and nothing else; it has not been swept, so treat it
+# as an experiment parameter rather than a measured constant.
+DOG_OVERRIDE_MARGIN = 0.05
+
 # Sub-pixel placement rule for the final ZNCC snap (ONE definition; applied
 # at the refine_zncc site in matching.py).
 #   "parabola" (SHIPPED): the historical 1-D parabolic fit through the peak.
