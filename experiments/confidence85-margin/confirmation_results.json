@@ -1,0 +1,53 @@
+{
+  "domain": "fresh independently seeded generator-proxy set; not official blind",
+  "model_sha256": "e6506b7c3b2ccfd47f9337e9b95df20d0fb2b14a6d45b0a1c892d60464a71ca8",
+  "head_sha256": "d163cc5cfd4ae68565116deb815328aae5ac2d70a7579247a115839e551dd45b",
+  "gt_sha256": "6613ae22e826e1bd0526a410de821babb15b3b3d7db90a13c4729d1e8848e086",
+  "baseline": {
+    "loc_A": 0.9171428571428569,
+    "loc_B": 0.8885714285714285,
+    "loc": 0.9014285714285714,
+    "scale": 0.9942446043165467,
+    "rot": 0.943165467625899,
+    "f1_found": 0.996415770609319,
+    "f1_reject": 0.9876543209876543,
+    "auc": 1.0,
+    "total": 80.24605839138212,
+    "n": 180,
+    "n_present": 140,
+    "auc_submitted": 0.7932960893854749,
+    "threshold": 0.18,
+    "correct_rejections": 40,
+    "declined_real": 1,
+    "accepted_absent": 0
+  },
+  "candidate": {
+    "loc_A": 0.9171428571428569,
+    "loc_B": 0.8885714285714285,
+    "loc": 0.9014285714285714,
+    "scale": 0.9942446043165467,
+    "rot": 0.943165467625899,
+    "f1_found": 0.996415770609319,
+    "f1_reject": 0.9876543209876543,
+    "auc": 1.0,
+    "total": 80.24605839138212,
+    "n": 180,
+    "n_present": 140,
+    "auc_submitted": 0.7821229050279329,
+    "threshold": 0.48650493125056,
+    "correct_rejections": 40,
+    "declined_real": 1,
+    "accepted_absent": 0
+  },
+  "paired_interval": {
+    "draws": 2000,
+    "seed": 20260908,
+    "delta_p025": 0.0,
+    "delta_p975": 0.0
+  },
+  "delta85": 0.0,
+  "baseline_D_credit": 0.9400000000000001,
+  "candidate_D_credit": 0.9400000000000001,
+  "timing_note": "2 CPU threads, concurrent activity; not a judge efficiency benchmark",
+  "passes_confirmation_gate": false
+}

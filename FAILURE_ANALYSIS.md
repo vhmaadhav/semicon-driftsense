@@ -45,3 +45,7 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.
+
+## 2026-09-08 confidence-head transfer check
+
+An experimental margin-aware logistic presence head gained +.688/+.670 points on two overlapping, source-group-separated development assessments. A frozen first-seed confirmation on 200 fresh generator-proxy pairs scored 80.246/85 for both baseline and candidate (delta 0; paired interval [0,0]). Alternative submitted-correctness AUC fell .793296 -> .782123. The confirmation gate failed: retain shipped inference. See `experiments/confidence85-margin/README.md`; this is not official blind evidence.
