@@ -55,6 +55,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Fresh 1,200-pair confirmation: B **262/420 → 264/420 (62.86%)**, paired delta 95% CI **[-4.76, +5.71] percentage points**. A **328/420 → 366/420**. Severity4 B **48/90 → 39/90**. Promotion fails; target85 remains unmet. All six confirmation seeds are now seen. Residual diagnosis finds 155/156 B failures x-dominant and only three errors over5px, so gross pose recovery is not the main next lever on this proxy. Investigate generator/training scanline mismatch and centre-row representation before another training run. Aggregation was repaired to namespace shard-local pair IDs and score absent C as rejection; original freeze and amendment retained, predictions/model unchanged.
 
+- Pixel-centre label ablation completed on512scenes/16,175fresh crops: no checkpoint passed the historical validation gate (`selected=null`); reported candidate columns therefore equal baseline and are not learned-model gains. This gate uses a different label convention. The next arm explicitly converts previously consumed1,200-pair confirmation into development, split by source group, and reuses the pixel-centre synthetic crops. These data are now seen; any eventual candidate needs a new frozen holdout.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.
