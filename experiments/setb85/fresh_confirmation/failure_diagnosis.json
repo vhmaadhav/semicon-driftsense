@@ -1,0 +1,10 @@
+{
+  "B_n": 420,
+  "rejected": 0,
+  "accepted_error_1_to_5": 153,
+  "accepted_error_over5": 3,
+  "perfect_x_only_correct_ceiling": 419,
+  "x_dominant_failures": 155,
+  "y_dominant_failures": 1,
+  "note": "Label-assisted diagnosis on now-seen confirmation; not model accuracy."
+}

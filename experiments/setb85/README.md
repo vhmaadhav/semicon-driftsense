@@ -34,3 +34,7 @@ python scripts/train_fresh_rows.py --development /tmp/context --output /tmp/fres
 ```
 
 Use fresh output directories when inputs change; caches are reused by these experimental scripts. Source images and large caches are not committed. Included summaries: `ceiling.json`, `context/results.json`, `geometry/results.json`, and `scan_bank/results.json`. Shipped inference and backbone weights remain unchanged.
+
+## Fresh confirmation outcome
+
+Fresh 1,200-pair confirmation: B **262/420 → 264/420 (62.86%)**, paired delta 95% CI **[-4.76, +5.71] percentage points**. A **328/420 → 366/420**. Severity4 B **48/90 → 39/90**. Promotion fails; target85 remains unmet. All six confirmation seeds are now seen. Residual diagnosis finds 155/156 B failures x-dominant and only three errors over5px, so gross pose recovery is not the main next lever on this proxy. Investigate generator/training scanline mismatch and centre-row representation before another training run. Aggregation was repaired to namespace shard-local pair IDs and score absent C as rejection; original freeze and amendment retained, predictions/model unchanged.

@@ -14,8 +14,21 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def load_shards(output, filename):
+    frames = []
+    for i in range(6):
+        frame = pd.read_csv(output / f"shard{i}" / filename)
+        frame["pair_id"] = f"shard{i}:" + frame.pair_id.astype(str)
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
+
+
 def run(a):
     freeze = json.loads((a.output / "freeze.json").read_text())
+    amendment = a.output / "aggregation_fix.json"
+    if amendment.exists():
+        fix = json.loads(amendment.read_text())
+        freeze["hashes"]["scripts/confirm_fresh_rows.py"] = fix["corrected_sha256"]
     for name, expected in freeze["hashes"].items():
         assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == expected, name
     for i, seed in enumerate(freeze["seeds"]):
@@ -50,14 +63,8 @@ def run(a):
                 ],
                 check=True,
             )
-    b = pd.concat(
-        [pd.read_csv(a.output / f"shard{i}/baseline.csv") for i in range(6)],
-        ignore_index=True,
-    )
-    c = pd.concat(
-        [pd.read_csv(a.output / f"shard{i}/candidate.csv") for i in range(6)],
-        ignore_index=True,
-    )
+    b = load_shards(a.output, "baseline.csv")
+    c = load_shards(a.output, "candidate.csv")
     assert b.pair_id.equals(c.pair_id) and b.pair_id.is_unique
 
     def success(d):
@@ -89,7 +96,7 @@ def run(a):
             paired_delta95=np.quantile(boot, [0.025, 0.975]).tolist(),
         )
 
-    for name in ["A", "B", "C"]:
+    for name in ["A", "B"]:
         result["sets"][name] = measure(
             ((b["set"] == name) & (b.gt_found == 1)).to_numpy()
         )
@@ -99,6 +106,13 @@ def run(a):
                 (b["set"] == "B") & (b.gt_found == 1) & (b.severity == severity)
             ).to_numpy()
         )
+    absent = b.gt_found.eq(0).to_numpy()
+    result["rejection_control"] = {
+        "n": int(absent.sum()),
+        "baseline_rejected": int((b.score.to_numpy()[absent] < 0.18).sum()),
+        "candidate_rejected": int((c.score.to_numpy()[absent] < 0.18).sum()),
+    }
+    assert np.array_equal(b.score, c.score)
     b.to_csv(a.output / "baseline.csv", index=False)
     c.to_csv(a.output / "candidate.csv", index=False)
     (a.output / "results.json").write_text(json.dumps(result, indent=2) + "\n")

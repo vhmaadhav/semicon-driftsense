@@ -1,0 +1,4 @@
+{
+  "reason": "Organizer pair IDs repeat across shards; prefix shard index before aggregation. Predictions, checkpoint, inference source and scoring policy unchanged. Original freeze retained. Absent C controls are scored as rejection, not coordinate accuracy.",
+  "corrected_sha256": "f3269dbab4c15a8eb9a989713063f7a21868ffc9e3a319a095625b2132aed7d1"
+}
