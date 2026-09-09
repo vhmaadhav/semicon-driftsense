@@ -48,3 +48,7 @@ Pixel-centre label ablation completed on512scenes/16,175fresh crops: no checkpoi
 ## Aligned-development result
 
 Aligned-development epoch39: B **262/420 → 326/420 (77.62%)**; group validation **49/83 → 61/83 (73.49%)**, assessment **34/43 → 40/43 (93.02%)**. A **328/420 → 411/420**. These1200pairs were previously consumed confirmation and are now development, not fresh evidence. A new420B confirmation is frozen in `aligned_confirmation/freeze.json`; outcome pending. The small assessment result does not establish85%.
+
+## Aligned-model fresh confirmation
+
+Frozen aligned-model confirmation on1,200 new organizer-proxy pairs improves strict B **262/420 → 302/420 (62.38% → 71.90%)**, paired95% delta **[+4.76,+14.52] percentage points**. A improves **321/420 → 408/420 (97.14%)**; all240absent controls remain rejected. B severity1/2/3/4 accuracy:88.33/75.93/64.71/53.33%. The declared improvement gate passes on this proxy, but85% is not reached and cross-generator safety is unproven; shipped inference stays unchanged. These confirmation seeds are now seen. Next isolated training arm replaces Gaussian prefilter with the organizer-style box filter; same512 scene seeds, pixel-centre labels and prior seen_context train/validation, without incorporating this new confirmation.

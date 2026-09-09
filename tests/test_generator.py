@@ -111,3 +111,17 @@ def test_pose_actually_changes_the_image():
     b, _, _ = image_search_traced(_canvas(), p, np.random.default_rng(3),
                                   PoseParams(rotation_deg=2.0, magnification=9.0))
     assert not np.array_equal(a, b)
+
+
+def test_experimental_box_prefilter_uses_magnification_kernel(monkeypatch):
+    calls = []
+    original = cv2.blur
+    def capture(image, kernel, *args, **kwargs):
+        calls.append(kernel)
+        return original(image, kernel, *args, **kwargs)
+    monkeypatch.setattr(cv2, "blur", capture)
+    image_search_traced(_canvas(size=1200, marker=(600,600)),
+                        GenerationParams(**CLEAN), np.random.default_rng(2),
+                        PoseParams(magnification=9.5, rotation_deg=1),
+                        box_prefilter=True)
+    assert (10,10) in calls

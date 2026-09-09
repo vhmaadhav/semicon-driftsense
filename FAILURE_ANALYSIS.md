@@ -57,6 +57,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Pixel-centre label ablation completed on512scenes/16,175fresh crops: no checkpoint passed the historical validation gate (`selected=null`); reported candidate columns therefore equal baseline and are not learned-model gains. This gate uses a different label convention. The next arm explicitly converts previously consumed1,200-pair confirmation into development, split by source group, and reuses the pixel-centre synthetic crops. These data are now seen; any eventual candidate needs a new frozen holdout.
 
+- Frozen aligned-model confirmation on1,200 new organizer-proxy pairs improves strict B **262/420 → 302/420 (62.38% → 71.90%)**, paired95% delta **[+4.76,+14.52] percentage points**. A improves **321/420 → 408/420 (97.14%)**; all240absent controls remain rejected. B severity1/2/3/4 accuracy:88.33/75.93/64.71/53.33%. The declared improvement gate passes on this proxy, but85% is not reached and cross-generator safety is unproven; shipped inference stays unchanged. These confirmation seeds are now seen. Next isolated training arm replaces Gaussian prefilter with the organizer-style box filter; same512 scene seeds, pixel-centre labels and prior seen_context train/validation, without incorporating this new confirmation.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.

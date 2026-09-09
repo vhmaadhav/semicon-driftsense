@@ -74,6 +74,7 @@ def run(a):
             crops=32,
             pose=spec,
             pixel_center_labels=a.pixel_center_labels,
+            box_prefilter=a.box_prefilter,
         )
         pool = errors[errors.severity == scene % 4 + 1]
         if pool.empty:
@@ -200,6 +201,7 @@ def run(a):
             torch.save(model.state_dict(), a.output / "candidate.pt")
     result = {
         "pixel_center_labels": a.pixel_center_labels,
+        "box_prefilter": a.box_prefilter,
         "fresh_scenes": a.scenes,
         "fresh_crops": len(fresh["target"]),
         "training_crops": len(ft),
@@ -230,6 +232,7 @@ if __name__ == "__main__":
     ap.add_argument("--scenes", type=int, default=512)
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--pixel-center-labels", action="store_true")
+    ap.add_argument("--box-prefilter", action="store_true")
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     try:

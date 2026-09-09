@@ -1,0 +1,13 @@
+{
+  "rows": 1200,
+  "strict_B_correct": 302,
+  "unchanged_columns": [
+    "y",
+    "scale",
+    "theta",
+    "score"
+  ],
+  "target85_reached": false,
+  "promotion_gate_passed_on_generator_proxy": true,
+  "limitations": "Local generator proxy; no official blind validation or cross-generator safety established."
+}

@@ -379,13 +379,14 @@ def _pick_visible_crop_origin(zone_result: dict, params, rng, canvas_px: int,
 
 def image_search_traced(full_canvas: np.ndarray, p: GenerationParams,
                         rng: np.random.Generator,
-                        pose: "PoseParams | None" = None) -> tuple[np.ndarray, np.ndarray, float]:
+                        pose: "PoseParams | None" = None,
+                        box_prefilter: bool = False) -> tuple[np.ndarray, np.ndarray, float]:
     pose = pose or PoseParams()
     factor = int(round(PIXEL_SIZE_SEARCH_NM / PIXEL_SIZE_REF_NM))
     img = sem_imaging.gaussian_psf_blur(
         full_canvas, p.beam_spot_size_nm, PIXEL_SIZE_REF_NM, p.astigmatism_ratio)
 
-    if (pose.rotation_deg == 0.0 and pose.magnification == float(factor)
+    if (not box_prefilter and pose.rotation_deg == 0.0 and pose.magnification == float(factor)
             and full_canvas.shape[0] == FINE_CANVAS_SIZE_PX):
         # Default path, byte-identical to upstream: a pure box average. An
         # enlarged canvas must take the affine branch even at a nominal pose,
@@ -397,7 +398,11 @@ def image_search_traced(full_canvas: np.ndarray, p: GenerationParams,
         # point-wise and would alias badly at a ~10x reduction, where the box
         # average above integrates properly.
         sigma = pose.magnification / 2.0
-        img = cv2.GaussianBlur(img, (0, 0), sigma, borderType=cv2.BORDER_REPLICATE)
+        if box_prefilter:
+            box = max(2, int(round(pose.magnification)))
+            img = cv2.blur(img, (box, box))
+        else:
+            img = cv2.GaussianBlur(img, (0, 0), sigma, borderType=cv2.BORDER_REPLICATE)
         M = search_affine(img.shape[0], SEARCH_SIZE_PX,
                           pose.magnification, pose.rotation_deg)
         img = cv2.warpAffine(img, M, (SEARCH_SIZE_PX, SEARCH_SIZE_PX),
@@ -782,7 +787,8 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
 def make_pairs(entropy: int, architectures: list[str], noise: str,
                crops: int = 8, pose: "PoseSpec | PoseParams | None" = None,
                preset_name: str | None = None,
-               pixel_center_labels: bool = False) -> list[dict]:
+               pixel_center_labels: bool = False,
+               box_prefilter: bool = False) -> list[dict]:
     """In-memory version of build_one: one canvas -> one search frame and
     `crops` (reference, ground-truth) pairs, returned as arrays.
 
@@ -833,7 +839,8 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
             pitch_factor=draw_decoy_pitch_factor(decoy_rng))
         ref_canvas = ref_zone_result["canvas"]
 
-    search_img, row_shift, k = image_search_traced(fine_canvas, params, rng, pose_params)
+    search_img, row_shift, k = image_search_traced(
+        fine_canvas, params, rng, pose_params, **({"box_prefilter": True} if box_prefilter else {}))
     posed = (pose_params.rotation_deg != 0.0
              or pose_params.magnification != float(SCALE_FACTOR)
              or canvas_px != FINE_CANVAS_SIZE_PX)
