@@ -1,0 +1,21 @@
+{
+  "candidate": "Fresh 512-scene ContextRow epoch20; accepted score>=.18, supported patch, absolute correction<=4px; preserve y and other outputs",
+  "seeds": [
+    202609091601,
+    202609092610,
+    202609093619,
+    202609094628,
+    202609095637,
+    202609096646
+  ],
+  "target_B": 0.85,
+  "promotion_gate": "B paired delta lower95>0 and A accuracy decline <=1 percentage point; target achieved only if all-present B strict radial <1px >=85%",
+  "hashes": {
+    "driftsense/context_row.py": "c69fe8e9e12890fec849d1ef3d299bf6a19fa389f9dc4d50d36a6fd632dc26dd",
+    "driftsense/fine_row.py": "9bcad06b74493573af047a8d460a5b57f2f77bb42df9951308878455454dba78",
+    "scripts/eval_row_refinement.py": "1837bdf7c0528024f30d600dcaf62794153f0e19bff20bed2f47801cc9927eeb",
+    "scripts/confirm_fresh_rows.py": "69a5717d4c093f2a3537ff0a82df27ba9946d8fc6c14f0ebf7db2da0a1fdfdad",
+    "experiments/setb85/fresh_rows/candidate.pt": "ff401cfe2bda303a976e88f7e2220410777c995f4ac97776605a31ec9e16d4ba",
+    "weights/driftsense.pt": "e6506b7c3b2ccfd47f9337e9b95df20d0fb2b14a6d45b0a1c892d60464a71ca8"
+  }
+}

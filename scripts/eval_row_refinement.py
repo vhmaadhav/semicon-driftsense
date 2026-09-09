@@ -26,7 +26,18 @@ def main():
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--row-refiner", type=Path)
+    ap.add_argument("--context-refiner", type=Path)
     a = ap.parse_args()
+    if a.row_refiner and a.context_refiner:
+        ap.error("choose one refiner")
+    context_model = None
+    if a.context_refiner:
+        from driftsense.context_row import ContextRow
+
+        context_model = ContextRow().eval()
+        context_model.load_state_dict(
+            torch.load(a.context_refiner, map_location="cpu", weights_only=True)
+        )
     a.output.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(4)
     cv2.setNumThreads(4)
@@ -132,8 +143,15 @@ def main():
             row.update({k: o[k] for k in ("x", "y", "scale", "theta")})
             row.update(score=o["confidence"], secs=time.perf_counter() - t, **captured)
             rows.append(row)
-            if a.row_refiner:
-                from driftsense.row_refiner import refine as refine_row
+            if a.row_refiner or a.context_refiner:
+                if context_model is not None:
+                    from driftsense.context_row import refine as refine_row
+
+                    refiner_arg = context_model
+                else:
+                    from driftsense.row_refiner import refine as refine_row
+
+                    refiner_arg = a.row_refiner
 
                 candidate = row.copy()
                 start = time.perf_counter()
@@ -143,7 +161,7 @@ def main():
                         M.make_template(ref, row["scale"], row["theta"]),
                         row["x"],
                         row["y"],
-                        a.row_refiner,
+                        refiner_arg,
                     )
                 candidate["refiner_secs"] = time.perf_counter() - start
                 candidates.append(candidate)

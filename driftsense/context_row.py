@@ -60,3 +60,22 @@ class ContextRow(nn.Module):
         )
         corr = dot / den
         return corr[:, 8] * self.temperature.clamp(1, 30) + self.head(corr)[:, 0]
+
+
+def refine(search, template, x, y, model):
+    """Apply the frozen fresh-row policy; retain unsupported/large corrections."""
+    from driftsense.fine_row import decode
+
+    pair = patches(search, template, x, y)
+    if pair is None:
+        return float(x)
+    t, s = pair
+    with torch.inference_mode():
+        offset = decode(
+            model(
+                torch.from_numpy(t)[None, None],
+                torch.from_numpy(s[:, 8:104].copy())[None, None],
+            )
+        ).item()
+    candidate = round(x) + offset
+    return float(candidate if abs(candidate - x) <= 4 else x)
