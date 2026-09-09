@@ -1,0 +1,22 @@
+{
+  "checkpoint": "experiments/setb85/aligned_development/candidate.pt",
+  "candidate": "Pixel-centre synthetic crops + seen organizer train anchors; epoch39; score>=.18, supported patch and correction<=4px; preserve all other predictions",
+  "seeds": [
+    202609100101,
+    202609101114,
+    202609102127,
+    202609103140,
+    202609104153,
+    202609105166
+  ],
+  "target_B": 0.85,
+  "promotion_gate": "B paired delta lower95>0 and A accuracy decline <=1 percentage point; target requires all-present strict radial B<1px >=85%",
+  "hashes": {
+    "driftsense/context_row.py": "c69fe8e9e12890fec849d1ef3d299bf6a19fa389f9dc4d50d36a6fd632dc26dd",
+    "driftsense/fine_row.py": "9bcad06b74493573af047a8d460a5b57f2f77bb42df9951308878455454dba78",
+    "scripts/eval_row_refinement.py": "1837bdf7c0528024f30d600dcaf62794153f0e19bff20bed2f47801cc9927eeb",
+    "scripts/confirm_fresh_rows.py": "d1e953d51cf6d4d3f9a1073d62441094b5a9685235d4784145bfec2173ae5dcb",
+    "experiments/setb85/aligned_development/candidate.pt": "284f3891c10696c7ebeb5c3f9676877ae2ef9c649a3c32d62534c8278904609d",
+    "weights/driftsense.pt": "e6506b7c3b2ccfd47f9337e9b95df20d0fb2b14a6d45b0a1c892d60464a71ca8"
+  }
+}

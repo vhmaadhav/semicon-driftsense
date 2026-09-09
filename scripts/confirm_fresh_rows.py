@@ -57,7 +57,12 @@ def run(a):
                     "--weights",
                     str(ROOT / "weights/driftsense.pt"),
                     "--context-refiner",
-                    str(ROOT / "experiments/setb85/fresh_rows/candidate.pt"),
+                    str(
+                        ROOT
+                        / freeze.get(
+                            "checkpoint", "experiments/setb85/fresh_rows/candidate.pt"
+                        )
+                    ),
                     "--output",
                     str(out),
                 ],
