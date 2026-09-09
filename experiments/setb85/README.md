@@ -56,3 +56,7 @@ Frozen aligned-model confirmation on1,200 new organizer-proxy pairs improves str
 ## Box-prefilter development result
 
 Box-prefilter epoch39 reaches337/420=80.24% B on reused development. Validation64/83=77.11% versus61/83 for prior aligned model; assessment37/43=86.05% versus40/43. A414/420=98.57%. Saved checkpoint reproduces1,200 cached predictions within1.14e-13px. No fresh accuracy claim: a new420B confirmation is frozen in box_confirmation/freeze.json.
+
+## Box-model fresh confirmation
+
+Box-model frozen fresh confirmation: B249/420→307/420 (**59.29%→73.10%**), paired95% delta **[+8.33,+19.29] percentage points**. A311/420→414/420; absent rejection239/240 unchanged. B severity1/2/3/4:93.33/74.07/68.63/50.00%. This exceeds its paired baseline but does not establish superiority to the prior model tested on different samples.85% remains unmet. Of113 B failures,85 are1–2px,27 are2–5px,one≥5px; none has |dy|≥1. A fixed maximum-success probability decoder was tested only on seen development and rejected: validationB77.11%→71.08%, A100%→97.70%.

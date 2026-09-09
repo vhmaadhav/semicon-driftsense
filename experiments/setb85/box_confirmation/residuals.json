@@ -1,0 +1,34 @@
+{
+  "all": {
+    "n": 420,
+    "correct": 307,
+    "y_error_ge1": 0,
+    "error1to2": 85,
+    "error2to5": 27,
+    "error_ge5": 1
+  },
+  "phase<.25": {
+    "n": 170,
+    "correct": 120,
+    "y_error_ge1": 0,
+    "error1to2": 37,
+    "error2to5": 12,
+    "error_ge5": 1
+  },
+  "phase>=.25": {
+    "n": 250,
+    "correct": 187,
+    "y_error_ge1": 0,
+    "error1to2": 48,
+    "error2to5": 15,
+    "error_ge5": 0
+  },
+  "severity4": {
+    "n": 90,
+    "correct": 45,
+    "y_error_ge1": 0,
+    "error1to2": 31,
+    "error2to5": 13,
+    "error_ge5": 1
+  }
+}

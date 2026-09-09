@@ -1,0 +1,32 @@
+{
+  "validation": {
+    "A": {
+      "mode_mean": 1.0,
+      "success_decoder": 0.9770114942528736
+    },
+    "B": {
+      "mode_mean": 0.7710843373493976,
+      "success_decoder": 0.7108433734939759
+    }
+  },
+  "assessment": {
+    "A": {
+      "mode_mean": 0.9772727272727273,
+      "success_decoder": 0.9545454545454546
+    },
+    "B": {
+      "mode_mean": 0.8604651162790697,
+      "success_decoder": 0.8837209302325582
+    }
+  },
+  "all": {
+    "A": {
+      "mode_mean": 0.9857142857142858,
+      "success_decoder": 0.9666666666666667
+    },
+    "B": {
+      "mode_mean": 0.8023809523809524,
+      "success_decoder": 0.7666666666666667
+    }
+  }
+}

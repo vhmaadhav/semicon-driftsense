@@ -59,6 +59,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Frozen aligned-model confirmation on1,200 new organizer-proxy pairs improves strict B **262/420 → 302/420 (62.38% → 71.90%)**, paired95% delta **[+4.76,+14.52] percentage points**. A improves **321/420 → 408/420 (97.14%)**; all240absent controls remain rejected. B severity1/2/3/4 accuracy:88.33/75.93/64.71/53.33%. The declared improvement gate passes on this proxy, but85% is not reached and cross-generator safety is unproven; shipped inference stays unchanged. These confirmation seeds are now seen. Next isolated training arm replaces Gaussian prefilter with the organizer-style box filter; same512 scene seeds, pixel-centre labels and prior seen_context train/validation, without incorporating this new confirmation.
 
+- Box-model frozen fresh confirmation: B249/420→307/420 (**59.29%→73.10%**), paired95% delta **[+8.33,+19.29] percentage points**. A311/420→414/420; absent rejection239/240 unchanged. B severity1/2/3/4:93.33/74.07/68.63/50.00%. This exceeds its paired baseline but does not establish superiority to the prior model tested on different samples.85% remains unmet. Of113 B failures,85 are1–2px,27 are2–5px,one≥5px; none has |dy|≥1. A fixed maximum-success probability decoder was tested only on seen development and rejected: validationB77.11%→71.08%, A100%→97.70%.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.
