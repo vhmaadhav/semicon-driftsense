@@ -52,3 +52,7 @@ Aligned-development epoch39: B **262/420 → 326/420 (77.62%)**; group validatio
 ## Aligned-model fresh confirmation
 
 Frozen aligned-model confirmation on1,200 new organizer-proxy pairs improves strict B **262/420 → 302/420 (62.38% → 71.90%)**, paired95% delta **[+4.76,+14.52] percentage points**. A improves **321/420 → 408/420 (97.14%)**; all240absent controls remain rejected. B severity1/2/3/4 accuracy:88.33/75.93/64.71/53.33%. The declared improvement gate passes on this proxy, but85% is not reached and cross-generator safety is unproven; shipped inference stays unchanged. These confirmation seeds are now seen. Next isolated training arm replaces Gaussian prefilter with the organizer-style box filter; same512 scene seeds, pixel-centre labels and prior seen_context train/validation, without incorporating this new confirmation.
+
+## Box-prefilter development result
+
+Box-prefilter epoch39 reaches337/420=80.24% B on reused development. Validation64/83=77.11% versus61/83 for prior aligned model; assessment37/43=86.05% versus40/43. A414/420=98.57%. Saved checkpoint reproduces1,200 cached predictions within1.14e-13px. No fresh accuracy claim: a new420B confirmation is frozen in box_confirmation/freeze.json.
