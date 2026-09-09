@@ -1,0 +1,13 @@
+{
+  "candidate": "correlation-only 202-input refiner, selected at epoch50 with tier_weight1; update accepted rows, preserve all other outputs",
+  "gate": {
+    "minimum_delta85": 0.35,
+    "paired_lower95_minimum": 0
+  },
+  "confirmation_seed": 9120260909,
+  "hashes": {
+    "driftsense/row_refiner.py": "cd94090f67362b58d93c4e0a29ec4ea77f181bb4b50658c15337a69c6469222b",
+    "experiments/setb_rows/learned/row_refiner.npz": "407bb1d446c4f151373a7552e74cc9432d7a131f0995bb7251977906cac3784d",
+    "weights/driftsense.pt": "e6506b7c3b2ccfd47f9337e9b95df20d0fb2b14a6d45b0a1c892d60464a71ca8"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "reproduced_weight_arrays_identical": true,
+  "freeze_hashes_match_before_format": true,
+  "fresh_pairs": 200,
+  "unique_image_hashes": 400,
+  "exact_image_overlap_with_available_development": 0,
+  "refiner_median_seconds": 0.0100192295212764,
+  "formatted_refiner_ast_identical": true,
+  "frozen_source_copy": "experiments/setb_rows/frozen_row_refiner.py",
+  "formatted_source_sha256": "179e2ab1ba3eb3df4ab3da537d8b419ebd2ae6afc9324260b0f7233d09f6a2d6"
+}

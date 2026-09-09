@@ -42,6 +42,12 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 - **Mitigation:** fixed pose geometry, post-write dual verification, explicit semantic absence labels, Set-C similarity auditing, and supersampled anti-aliasing comparisons are integrated in `generator/`.
 - **Remaining limitation:** the coarse NCC baseline's error is not monotone at severity level 4 because periodic structure can create a harder wrong basin at a lower nominal degradation level. This is retained in the report rather than hidden by relabelling.
 
+### 6. Learned horizontal refiners — preliminary gain below promotion gate
+- **Observed:** a frozen correlation MLP trained with a pixel-tier auxiliary objective improved a fresh 200-pair proxy from **81.707143 → 82.010000 /85** (+0.302857); Set B accepted ≤1px matches improved **46/70 → 50/70**. The paired 95% interval was **[-0.171571, +0.823000]** and the predeclared +0.35/lower-bound≥0 gate failed.
+- **Likely limitation:** row evidence supplies modest local corrections but does not address wrong pose basins; the small proxy set cannot establish a reliable population gain. Translated-correlation and native-strip CNN variants did not beat the validation control sufficiently.
+- **Mitigation:** retain shipped inference and backbone. Keep the trained refiners experimental; do not retune on confirmation. Evidence: `experiments/setb_rows/README.md`, `confirmation/results.json`, `freeze.json`, and recorded checkpoints/training histories.
+- **Remaining limitation:** the local generator reconstruction is not the official blind set; exact image disjointness does not establish semantic uniqueness. Structural candidate reranking remains unimplemented.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.
