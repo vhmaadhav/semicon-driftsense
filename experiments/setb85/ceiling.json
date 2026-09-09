@@ -1,0 +1,7 @@
+{
+  "supported_B": 853,
+  "baseline_within1": 580,
+  "oracle_existing_plus_top3_raw_and_aligned_within1": 676,
+  "perfect_x_upper_bound_within1": 793,
+  "note": "Oracle diagnostics use labels and are not deployable accuracy. Denominator is supported B only; full B is 875."
+}

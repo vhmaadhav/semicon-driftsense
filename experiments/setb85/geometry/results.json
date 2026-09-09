@@ -1,0 +1,81 @@
+{
+  "scope": "oracle diagnostic using true centre, pose and barrel k; NOT deployable accuracy",
+  "n": 875,
+  "groups": {
+    "all": {
+      "n": 875,
+      "native": {
+        "within1": 643,
+        "fraction": 0.7348571428571429,
+        "unavailable": 51,
+        "median_available_error": 0.4011305758267838
+      },
+      "undistorted": {
+        "within1": 714,
+        "fraction": 0.816,
+        "unavailable": 42,
+        "median_available_error": 0.3005536223965469
+      }
+    },
+    "1": {
+      "n": 219,
+      "native": {
+        "within1": 194,
+        "fraction": 0.8858447488584474,
+        "unavailable": 7,
+        "median_available_error": 0.21816933760050006
+      },
+      "undistorted": {
+        "within1": 208,
+        "fraction": 0.9497716894977168,
+        "unavailable": 6,
+        "median_available_error": 0.15559123457184693
+      }
+    },
+    "2": {
+      "n": 219,
+      "native": {
+        "within1": 168,
+        "fraction": 0.7671232876712328,
+        "unavailable": 7,
+        "median_available_error": 0.4403608776953263
+      },
+      "undistorted": {
+        "within1": 186,
+        "fraction": 0.8493150684931506,
+        "unavailable": 8,
+        "median_available_error": 0.3085502183296409
+      }
+    },
+    "3": {
+      "n": 219,
+      "native": {
+        "within1": 150,
+        "fraction": 0.684931506849315,
+        "unavailable": 21,
+        "median_available_error": 0.3773640404101002
+      },
+      "undistorted": {
+        "within1": 175,
+        "fraction": 0.7990867579908676,
+        "unavailable": 15,
+        "median_available_error": 0.3432653221400629
+      }
+    },
+    "4": {
+      "n": 218,
+      "native": {
+        "within1": 131,
+        "fraction": 0.6009174311926605,
+        "unavailable": 16,
+        "median_available_error": 0.5825781335606166
+      },
+      "undistorted": {
+        "within1": 145,
+        "fraction": 0.6651376146788991,
+        "unavailable": 13,
+        "median_available_error": 0.519379693386538
+      }
+    }
+  }
+}
