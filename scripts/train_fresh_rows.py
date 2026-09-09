@@ -68,7 +68,12 @@ def run(a):
             polygon_scale=(-0.05, 0.05),
         )
         generated = make_pairs(
-            entropy, list(PRESETS), "randomized", crops=32, pose=spec
+            entropy,
+            list(PRESETS),
+            "randomized",
+            crops=32,
+            pose=spec,
+            pixel_center_labels=a.pixel_center_labels,
         )
         pool = errors[errors.severity == scene % 4 + 1]
         if pool.empty:
@@ -194,6 +199,7 @@ def run(a):
             best_frame = c.copy()
             torch.save(model.state_dict(), a.output / "candidate.pt")
     result = {
+        "pixel_center_labels": a.pixel_center_labels,
         "fresh_scenes": a.scenes,
         "fresh_crops": len(fresh["target"]),
         "training_crops": len(ft),
@@ -223,6 +229,7 @@ if __name__ == "__main__":
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--scenes", type=int, default=512)
     ap.add_argument("--epochs", type=int, default=40)
+    ap.add_argument("--pixel-center-labels", action="store_true")
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     try:

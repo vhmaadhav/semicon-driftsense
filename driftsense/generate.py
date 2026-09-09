@@ -781,7 +781,8 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
 
 def make_pairs(entropy: int, architectures: list[str], noise: str,
                crops: int = 8, pose: "PoseSpec | PoseParams | None" = None,
-               preset_name: str | None = None) -> list[dict]:
+               preset_name: str | None = None,
+               pixel_center_labels: bool = False) -> list[dict]:
     """In-memory version of build_one: one canvas -> one search frame and
     `crops` (reference, ground-truth) pairs, returned as arrays.
 
@@ -875,6 +876,14 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
                     affine, x0 + REFERENCE_SIZE_PX / 2.0, y0 + REFERENCE_SIZE_PX / 2.0)
                 gt_x += area_convention_offset(pose_params.magnification)
                 gt_y += area_convention_offset(pose_params.magnification)
+            if pixel_center_labels:
+                # Experimental organizer-style labels: map the actual crop
+                # pixel centre BEFORE selecting the independently jittered row.
+                matrix = search_affine(fine_canvas.shape[0], SEARCH_SIZE_PX,
+                                       pose_params.magnification, pose_params.rotation_deg)
+                gt_x, gt_y = apply_affine_point(
+                    matrix, x0 + (REFERENCE_SIZE_PX - 1) / 2.0,
+                    y0 + (REFERENCE_SIZE_PX - 1) / 2.0)
             raw_gx, raw_gy = gt_x, gt_y
             gx, gy = correct_gt(gt_x, gt_y, row_shift, k)
         row = {"reference": reference_img, "search": search_img,

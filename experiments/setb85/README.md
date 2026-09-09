@@ -38,3 +38,7 @@ Use fresh output directories when inputs change; caches are reused by these expe
 ## Fresh confirmation outcome
 
 Fresh 1,200-pair confirmation: B **262/420 → 264/420 (62.86%)**, paired delta 95% CI **[-4.76, +5.71] percentage points**. A **328/420 → 366/420**. Severity4 B **48/90 → 39/90**. Promotion fails; target85 remains unmet. All six confirmation seeds are now seen. Residual diagnosis finds 155/156 B failures x-dominant and only three errors over5px, so gross pose recovery is not the main next lever on this proxy. Investigate generator/training scanline mismatch and centre-row representation before another training run. Aggregation was repaired to namespace shard-local pair IDs and score absent C as rejection; original freeze and amendment retained, predictions/model unchanged.
+
+## Pixel-centre training ablation
+
+Code comparison identifies a label convention mismatch: local in-memory generation maps crop centre500 and adds the area offset; the confirmation generator maps499.5 without that offset. Across100,000 random poses this changes the selected independent jitter row in50.01% of cases. The optional `make_pairs(pixel_center_labels=True)` maps the physical centre before drift; defaults remain unchanged. A matched512-scene training arm is running with this flag. Images/rendering are unchanged; Gaussian-versus-box search prefilter mismatch remains. Historical validation uses legacy labels, so this arm requires cautious interpretation and fresh confirmation before promotion. Fifteen generator/label tests passed.

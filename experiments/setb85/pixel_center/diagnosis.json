@@ -1,0 +1,6 @@
+{
+  "random_poses": 100000,
+  "mean_prewarp_y_label_difference_px": 0.4999369950339949,
+  "different_jitter_row_fraction": 0.5001,
+  "finding": "Local make_pairs adds area convention and uses crop 500; organizer maps crop499.5. Offset changes the independently jittered row about half the time. Rendering also differs: local Gaussian prefilter vs organizer box. Pixel-centre arm changes labels only; historical validation remains legacy/seen and is not proof of transfer."
+}
