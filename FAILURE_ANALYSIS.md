@@ -71,6 +71,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Original-label spatial arm: selected epoch0, validation B125/176=71.02% vs121/176 baseline; assessment57/86=66.28%; full B616/875=70.40%. A remains96.47% validation and95.43% full. Prior original horizontal CNN fullB625/875=71.43% is higher, so no fresh confirmation spent. Saved spatial checkpoint reproduces2250 cached outputs. Next original-population test adds reliability conditioning to that stronger original horizontal CNN, freezing its features and training only the residual on cached original-label data. Proxy-trained reliability results do not establish performance on this target.
 
+- Original reliability residual fails to improve B over its base: validation123/176 unchanged, assessment58/86 unchanged, all624/875=71.31% versus625/875. No fresh confirmation spent. Next bounded diagnostic tests full-width search scanline motion minus local-window motion as a fixed horizontal correction; uses image pixels only, no labels in proposals. This tests evidence outside the limited reference crop. Two tests cover displacement sign and unsupported flat rows.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.
