@@ -1,0 +1,22 @@
+{
+  "spatial_features": {
+    "A": {
+      "baseline": 0.9462857142857143,
+      "candidate": 0.8217142857142857
+    },
+    "B": {
+      "baseline": 0.672,
+      "candidate": 0.552
+    }
+  },
+  "narrow_barrel": {
+    "A": {
+      "baseline": 0.9462857142857143,
+      "candidate": 0.8582857142857143
+    },
+    "B": {
+      "baseline": 0.672,
+      "candidate": 0.5622857142857143
+    }
+  }
+}

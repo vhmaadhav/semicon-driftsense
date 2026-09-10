@@ -80,3 +80,7 @@ SpatialContextRow epoch5 improves reused B development to349/420=83.10%. Validat
 ## Spatial-model confirmation
 
 Spatial model fresh confirmation: B269/420→332/420 (**64.05%→79.05%**), paired95% delta **[+9.29,+20.71] percentage points**. A324/420→416/420=99.05%; all240absent controls rejected. B severity1/2/3/4:92.50/87.04/76.47/54.44%; severity4 has zero net gain.85% remains unmet. Candidate comparisons across different holdouts are not paired. Training code samples barrel k up to±.02, whereas this organizer proxy uses at most.005. Next isolated arm caps training |k| at.005, preserving architecture, other degradation settings and seen-development split; it targets this proxy and may reduce transfer to wider distortion ranges.
+
+## Original-population transfer failure
+
+Narrow-barrel training did not improve validationB over spatial model (both67/83=80.72%); no fresh confirmation spent. Crucial original-data transfer check: spatial model B degrades67.20%→55.20%, A94.63%→82.17%; narrow-barrel B56.23%, A85.83%. Thus organizer-proxy gains do not improve the original scoring population. These models must not be promoted. The next arm uses spatial features with ORIGINAL context development and legacy-label/Gaussian512-scene caches, restoring the original target convention.
