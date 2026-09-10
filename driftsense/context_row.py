@@ -98,3 +98,13 @@ class SpatialContextRow(ContextRow):
             nn.Conv2d(16, 16, (3, 5), padding=(1, 2)),
             nn.ReLU(),
         )
+
+
+def load_context_model(path):
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    height = state["encoder.0.weight"].shape[-2]
+    if height not in (1, 3):
+        raise ValueError(f"unsupported context kernel height {height}")
+    model = (SpatialContextRow() if height == 3 else ContextRow()).eval()
+    model.load_state_dict(state)
+    return model

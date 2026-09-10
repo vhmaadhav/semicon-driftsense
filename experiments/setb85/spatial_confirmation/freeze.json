@@ -1,0 +1,22 @@
+{
+  "checkpoint": "experiments/setb85/spatial_features/candidate.pt",
+  "candidate": "SpatialContextRow 3x5 encoder epoch5; same box synthetic and seen-context split; fixed score>=.18/support/correction<=4px policy",
+  "seeds": [
+    202609101601,
+    202609102632,
+    202609103663,
+    202609104694,
+    202609105725,
+    202609106756
+  ],
+  "target_B": 0.85,
+  "promotion_gate": "B paired delta lower95>0 and A accuracy decline <=1 percentage point; target requires all-present strict radial B<1px >=85%",
+  "hashes": {
+    "driftsense/context_row.py": "b4c1bf8d5e186ab90f7c41142f31c67722a07eed1bd6af990661fe018903db60",
+    "driftsense/fine_row.py": "9bcad06b74493573af047a8d460a5b57f2f77bb42df9951308878455454dba78",
+    "scripts/eval_row_refinement.py": "ce0e8df72dd8b96ac2d0c2f89df97ee1f308c355db69bfef8c2446f1415b66a6",
+    "scripts/confirm_fresh_rows.py": "d1e953d51cf6d4d3f9a1073d62441094b5a9685235d4784145bfec2173ae5dcb",
+    "weights/driftsense.pt": "e6506b7c3b2ccfd47f9337e9b95df20d0fb2b14a6d45b0a1c892d60464a71ca8",
+    "experiments/setb85/spatial_features/candidate.pt": "5cbf92ffd291850f7230b020df8e760e14707b885d2c77ff6905c3a8043dd9b5"
+  }
+}

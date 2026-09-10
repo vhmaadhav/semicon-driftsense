@@ -72,3 +72,7 @@ Reliability residual development: B validation68/83=81.93% versus64/83 for box m
 ## Centered-strip outcome
 
 Centered-strip epoch15: validation B66/83=79.52% but A85/87 versus87/87 for box model; all B338/420=80.48%. Not promoted. Fixed equal averaging with box model reduced validationB to63/83=75.90%, rejected. Next experiment tests early spatial features (3x5 instead of1x5 convolutions), using neighbouring image rows before correlation reduction rather than only combining row correlation curves. Same cached box training crops and seen_context split; pending, no gains claimed.
+
+## Spatial-feature development result
+
+SpatialContextRow epoch5 improves reused B development to349/420=83.10%. Validation67/83=80.72% versus64/83 for box; assessment39/43=90.70% versus37/43. A validation87/87 and assessment44/44. These are seen-development results, not85% confirmation. A new420B evaluation is frozen in spatial_confirmation/freeze.json; evaluator restores the matching1-row or3-row kernel architecture from checkpoint shape with strict state loading.

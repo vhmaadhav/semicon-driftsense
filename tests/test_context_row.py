@@ -64,3 +64,15 @@ def test_spatial_features_preserve_horizontal_shift_geometry():
         logits = SpatialContextRow().eval()(t, s)
     assert logits.shape == (1, 17)
     assert logits.argmax(-1).item() == 10
+
+
+def test_spatial_checkpoint_loads_exact_architecture(tmp_path):
+    from driftsense.context_row import SpatialContextRow, load_context_model
+
+    model = SpatialContextRow().eval()
+    path = tmp_path / "spatial.pt"
+    torch.save(model.state_dict(), path)
+    loaded = load_context_model(path)
+    t = torch.randn(1, 1, 17, 80)
+    s = torch.randn(1, 1, 17, 96)
+    assert torch.equal(model(t, s), loaded(t, s))

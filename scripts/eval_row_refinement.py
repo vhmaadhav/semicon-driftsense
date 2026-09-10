@@ -32,12 +32,9 @@ def main():
         ap.error("choose one refiner")
     context_model = None
     if a.context_refiner:
-        from driftsense.context_row import ContextRow
+        from driftsense.context_row import load_context_model
 
-        context_model = ContextRow().eval()
-        context_model.load_state_dict(
-            torch.load(a.context_refiner, map_location="cpu", weights_only=True)
-        )
+        context_model = load_context_model(a.context_refiner)
     a.output.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(4)
     cv2.setNumThreads(4)
