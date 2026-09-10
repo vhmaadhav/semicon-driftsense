@@ -1,0 +1,36 @@
+{
+  "updates": 559,
+  "note": "Fixed image-only correction; original historically seen development, not confirmation.",
+  "splits": {
+    "validation": {
+      "A": {
+        "baseline": 0.9647058823529412,
+        "candidate": 0.9294117647058824
+      },
+      "B": {
+        "baseline": 0.6875,
+        "candidate": 0.6761363636363636
+      }
+    },
+    "assessment": {
+      "A": {
+        "baseline": 0.96875,
+        "candidate": 0.9479166666666666
+      },
+      "B": {
+        "baseline": 0.5813953488372093,
+        "candidate": 0.5581395348837209
+      }
+    },
+    "all": {
+      "A": {
+        "baseline": 0.9462857142857143,
+        "candidate": 0.9211428571428572
+      },
+      "B": {
+        "baseline": 0.672,
+        "candidate": 0.6582857142857143
+      }
+    }
+  }
+}

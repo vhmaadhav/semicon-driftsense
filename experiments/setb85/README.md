@@ -92,3 +92,7 @@ Original-label spatial arm: selected epoch0, validation B125/176=71.02% vs121/17
 ## Original reliability outcome
 
 Original reliability residual fails to improve B over its base: validation123/176 unchanged, assessment58/86 unchanged, all624/875=71.31% versus625/875. No fresh confirmation spent. Next bounded diagnostic tests full-width search scanline motion minus local-window motion as a fixed horizontal correction; uses image pixels only, no labels in proposals. This tests evidence outside the limited reference crop. Two tests cover displacement sign and unsupported flat rows.
+
+## Global scanline result
+
+Global scanline correction failed: original validation B68.75%→67.61%, A96.47%→92.94%; full B67.20%→65.83%. Rejected without threshold tuning. Work now verifies the original notebook generator by replaying one recorded seed/acquisition profile before spending a fresh evaluation. Its embedded bundle hash differs from the dataset manifest, so compatibility must be checked rather than assumed.
