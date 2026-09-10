@@ -41,7 +41,7 @@ class ContextRow(nn.Module):
         nn.init.zeros_(self.head[-1].weight)
         nn.init.zeros_(self.head[-1].bias)
 
-    def forward(self, template, search):
+    def correlations(self, template, search):
         def encode(a):
             a = (a - a.mean((-1, -2), keepdim=True)) / a.std(
                 (-1, -2), keepdim=True
@@ -59,6 +59,10 @@ class ContextRow(nn.Module):
             .sqrt()
         )
         corr = dot / den
+        return corr
+
+    def forward(self, template, search):
+        corr = self.correlations(template, search)
         return corr[:, 8] * self.temperature.clamp(1, 30) + self.head(corr)[:, 0]
 
 

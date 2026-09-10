@@ -1,0 +1,25 @@
+{
+  "note": "Seen data; oracle row choice uses labels and is NOT deployable accuracy.",
+  "B_n": 420,
+  "model_correct": 337,
+  "centre_peak_correct": 227,
+  "any_17row_peak_oracle_correct": 414,
+  "texture_quartiles": [
+    {
+      "n": 105,
+      "correct": 72
+    },
+    {
+      "n": 105,
+      "correct": 80
+    },
+    {
+      "n": 105,
+      "correct": 90
+    },
+    {
+      "n": 105,
+      "correct": 95
+    }
+  ]
+}

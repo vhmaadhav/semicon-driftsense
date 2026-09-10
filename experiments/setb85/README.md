@@ -60,3 +60,7 @@ Box-prefilter epoch39 reaches337/420=80.24% B on reused development. Validation6
 ## Box-model fresh confirmation
 
 Box-model frozen fresh confirmation: B249/420→307/420 (**59.29%→73.10%**), paired95% delta **[+8.33,+19.29] percentage points**. A311/420→414/420; absent rejection239/240 unchanged. B severity1/2/3/4:93.33/74.07/68.63/50.00%. This exceeds its paired baseline but does not establish superiority to the prior model tested on different samples.85% remains unmet. Of113 B failures,85 are1–2px,27 are2–5px,one≥5px; none has |dy|≥1. A fixed maximum-success probability decoder was tested only on seen development and rejected: validationB77.11%→71.08%, A100%→97.70%.
+
+## Row reliability experiment
+
+Seen-development texture diagnostic: B accuracy by centre-row gradient-texture quartile is72/105,80/105,90/105,95/105. A label-assisted choice among17 row peaks covers414/420, but is not deployable accuracy. A reliability-conditioned residual now tests whether explicit reference/search texture and correlation peak/margin help combine neighbouring rows. The prior box model encoder/head are frozen; only the new zero-initialized residual and reliability weights train, reusing existing synthetic crops. Outcome pending.

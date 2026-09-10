@@ -137,7 +137,20 @@ def run(a):
     val = (bucket >= 7) & (bucket < 9)
     base_a = accuracy(d, val, "A")
     base_b = accuracy(d, val, "B")
-    model = ContextRow()
+    if a.reliability_base:
+        from driftsense.reliability_row import ReliabilityRow
+
+        model = ReliabilityRow()
+        missing, unexpected = model.load_state_dict(
+            torch.load(a.reliability_base, weights_only=True), strict=False
+        )
+        assert not unexpected and all(
+            k.startswith(("reliability.", "residual.")) for k in missing
+        )
+        for name, param in model.named_parameters():
+            param.requires_grad_(name.startswith(("reliability.", "residual.")))
+    else:
+        model = ContextRow()
     opt = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
     best = (base_b, -float("inf"))
     selected = None
@@ -202,6 +215,7 @@ def run(a):
     result = {
         "pixel_center_labels": a.pixel_center_labels,
         "box_prefilter": a.box_prefilter,
+        "reliability_residual": bool(a.reliability_base),
         "fresh_scenes": a.scenes,
         "fresh_crops": len(fresh["target"]),
         "training_crops": len(ft),
@@ -233,6 +247,7 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--pixel-center-labels", action="store_true")
     ap.add_argument("--box-prefilter", action="store_true")
+    ap.add_argument("--reliability-base", type=Path)
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     try:
