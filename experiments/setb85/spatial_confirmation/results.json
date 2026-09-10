@@ -1,0 +1,85 @@
+{
+  "rows": 1200,
+  "metric": "strict radial <1px, all present pairs including rejects",
+  "sets": {
+    "A": {
+      "n": 420,
+      "baseline_correct": 324,
+      "candidate_correct": 416,
+      "baseline": 0.7714285714285715,
+      "candidate": 0.9904761904761905,
+      "delta": 0.21904761904761905,
+      "paired_delta95": [
+        0.17857142857142858,
+        0.25952380952380955
+      ]
+    },
+    "B": {
+      "n": 420,
+      "baseline_correct": 269,
+      "candidate_correct": 332,
+      "baseline": 0.6404761904761904,
+      "candidate": 0.7904761904761904,
+      "delta": 0.15,
+      "paired_delta95": [
+        0.09285714285714286,
+        0.20714285714285716
+      ]
+    }
+  },
+  "B_severity": {
+    "1": {
+      "n": 120,
+      "baseline_correct": 79,
+      "candidate_correct": 111,
+      "baseline": 0.6583333333333333,
+      "candidate": 0.925,
+      "delta": 0.26666666666666666,
+      "paired_delta95": [
+        0.16666666666666666,
+        0.36666666666666664
+      ]
+    },
+    "2": {
+      "n": 108,
+      "baseline_correct": 73,
+      "candidate_correct": 94,
+      "baseline": 0.6759259259259259,
+      "candidate": 0.8703703703703703,
+      "delta": 0.19444444444444445,
+      "paired_delta95": [
+        0.10185185185185185,
+        0.28703703703703703
+      ]
+    },
+    "3": {
+      "n": 102,
+      "baseline_correct": 68,
+      "candidate_correct": 78,
+      "baseline": 0.6666666666666666,
+      "candidate": 0.7647058823529411,
+      "delta": 0.09803921568627451,
+      "paired_delta95": [
+        -0.0196078431372549,
+        0.21568627450980393
+      ]
+    },
+    "4": {
+      "n": 90,
+      "baseline_correct": 49,
+      "candidate_correct": 49,
+      "baseline": 0.5444444444444444,
+      "candidate": 0.5444444444444444,
+      "delta": 0.0,
+      "paired_delta95": [
+        -0.13333333333333333,
+        0.13333333333333333
+      ]
+    }
+  },
+  "rejection_control": {
+    "n": 240,
+    "baseline_rejected": 240,
+    "candidate_rejected": 240
+  }
+}

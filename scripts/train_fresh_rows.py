@@ -75,6 +75,7 @@ def run(a):
             pose=spec,
             pixel_center_labels=a.pixel_center_labels,
             box_prefilter=a.box_prefilter,
+            barrel_limit=a.training_barrel_limit,
         )
         pool = errors[errors.severity == scene % 4 + 1]
         if pool.empty:
@@ -226,6 +227,7 @@ def run(a):
         "reliability_residual": bool(a.reliability_base),
         "patch_y_offset": a.patch_y_offset,
         "vertical_features": a.vertical_features,
+        "training_barrel_limit": a.training_barrel_limit,
         "fresh_scenes": a.scenes,
         "fresh_crops": len(fresh["target"]),
         "training_crops": len(ft),
@@ -260,6 +262,7 @@ if __name__ == "__main__":
     ap.add_argument("--reliability-base", type=Path)
     ap.add_argument("--patch-y-offset", type=float, default=0.0)
     ap.add_argument("--vertical-features", action="store_true")
+    ap.add_argument("--training-barrel-limit", type=float)
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     try:

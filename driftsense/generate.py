@@ -788,7 +788,8 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
                crops: int = 8, pose: "PoseSpec | PoseParams | None" = None,
                preset_name: str | None = None,
                pixel_center_labels: bool = False,
-               box_prefilter: bool = False) -> list[dict]:
+               box_prefilter: bool = False,
+               barrel_limit: float | None = None) -> list[dict]:
     """In-memory version of build_one: one canvas -> one search frame and
     `crops` (reference, ground-truth) pairs, returned as arrays.
 
@@ -817,6 +818,11 @@ def make_pairs(entropy: int, architectures: list[str], noise: str,
     _slo, _shi = spec.severity
     if _shi > _slo:
         overrides.update(sample_severity_params(pose_rng, (_slo, _shi)))
+    if barrel_limit is not None:
+        if barrel_limit < 0:
+            raise ValueError("barrel_limit must be nonnegative")
+        overrides["barrel_distortion_k"] = float(np.clip(
+            overrides.get("barrel_distortion_k", 0.0), -barrel_limit, barrel_limit))
     params = GenerationParams(**overrides)
 
     canvas_px = spec.required_canvas_px()

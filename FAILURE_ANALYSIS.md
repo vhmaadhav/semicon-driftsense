@@ -65,6 +65,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Centered-strip epoch15: validation B66/83=79.52% but A85/87 versus87/87 for box model; all B338/420=80.48%. Not promoted. Fixed equal averaging with box model reduced validationB to63/83=75.90%, rejected. Next experiment tests early spatial features (3x5 instead of1x5 convolutions), using neighbouring image rows before correlation reduction rather than only combining row correlation curves. Same cached box training crops and seen_context split; pending, no gains claimed.
 
+- Spatial model fresh confirmation: B269/420→332/420 (**64.05%→79.05%**), paired95% delta **[+9.29,+20.71] percentage points**. A324/420→416/420=99.05%; all240absent controls rejected. B severity1/2/3/4:92.50/87.04/76.47/54.44%; severity4 has zero net gain.85% remains unmet. Candidate comparisons across different holdouts are not paired. Training code samples barrel k up to±.02, whereas this organizer proxy uses at most.005. Next isolated arm caps training |k| at.005, preserving architecture, other degradation settings and seen-development split; it targets this proxy and may reduce transfer to wider distortion ranges.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.

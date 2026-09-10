@@ -76,3 +76,7 @@ Centered-strip epoch15: validation B66/83=79.52% but A85/87 versus87/87 for box 
 ## Spatial-feature development result
 
 SpatialContextRow epoch5 improves reused B development to349/420=83.10%. Validation67/83=80.72% versus64/83 for box; assessment39/43=90.70% versus37/43. A validation87/87 and assessment44/44. These are seen-development results, not85% confirmation. A new420B evaluation is frozen in spatial_confirmation/freeze.json; evaluator restores the matching1-row or3-row kernel architecture from checkpoint shape with strict state loading.
+
+## Spatial-model confirmation
+
+Spatial model fresh confirmation: B269/420→332/420 (**64.05%→79.05%**), paired95% delta **[+9.29,+20.71] percentage points**. A324/420→416/420=99.05%; all240absent controls rejected. B severity1/2/3/4:92.50/87.04/76.47/54.44%; severity4 has zero net gain.85% remains unmet. Candidate comparisons across different holdouts are not paired. Training code samples barrel k up to±.02, whereas this organizer proxy uses at most.005. Next isolated arm caps training |k| at.005, preserving architecture, other degradation settings and seen-development split; it targets this proxy and may reduce transfer to wider distortion ranges.
