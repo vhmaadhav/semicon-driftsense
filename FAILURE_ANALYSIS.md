@@ -75,6 +75,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Global scanline correction failed: original validation B68.75%→67.61%, A96.47%→92.94%; full B67.20%→65.83%. Rejected without threshold tuning. Work now verifies the original notebook generator by replaying one recorded seed/acquisition profile before spending a fresh evaluation. Its embedded bundle hash differs from the dataset manifest, so compatibility must be checked rather than assumed.
 
+- Fresh original-population validation is blocked by generator provenance. Dataset manifest records source bundle1f336770031301e6b776b93ab91c2bd0f85aebe7378e45bb505bbf5b68550658; available notebook embeds a different bundle. Replaying recorded pairtest_B_00000000 with the same seed/acquisition parameters reproduced pose but neither image hash; corrected target differed by−107.88px x and−585.70px y. Workspace search found no matching source snapshot. The best original development result remains625/875=71.43%, not fresh-confirmed85%. Request the original generator snapshot or a new labeled holdout from that population before further confirmation. Quiet automation is paused pending that input; model defaults remain unchanged.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.

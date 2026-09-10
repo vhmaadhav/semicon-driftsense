@@ -1,0 +1,15 @@
+{
+  "notebook_sha256": "1cedd64cccec19e29ae5bb77cd952765d6bb748779c6d6c3610e283cb8932ba1",
+  "source_pair": "test_B_00000000",
+  "label_difference": {
+    "gt_x_corr": -107.88017560474668,
+    "gt_y_corr": -585.7015513177417,
+    "rotation_deg": 0.0,
+    "magnification": 0.0
+  },
+  "hash_match": {
+    "reference": false,
+    "search": false
+  },
+  "note": "Replay uses recorded acquisition parameters and seed; no fresh result. Notebook bundle provenance differs from original manifest, must verify compatibility."
+}
