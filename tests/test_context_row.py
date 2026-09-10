@@ -40,3 +40,14 @@ def test_strict_accuracy_counts_rejections_and_boundary_failures():
 
 def test_unsupported_strip_is_explicit():
     assert patches(np.zeros((30, 30)), np.zeros((20, 20)), 1.0, 2.0) is None
+
+
+def test_pixel_center_vertical_patch_matches_exact_embedded_row():
+    # A 100px template at rows100..199 has physical centre149.5.
+    template = np.repeat(np.arange(100, dtype=np.float32)[:, None], 100, axis=1)
+    search = np.zeros((300, 300), np.float32)
+    search[100:200, 100:200] = template
+    t, s = patches(search, template, 149.5, 149.5, y_center_offset=-0.5)
+    assert np.array_equal(t[:, 40], s[:, 56])
+    old, _ = patches(search, template, 149.5, 149.5)
+    assert np.allclose(old[:, 40] - t[:, 40], 0.5)

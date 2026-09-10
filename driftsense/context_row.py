@@ -6,7 +6,7 @@ import torch
 from torch import nn
 
 
-def patches(search, template, x, y):
+def patches(search, template, x, y, y_center_offset=0.0):
     xi, yi = int(round(x)), int(round(y))
     h, w = template.shape
     if (
@@ -19,7 +19,9 @@ def patches(search, template, x, y):
     ):
         return None
     t = cv2.getRectSubPix(
-        template.astype(np.float32), (80, 17), (w / 2 - 0.5, h / 2 + yi - y)
+        template.astype(np.float32),
+        (80, 17),
+        (w / 2 - 0.5, h / 2 + yi - y + y_center_offset),
     )
     s = search[yi - 8 : yi + 9, xi - 56 : xi + 56].astype(np.float32)
     return t, s

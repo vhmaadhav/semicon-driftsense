@@ -12,7 +12,7 @@ from driftsense.context_row import patches
 from driftsense.matching import make_template
 
 
-def run(source, output):
+def run(source, output, patch_y_offset=0.0):
     frames, ts, ss = [], [], []
     for shard in sorted(source.glob("shard*")):
         if not shard.is_dir():
@@ -24,7 +24,13 @@ def run(source, output):
             v = inputs.loc[r.pair_id]
             reference = I.read_gray(str(Path(v.base) / v.reference_path))
             search = I.read_gray(str(Path(v.base) / v.search_path))
-            pair = patches(search, make_template(reference, r.scale, r.theta), r.x, r.y)
+            pair = patches(
+                search,
+                make_template(reference, r.scale, r.theta),
+                r.x,
+                r.y,
+                y_center_offset=patch_y_offset,
+            )
             available.append(pair is not None)
             if pair is None:
                 pair = np.zeros((17, 80), np.float32), np.zeros((17, 112), np.float32)
@@ -48,5 +54,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--source", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--patch-y-offset", type=float, default=0.0)
     a = p.parse_args()
-    run(a.source, a.output)
+    run(a.source, a.output, a.patch_y_offset)

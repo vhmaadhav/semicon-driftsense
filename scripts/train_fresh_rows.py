@@ -90,7 +90,11 @@ def run(a):
             scale = float(np.clip(row["magnification"] * e.scale / e.gt_scale, 8, 12))
             theta = float(np.clip(row["rotation_deg"] + e.theta - e.gt_rot, -5, 5))
             pair = patches(
-                row["search"], make_template(row["reference"], scale, theta), px, py
+                row["search"],
+                make_template(row["reference"], scale, theta),
+                px,
+                py,
+                y_center_offset=a.patch_y_offset,
             )
             if pair is None:
                 continue
@@ -216,6 +220,7 @@ def run(a):
         "pixel_center_labels": a.pixel_center_labels,
         "box_prefilter": a.box_prefilter,
         "reliability_residual": bool(a.reliability_base),
+        "patch_y_offset": a.patch_y_offset,
         "fresh_scenes": a.scenes,
         "fresh_crops": len(fresh["target"]),
         "training_crops": len(ft),
@@ -248,6 +253,7 @@ if __name__ == "__main__":
     ap.add_argument("--pixel-center-labels", action="store_true")
     ap.add_argument("--box-prefilter", action="store_true")
     ap.add_argument("--reliability-base", type=Path)
+    ap.add_argument("--patch-y-offset", type=float, default=0.0)
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     try:

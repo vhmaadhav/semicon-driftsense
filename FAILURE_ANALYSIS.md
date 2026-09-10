@@ -61,6 +61,8 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 
 - Box-model frozen fresh confirmation: B249/420→307/420 (**59.29%→73.10%**), paired95% delta **[+8.33,+19.29] percentage points**. A311/420→414/420; absent rejection239/240 unchanged. B severity1/2/3/4:93.33/74.07/68.63/50.00%. This exceeds its paired baseline but does not establish superiority to the prior model tested on different samples.85% remains unmet. Of113 B failures,85 are1–2px,27 are2–5px,one≥5px; none has |dy|≥1. A fixed maximum-success probability decoder was tested only on seen development and rejected: validationB77.11%→71.08%, A100%→97.70%.
 
+- Reliability residual development: B validation68/83=81.93% versus64/83 for box model, assessment36/43 versus37/43, all340/420=80.95%. A validation86/87 versus87/87 (1.15pp decline), so no new confirmation spent yet. Geometry diagnosis then found template-strip vertical centre h/2 while x uses(w-1)/2. For a physical pixel-centre label this samples0.5px too low. An exact embedded-row test proves the offset; optional patch_y_offset=-0.5 corrects it while defaults remain unchanged. Next isolated arm trains with corrected patch sampling on the same seen-development split and fresh synthetic crops; five context/reliability tests pass.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.

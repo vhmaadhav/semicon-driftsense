@@ -64,3 +64,7 @@ Box-model frozen fresh confirmation: B249/420→307/420 (**59.29%→73.10%**), p
 ## Row reliability experiment
 
 Seen-development texture diagnostic: B accuracy by centre-row gradient-texture quartile is72/105,80/105,90/105,95/105. A label-assisted choice among17 row peaks covers414/420, but is not deployable accuracy. A reliability-conditioned residual now tests whether explicit reference/search texture and correlation peak/margin help combine neighbouring rows. The prior box model encoder/head are frozen; only the new zero-initialized residual and reliability weights train, reusing existing synthetic crops. Outcome pending.
+
+## Reliability outcome and strip geometry
+
+Reliability residual development: B validation68/83=81.93% versus64/83 for box model, assessment36/43 versus37/43, all340/420=80.95%. A validation86/87 versus87/87 (1.15pp decline), so no new confirmation spent yet. Geometry diagnosis then found template-strip vertical centre h/2 while x uses(w-1)/2. For a physical pixel-centre label this samples0.5px too low. An exact embedded-row test proves the offset; optional patch_y_offset=-0.5 corrects it while defaults remain unchanged. Next isolated arm trains with corrected patch sampling on the same seen-development split and fresh synthetic crops; five context/reliability tests pass.
