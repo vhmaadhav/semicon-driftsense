@@ -1,0 +1,94 @@
+{
+  "pixel_center_labels": false,
+  "box_prefilter": false,
+  "reliability_residual": false,
+  "patch_y_offset": 0.0,
+  "vertical_features": true,
+  "training_barrel_limit": null,
+  "fresh_scenes": 512,
+  "fresh_crops": 16181,
+  "training_crops": 17324,
+  "selected": {
+    "epoch": 0,
+    "A_within1": 0.9647058823529412,
+    "B_within1": 0.7102272727272727,
+    "total85": 78.26762512773996
+  },
+  "history": [
+    {
+      "epoch": 0,
+      "A_within1": 0.9647058823529412,
+      "B_within1": 0.7102272727272727,
+      "total85": 78.26762512773996
+    },
+    {
+      "epoch": 5,
+      "A_within1": 0.9647058823529412,
+      "B_within1": 0.6988636363636364,
+      "total85": 78.0747111800354
+    },
+    {
+      "epoch": 10,
+      "A_within1": 0.9588235294117647,
+      "B_within1": 0.6761363636363636,
+      "total85": 77.87853470944715
+    },
+    {
+      "epoch": 15,
+      "A_within1": 0.9764705882352941,
+      "B_within1": 0.6761363636363636,
+      "total85": 77.83072582367019
+    },
+    {
+      "epoch": 20,
+      "A_within1": 0.9647058823529412,
+      "B_within1": 0.7045454545454546,
+      "total85": 78.0247111800354
+    },
+    {
+      "epoch": 25,
+      "A_within1": 0.9529411764705882,
+      "B_within1": 0.6761363636363636,
+      "total85": 77.85735823885892
+    },
+    {
+      "epoch": 30,
+      "A_within1": 0.9705882352941176,
+      "B_within1": 0.6704545454545454,
+      "total85": 77.94588765062363
+    },
+    {
+      "epoch": 35,
+      "A_within1": 0.9588235294117647,
+      "B_within1": 0.7045454545454546,
+      "total85": 78.08235823885892
+    },
+    {
+      "epoch": 39,
+      "A_within1": 0.9588235294117647,
+      "B_within1": 0.6988636363636364,
+      "total85": 78.22144865715171
+    }
+  ],
+  "splits": {
+    "validation": {
+      "baseline_B": 0.6875,
+      "candidate_B": 0.7102272727272727,
+      "baseline_A": 0.9647058823529412,
+      "candidate_A": 0.9647058823529412
+    },
+    "assessment": {
+      "baseline_B": 0.5813953488372093,
+      "candidate_B": 0.6627906976744186,
+      "baseline_A": 0.96875,
+      "candidate_A": 0.96875
+    },
+    "all": {
+      "baseline_B": 0.672,
+      "candidate_B": 0.704,
+      "baseline_A": 0.9462857142857143,
+      "candidate_A": 0.9542857142857143
+    }
+  },
+  "limitations": "Synthetic pose/crop errors sampled from training partition; real end-to-end candidate errors may differ. No fresh confirmation consumed."
+}
