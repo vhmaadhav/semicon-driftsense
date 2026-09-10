@@ -85,3 +85,16 @@ def refine(search, template, x, y, model):
         ).item()
     candidate = round(x) + offset
     return float(candidate if abs(candidate - x) <= 4 else x)
+
+
+class SpatialContextRow(ContextRow):
+    """Experimental early vertical context before row-correlation reduction."""
+
+    def __init__(self):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(2, 16, (3, 5), padding=(1, 2)),
+            nn.ReLU(),
+            nn.Conv2d(16, 16, (3, 5), padding=(1, 2)),
+            nn.ReLU(),
+        )

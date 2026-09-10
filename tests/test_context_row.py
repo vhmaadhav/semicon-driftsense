@@ -51,3 +51,16 @@ def test_pixel_center_vertical_patch_matches_exact_embedded_row():
     assert np.array_equal(t[:, 40], s[:, 56])
     old, _ = patches(search, template, 149.5, 149.5)
     assert np.allclose(old[:, 40] - t[:, 40], 0.5)
+
+
+def test_spatial_features_preserve_horizontal_shift_geometry():
+    from driftsense.context_row import SpatialContextRow
+
+    torch.manual_seed(7)
+    t = torch.randn(1, 1, 17, 80)
+    s = torch.zeros(1, 1, 17, 96)
+    s[:, :, :, 10:90] = t
+    with torch.no_grad():
+        logits = SpatialContextRow().eval()(t, s)
+    assert logits.shape == (1, 17)
+    assert logits.argmax(-1).item() == 10

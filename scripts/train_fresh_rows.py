@@ -153,6 +153,10 @@ def run(a):
         )
         for name, param in model.named_parameters():
             param.requires_grad_(name.startswith(("reliability.", "residual.")))
+    elif a.vertical_features:
+        from driftsense.context_row import SpatialContextRow
+
+        model = SpatialContextRow()
     else:
         model = ContextRow()
     opt = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.01)
@@ -221,6 +225,7 @@ def run(a):
         "box_prefilter": a.box_prefilter,
         "reliability_residual": bool(a.reliability_base),
         "patch_y_offset": a.patch_y_offset,
+        "vertical_features": a.vertical_features,
         "fresh_scenes": a.scenes,
         "fresh_crops": len(fresh["target"]),
         "training_crops": len(ft),
@@ -254,6 +259,7 @@ if __name__ == "__main__":
     ap.add_argument("--box-prefilter", action="store_true")
     ap.add_argument("--reliability-base", type=Path)
     ap.add_argument("--patch-y-offset", type=float, default=0.0)
+    ap.add_argument("--vertical-features", action="store_true")
     a = ap.parse_args()
     a.output.mkdir(parents=True, exist_ok=True)
     try:

@@ -68,3 +68,7 @@ Seen-development texture diagnostic: B accuracy by centre-row gradient-texture q
 ## Reliability outcome and strip geometry
 
 Reliability residual development: B validation68/83=81.93% versus64/83 for box model, assessment36/43 versus37/43, all340/420=80.95%. A validation86/87 versus87/87 (1.15pp decline), so no new confirmation spent yet. Geometry diagnosis then found template-strip vertical centre h/2 while x uses(w-1)/2. For a physical pixel-centre label this samples0.5px too low. An exact embedded-row test proves the offset; optional patch_y_offset=-0.5 corrects it while defaults remain unchanged. Next isolated arm trains with corrected patch sampling on the same seen-development split and fresh synthetic crops; five context/reliability tests pass.
+
+## Centered-strip outcome
+
+Centered-strip epoch15: validation B66/83=79.52% but A85/87 versus87/87 for box model; all B338/420=80.48%. Not promoted. Fixed equal averaging with box model reduced validationB to63/83=75.90%, rejected. Next experiment tests early spatial features (3x5 instead of1x5 convolutions), using neighbouring image rows before correlation reduction rather than only combining row correlation curves. Same cached box training crops and seen_context split; pending, no gains claimed.
