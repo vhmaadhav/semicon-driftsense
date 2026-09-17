@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Drift-Sense — Phase 2 System Architecture",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [70, 90],
+    "cols": 4,
+    "cellW": 180,
+    "gapX": 150,
+    "cellH": 80,
+    "gapY": 85
+  },
+  "components": [
+    { "id": "inferCli", "type": "frontend", "label": "infer.py", "sublabel": "model loader + ZNCC fallback", "tag": "conv-BN fused", "row": 0, "col": 0, "size": [180, 78] },
+    { "id": "config", "type": "backend", "label": "config.py", "sublabel": "one shipped operating point", "tag": "threshold 0.18", "row": 0, "col": 1, "size": [180, 78] },
+    { "id": "evaluate", "type": "backend", "label": "evaluate.py", "sublabel": "rubric scoring, A/B gates", "tag": "scripts/eval_*", "row": 0, "col": 3, "size": [180, 78] },
+
+    { "id": "register", "type": "frontend", "label": "register.py", "sublabel": "Phase 2 batch entry point", "tag": "--input pairs.csv", "row": 1, "col": 0, "size": [180, 78] },
+    { "id": "matching", "type": "backend", "label": "matching.py", "sublabel": "locate_phase2 pose search", "tag": "decode core", "row": 1, "col": 1, "size": [180, 78] },
+    { "id": "refine", "type": "backend", "label": "verification.py", "sublabel": "native ZNCC + subpixel polish", "row": 1, "col": 2, "size": [180, 78] },
+    { "id": "predictions", "type": "external", "label": "predictions.csv", "sublabel": "x, y, theta, scale, found, score", "row": 1, "col": 3, "size": [180, 78] },
+
+    { "id": "weights", "type": "database", "label": "driftsense.pt", "sublabel": "1.02M wide checkpoint", "tag": "train.py output", "row": 2, "col": 0, "size": [180, 78] },
+    { "id": "model", "type": "backend", "label": "model.py", "sublabel": "DriftSenseNet siamese net", "row": 2, "col": 1, "size": [180, 78] },
+    { "id": "calibration", "type": "backend", "label": "calibration.py", "sublabel": "9-feature rejection logistic", "tag": "research path", "row": 2, "col": 2, "size": [180, 78] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Shipped Phase 2 decode", "wraps": ["register", "matching", "refine"] }
+  ],
+  "connections": [
+    { "id": "register-to-matching", "from": "register", "to": "matching", "label": "locate_phase2()", "variant": "emphasis" },
+    { "id": "matching-to-refine", "from": "matching", "to": "refine", "label": "pose hypotheses", "variant": "emphasis" },
+    { "id": "refine-to-predictions", "from": "refine", "to": "predictions", "label": "winner + score", "variant": "emphasis" },
+    { "id": "loader-into-register", "from": "inferCli", "to": "register", "label": "load_model()", "labelDy": 50 },
+    { "id": "config-into-matching", "from": "config", "to": "matching", "label": "threshold, band, verify", "labelDy": 50 },
+    { "id": "matching-to-model", "from": "matching", "to": "model", "label": "canonical 10x view", "labelDy": 50 },
+    { "id": "refine-to-calibration", "from": "refine", "to": "calibration", "label": "decode features", "variant": "dashed", "labelDy": 50 },
+    { "id": "predictions-to-evaluate", "from": "predictions", "to": "evaluate", "label": "scored vs truth", "variant": "dashed", "labelDy": -50 },
+    { "id": "weights-into-model", "from": "weights", "to": "model", "label": "state_dict" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Shipped decode", "items": ["register.py is the one graded entry point", "locate_phase2 keeps the top few scale hypotheses, not just the best", "The winner is chosen by native-resolution ZNCC, never the network score"] },
+    { "dot": "emerald", "title": "Network", "items": ["Siamese encoder plus grouped cross-correlation, context-conditioned head", "1.02M wide checkpoint, CPU-only, conv-BN fused at load", "Where the checkpoint comes from is its own diagram: the training data pipeline"] },
+    { "dot": "amber", "title": "Contracts", "items": ["config.py is the single definition of the shipped operating point", "Every pair_id emits exactly one row: declining beats disappearing", "Parity tests pin register.py, eval_ext.py and config.py together"] }
+  ]
+}

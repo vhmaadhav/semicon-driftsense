@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Drift-Sense — Training Data Pipeline",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      560
+    ]
+  },
+  "stages": [
+    {
+      "label": "Synthesis"
+    },
+    {
+      "label": "Label correction"
+    },
+    {
+      "label": "Sampling"
+    },
+    {
+      "label": "Sample build"
+    },
+    {
+      "label": "Training"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "canvas",
+      "type": "cloud",
+      "label": "generator/",
+      "sublabel": "canvas + SEM imaging",
+      "tag": "8 pairs each",
+      "stage": 0,
+      "row": 1
+    },
+    {
+      "id": "gtfix",
+      "type": "backend",
+      "label": "correct_gt()",
+      "sublabel": "label through the warp",
+      "tag": "generate.py",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "disk",
+      "type": "database",
+      "label": "data/train_mc",
+      "sublabel": "fixed on-disk pool",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "stream",
+      "type": "messagebus",
+      "label": "stream_dataset",
+      "sublabel": "scenes in the workers",
+      "tag": "--stream",
+      "stage": 2,
+      "row": 2
+    },
+    {
+      "id": "sample",
+      "type": "backend",
+      "label": "build_sample",
+      "sublabel": "augment + canonicalise",
+      "tag": "dataset.py",
+      "stage": 3,
+      "row": 1
+    },
+    {
+      "id": "trainloop",
+      "type": "backend",
+      "label": "train.py",
+      "sublabel": "focal + offset loss, EMA",
+      "stage": 4,
+      "row": 0
+    },
+    {
+      "id": "shipped",
+      "type": "database",
+      "label": "driftsense.pt",
+      "sublabel": "promoted by A/B gate",
+      "stage": 4,
+      "row": 2
+    }
+  ],
+  "flows": [
+    {
+      "id": "canvas-to-gtfix",
+      "from": "canvas",
+      "to": "gtfix",
+      "label": "realised warp",
+      "classification": "synthetic",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gtfix-to-disk",
+      "from": "gtfix",
+      "to": "disk",
+      "label": "stored pairs",
+      "classification": "finite"
+    },
+    {
+      "id": "gtfix-to-stream",
+      "from": "gtfix",
+      "to": "stream",
+      "label": "fresh scenes",
+      "classification": "unbounded",
+      "variant": "emphasis"
+    },
+    {
+      "id": "disk-to-sample",
+      "from": "disk",
+      "to": "sample",
+      "label": "pooled pairs",
+      "classification": "replayed"
+    },
+    {
+      "id": "stream-to-sample",
+      "from": "stream",
+      "to": "sample",
+      "label": "one-shot pairs",
+      "classification": "never reused",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sample-to-train",
+      "from": "sample",
+      "to": "trainloop",
+      "label": "heatmap + offset",
+      "classification": "tensors",
+      "variant": "emphasis"
+    },
+    {
+      "id": "train-to-shipped",
+      "from": "trainloop",
+      "to": "shipped",
+      "label": "candidate ckpt",
+      "classification": "gated",
+      "variant": "emphasis",
+      "labelDy": 85
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Why the generator is re-run",
+      "items": [
+        "The upstream generator writes ground truth in pre-imaging coordinates",
+        "It then warps the search frame with raster drift and barrel distortion without updating the label",
+        "correct_gt re-runs the same imaging, captures the realised warp, and maps the label through it"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Generating beats storing",
+      "items": [
+        "Fixed-pool runs overfit: training loss kept falling while held-out accuracy plateaued",
+        "Another 24,000 stored pairs would have cost roughly 17 GB of disk",
+        "Workers synthesise a fresh scene per sample, so the model cannot memorise the training set"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "One sample definition",
+      "items": [
+        "build_sample is shared by the on-disk and the streaming path",
+        "Pose is canonicalised with jitter sized to the search's measured residual error",
+        "Targets are a Gaussian centre heatmap plus a sub-cell offset field"
+      ]
+    }
+  ]
+}

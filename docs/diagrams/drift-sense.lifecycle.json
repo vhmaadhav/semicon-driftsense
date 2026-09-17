@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Drift-Sense — What Happens to One Pair",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      566
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Pair phases"
+    },
+    {
+      "id": "events",
+      "label": "Failure and decline"
+    }
+  ],
+  "states": [
+    {
+      "id": "queued",
+      "type": "start",
+      "label": "Queued",
+      "sublabel": "row read in order",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "tag": "entry"
+    },
+    {
+      "id": "decoding",
+      "type": "active",
+      "label": "Decoding",
+      "sublabel": "pose search",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "tag": "network"
+    },
+    {
+      "id": "scored",
+      "type": "active",
+      "label": "Scored",
+      "sublabel": "min(score, zncc)",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "tag": "native ZNCC"
+    },
+    {
+      "id": "gate",
+      "type": "decision",
+      "label": "Threshold",
+      "sublabel": "shipped 0.18",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "tag": "config.py"
+    },
+    {
+      "id": "reported",
+      "type": "success",
+      "label": "Reported",
+      "sublabel": "found = 1",
+      "lane": "main",
+      "col": 4,
+      "step": "05",
+      "tag": "full credit"
+    },
+    {
+      "id": "raised",
+      "type": "failure",
+      "label": "Raised",
+      "sublabel": "bad image or error",
+      "lane": "events",
+      "col": 0,
+      "tag": "caught per pair"
+    },
+    {
+      "id": "declined",
+      "type": "failure",
+      "label": "Declined",
+      "sublabel": "found = 0, pose zeroed",
+      "lane": "events",
+      "col": 2,
+      "tag": "rejection credit"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "start-decode",
+      "from": "queued",
+      "to": "decoding",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decode-score",
+      "from": "decoding",
+      "to": "scored",
+      "variant": "emphasis"
+    },
+    {
+      "id": "score-gate",
+      "from": "scored",
+      "to": "gate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gate-accept",
+      "from": "gate",
+      "to": "reported",
+      "label": "at or above",
+      "variant": "emphasis",
+      "labelDy": -25
+    },
+    {
+      "id": "gate-decline",
+      "from": "gate",
+      "to": "declined",
+      "label": "below",
+      "route": "drop"
+    },
+    {
+      "id": "decode-raise",
+      "from": "decoding",
+      "to": "raised",
+      "label": "exception",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "raise-declined",
+      "from": "raised",
+      "to": "declined",
+      "label": "zero-filled row",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Main path",
+      "items": [
+        "Rows are decoded and written in input order, one per pair_id",
+        "found = 1 writes the polished pose; the gate is config.SHIPPED_THRESHOLD = 0.18",
+        "A confident decline still earns rejection credit, so the gate is swept against the whole rubric"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Nothing disappears",
+      "items": [
+        "Exception and SystemExit are both caught per pair, never per run",
+        "A pair that fails is written as a decline, because a missing row scores zero",
+        "An unreadable image zero-fills that row only and the batch continues"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Run-level guards",
+      "items": [
+        "A mass-failure alarm fires as soon as the error rate stops looking like bad luck",
+        "A failed model load aborts before predictions.csv exists rather than degrading silently",
+        "--allow-fallback is the explicit local opt-in to the classical ZNCC path"
+      ]
+    }
+  ]
+}

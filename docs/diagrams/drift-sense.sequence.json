@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Drift-Sense — One Pair Through the Phase 2 Decode",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1080,
+      600
+    ]
+  },
+  "participants": [
+    {
+      "id": "register",
+      "type": "frontend",
+      "label": "register.py",
+      "sublabel": "batch loop"
+    },
+    {
+      "id": "decode",
+      "type": "backend",
+      "label": "locate_phase2",
+      "sublabel": "matching.py"
+    },
+    {
+      "id": "pose",
+      "type": "backend",
+      "label": "pose_candidates",
+      "sublabel": "coarse sweep"
+    },
+    {
+      "id": "net",
+      "type": "backend",
+      "label": "DriftSenseNet",
+      "sublabel": "model.py"
+    },
+    {
+      "id": "zncc",
+      "type": "backend",
+      "label": "refine_zncc",
+      "sublabel": "native verify"
+    },
+    {
+      "id": "polish",
+      "type": "backend",
+      "label": "polish_pose",
+      "sublabel": "native refit"
+    },
+    {
+      "id": "out",
+      "type": "external",
+      "label": "predictions.csv",
+      "sublabel": "graded output"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 240,
+      "label": "Pose hypotheses"
+    },
+    {
+      "from": 250,
+      "to": 360,
+      "label": "Per-hypothesis verification"
+    },
+    {
+      "from": 370,
+      "to": 480,
+      "label": "Winner and output contract"
+    }
+  ],
+  "messages": [
+    {
+      "id": "call-decode",
+      "from": "register",
+      "to": "decode",
+      "y": 170,
+      "label": "locate_phase2(reference, search)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "coarse-sweep",
+      "from": "decode",
+      "to": "pose",
+      "y": 200,
+      "label": "sweep z in [8, 12], theta +/-5 deg"
+    },
+    {
+      "id": "hypotheses",
+      "from": "pose",
+      "to": "decode",
+      "y": 228,
+      "label": "top-k, ranked by coarse peak",
+      "variant": "return"
+    },
+    {
+      "id": "canonical-view",
+      "from": "decode",
+      "to": "net",
+      "y": 262,
+      "label": "search un-rotated to nominal 10x",
+      "variant": "emphasis",
+      "note": "repeated per hypothesis; early exit once one verifies decisively"
+    },
+    {
+      "id": "response-map",
+      "from": "net",
+      "to": "decode",
+      "y": 290,
+      "label": "centre heatmap + offset field",
+      "variant": "return"
+    },
+    {
+      "id": "native-verify",
+      "from": "decode",
+      "to": "zncc",
+      "y": 318,
+      "label": "template at (z, theta), native frame"
+    },
+    {
+      "id": "zncc-score",
+      "from": "zncc",
+      "to": "decode",
+      "y": 346,
+      "label": "sub-pixel x, y and ZNCC",
+      "variant": "return"
+    },
+    {
+      "id": "pick-winner",
+      "from": "decode",
+      "to": "polish",
+      "y": 380,
+      "label": "winner by native ZNCC",
+      "variant": "emphasis"
+    },
+    {
+      "id": "polished-pose",
+      "from": "polish",
+      "to": "decode",
+      "y": 408,
+      "label": "refit theta and z",
+      "variant": "return"
+    },
+    {
+      "id": "decode-result",
+      "from": "decode",
+      "to": "register",
+      "y": 438,
+      "label": "x, y, theta, scale, score, zncc",
+      "variant": "return"
+    },
+    {
+      "id": "write-row",
+      "from": "register",
+      "to": "out",
+      "y": 468,
+      "label": "found = min(score, zncc) >= 0.18",
+      "variant": "emphasis"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "register",
+      "from": 165,
+      "to": 474,
+      "type": "frontend"
+    },
+    {
+      "participant": "decode",
+      "from": 170,
+      "to": 444,
+      "type": "backend"
+    },
+    {
+      "participant": "pose",
+      "from": 195,
+      "to": 234,
+      "type": "backend"
+    },
+    {
+      "participant": "net",
+      "from": 257,
+      "to": 296,
+      "type": "backend"
+    },
+    {
+      "participant": "zncc",
+      "from": 313,
+      "to": 352,
+      "type": "backend"
+    },
+    {
+      "participant": "polish",
+      "from": 375,
+      "to": 414,
+      "type": "backend"
+    },
+    {
+      "participant": "out",
+      "from": 463,
+      "to": 480,
+      "type": "external"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Why several hypotheses",
+      "items": [
+        "Correlation against a periodic layout is multi-peaked in scale",
+        "A wrong magnification can outscore the true one on a low-resolution probe",
+        "The top few local maxima of the coarse sweep are kept, not just the best"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Why native resolution decides",
+      "items": [
+        "A wrong scale basin correlates near zero at full resolution",
+        "The right one sits around 0.9, so the choice becomes easy",
+        "Refinement never runs in the canonical frame, so no resampling blur is inherited"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Output contract",
+      "items": [
+        "Every pair_id emits exactly one row, in input order",
+        "found = 0 writes zeros in every pose column",
+        "A pair that raises or times out declines rather than disappears"
+      ]
+    }
+  ]
+}

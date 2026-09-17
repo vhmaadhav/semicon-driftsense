@@ -1,0 +1,7 @@
+# Archify-generated diagram artifacts.
+# Keep working-tree bytes identical to the index on Windows (core.autocrlf=true),
+# so the delivered SHA-256 receipts still verify after a checkout.
+* text=auto eol=lf
+
+# Self-contained viewer HTML is generated output, not project source.
+*.html linguist-generated=true
