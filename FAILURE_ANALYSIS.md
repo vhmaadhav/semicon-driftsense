@@ -53,6 +53,38 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 - **Mitigation:** fixed pose geometry, post-write dual verification, explicit semantic absence labels, Set-C similarity auditing, and supersampled anti-aliasing comparisons are integrated in `generator/`.
 - **Remaining limitation:** the coarse NCC baseline's error is not monotone at severity level 4 because periodic structure can create a harder wrong basin at a lower nominal degradation level. This is retained in the report rather than hidden by relabelling.
 
+### 6b. Set-B 85% campaign — six frozen training arms, none promoted
+
+**Target:** strict radial error <1 px on *every* present B pair, counting rejected and unsupported pairs as failures. **Not reached.** Shipped inference and the backbone are unchanged throughout; each arm was frozen before its confirmation data was generated.
+
+- **Observed:** each arm evaluated once against fresh organizer-proxy confirmation pairs, baseline → candidate.
+
+| arm | strict B, confirmation | paired 95% CI (pp) | Set A | absent controls | promoted |
+| --- | --- | --- | --- | --- | :-: |
+| Fresh-scene training, 512 scenes, epoch 20 | 262/420 → **264/420 (62.86%)** | [−4.76, +5.71] | 328/420 → 366/420 | — | no |
+| Pixel-centre label ablation, 512 scenes / 16,175 fresh crops | no checkpoint passed the historical validation gate (`selected=null`) | — | — | — | no |
+| Aligned model, epoch 39 | 262/420 → **302/420 (62.38% → 71.90%)** | [+4.76, +14.52] | 321/420 → 408/420 (97.14%) | 240/240 rejected | no |
+| Box prefilter, epoch 39 | 249/420 → **307/420 (59.29% → 73.10%)** | [+8.33, +19.29] | 311/420 → 414/420 | 239/240, unchanged | no |
+| Reliability residual | validation B 68/83 = 81.93% vs 64/83; assessment 36/43 vs 37/43; all B 340/420 = 80.95% | development only | validation A 86/87 vs 87/87 (−1.15 pp) | — | no |
+| Centred strip, epoch 15 | validation B 66/83 = 79.52%; all B 338/420 = 80.48% | development only | A 85/87 vs 87/87 | — | no |
+
+  **These rows are not comparable to one another.** Each arm was confirmed on different samples, so an arm that beats its own paired baseline does not thereby beat the arm above it. Two arms clear their declared improvement gate (aligned, box); none reaches 85%, and none was promoted. The reliability and centred-strip arms are **development-only** — the A-side decline meant no fresh confirmation was spent on them.
+
+  The arms are also not independent of one another's data. The aligned arm's development pool is the fresh-scene arm's **previously consumed 1,200-pair confirmation**, re-split by source group; the box arm then reuses the same **512 scene seeds**, pixel-centre labels and prior `seen_context` train/validation split without incorporating its predecessor's confirmation. Each step is legitimate in isolation and each was frozen before its own confirmation, but the chain means seen data accumulates down the table.
+
+  Two qualifications the totals hide. The fresh-scene arm **regressed at the hardest severity**: severity-4 B fell **48/90 → 39/90** even as the overall figure moved +2 pairs; its development read had been much stronger (reused development B **625/875 = 71.43%**, validation **123/176**, assessment **58/86**), which is the gap between development and confirmation this campaign exists to measure. Severity breakdown where measured — B severity 1/2/3/4 accuracy: aligned **88.33 / 75.93 / 64.71 / 53.33%**, box **93.33 / 74.07 / 68.63 / 50.00%**.
+
+  Every confirmation seed named here is now **seen data**; any future candidate needs a new frozen holdout. Evidence: `experiments/setb85/{fresh_rows,aligned_confirmation,box_confirmation,reliability,centered_training}/results.json`. Saved-checkpoint inference reproduces the cached predictions (2,250 rows, and 1,200 for the box arm) to within **1.14e-13 px**.
+
+- **Cause:** the residual error is sub-pixel and x-dominant, not gross pose. On the 1,200-pair confirmation, **155 of 156** B failures are x-dominant with only three errors over 5 px; on the box arm, of **113** B failures, **85** are 1–2 px, **27** are 2–5 px and **one** is ≥5 px, with **none** having |dy| ≥ 1. Gross pose recovery is therefore not the next lever on this proxy, and the remaining work is generator/training scanline mismatch and centre-row representation. Two label-convention defects were isolated along the way: local in-memory generation maps the crop centre to 500 and adds the area offset while the confirmation generator maps 499.5 without it — across 100,000 random poses that changes the selected independent jitter row in **50.01%** of cases; and the template strip takes its vertical centre at `h/2` while x uses `(w-1)/2`, which for a physical pixel-centre label samples **0.5 px too low** (proved by an exact embedded-row test).
+
+- **Mitigation:** none shipped. `make_pairs(pixel_center_labels=True)` and `patch_y_offset=-0.5` exist as opt-in corrections; defaults are unchanged. Aggregation was repaired to namespace shard-local pair IDs and to score absent C pairs as rejections — the original freeze and its amendment are both retained, and predictions and model are unchanged. Fifteen generator/label tests and five context/reliability tests pass.
+
+- **Rejected side-experiments:** a fixed maximum-success-probability decoder, tested only on seen development, cost validation B **77.11% → 71.08%** and A **100% → 97.70%**. Fixed equal averaging with the box model cost validation B **64/83 → 63/83 (75.90%)**.
+
+- **Remaining limitation:** 85% is unmet and cross-generator safety is unproven — these are local generator reconstructions, not the official blind set, and exact image disjointness does not establish semantic uniqueness. Synthetic training errors are sampled from historical train-only predictions and may not match real inference errors. The next isolated arm tests early spatial features (3×5 instead of 1×5 convolutions), consuming neighbouring image rows before correlation reduction rather than only combining row-correlation curves, on the same cached box training crops and `seen_context` split. Pending; no gains claimed.
+
+
 ## Evaluation follow-up - 8 September 2026
 
 - **Observed:** review of #75 reproduced coupled A/B sampling (identical 70 relative positions in equal 875-row pools) and silent 179-pair grades with only 39 C rows. Fixed with independent named random streams and an unweighted quota guard. Regression tests caught both before the fix.
