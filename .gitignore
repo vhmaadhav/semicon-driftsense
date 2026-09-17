@@ -63,3 +63,4 @@ venv-hf/
 # reference sample materials (confidential -- never commit; see docs/VERIFIED_GROUND_TRUTH.md section 9)
 .agents/ref_material/
 .agents/ref_0901/
+evaluation/figures/
