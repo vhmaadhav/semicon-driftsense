@@ -1,0 +1,7 @@
+numpy
+opencv-python-headless
+pillow
+pytest
+streamlit
+matplotlib
+gdstk
