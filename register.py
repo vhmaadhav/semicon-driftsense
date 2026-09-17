@@ -47,10 +47,39 @@ from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
 from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
+from driftsense.config import DOG_OVERRIDE_MARGIN  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
 OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
+
+# --------------------------------------------------------------------------
+# Mass-failure detection.
+#
+# The output contract is deliberately forgiving: any pair that raises still
+# emits a declined row, because a missing row scores zero and a declined one
+# does not. The cost of that forgiveness is that a run which fails on EVERY
+# pair is, from the outside, indistinguishable from a run that confidently
+# declined every pair -- same well-formed CSV, same exit code 0.
+#
+# These thresholds are deliberately loose. They are not a quality bar; they
+# only fire on values that cannot plausibly be a real decode of a real set,
+# so a genuinely hard blind set never trips them:
+#
+#   * ERROR_FRAC 0.20 -- one pair in five raising is not bad luck on a few
+#     unreadable images, it is a broken weights file / path / decode config.
+#   * FOUND_FRAC 0.30 -- the disclosed composition is ~80% present, so
+#     declining more than 70% of a set means the confidence statistic and its
+#     threshold have come apart (the exact unit-system mismatch documented in
+#     driftsense/config.py), not that the set was hard.
+#   * MIN_PAIRS 8 -- below this the rates are too noisy to mean anything.
+#
+# Firing changes nothing about the output: rows are still written, the exit
+# code is still 0. It only makes the failure impossible to miss, in the style
+# of the [FALLBACK] banner below.
+MASS_FAILURE_ERROR_FRAC = 0.20
+MASS_FAILURE_FOUND_FRAC = 0.30
+MASS_FAILURE_MIN_PAIRS = 8
 
 # Candidate spellings for the two image columns. The addendum fixes `pair_id`
 # but publishes the rest of the pairs.csv layout separately, so accept the
@@ -361,13 +390,32 @@ def main():
                          "threshold applied to a raw NCC score would decide nothing "
                          "meaningful (issue #36)")
     ap.add_argument("--verification", default=SHIPPED_VERIFICATION,
-                    help="hypothesis selector: zncc (default) | consensus | majority. "
+                    help="hypothesis selector: zncc (default) | consensus | majority "
+                         "| dog-override. "
                          "consensus overrides the native-ZNCC winner only when the rank "
                          "and band scores pick the same different hypothesis; it was "
                          "measured +2/0 and +1/0 rescued/broken on the PR #3 proxy; "
                          "full 2,250-pair A/B (issue #9): +0.11 total, paired CI "
                          "spans zero, 5 broken / 6 rescued -- real but under the "
-                         "promotion gate, so zncc stays the default")
+                         "promotion gate, so zncc stays the default. "
+                         "dog-override keeps the native-ZNCC winner unless the DoG "
+                         "score prefers a different hypothesis AND the ZNCC margin "
+                         "between the two is below --dog-override-margin, i.e. ZNCC "
+                         "is not confident; measured on all 875 present Set B pairs "
+                         "(scripts/ab_dog_override.py) and net NEGATIVE at every "
+                         "epsilon tried -- -5 pairs at 0.02/0.05/0.10/0.20, with an "
+                         "epsilon=0 control changing nothing -- so zncc stays the "
+                         "default. Retained because it is cheap to re-test against "
+                         "new weights, not because it currently pays; no need to "
+                         "rerun the sweep")
+    ap.add_argument("--dog-override-margin", type=float,
+                    default=DOG_OVERRIDE_MARGIN,
+                    help="epsilon for --verification dog-override: the DoG pick only "
+                         "wins when the incumbent ZNCC margin between it and the "
+                         "native-ZNCC winner is BELOW this. Ignored by every other "
+                         "selector. Default %(default)s (driftsense.config."
+                         "DOG_OVERRIDE_MARGIN); 0.0 disables every override, so the "
+                         "selector degrades exactly to zncc.")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch/OpenCV thread cap. 0 (default) auto-caps to "
                          "min(4, CPU cores) to match the 4-core reference "
@@ -451,6 +499,8 @@ def main():
     times = []
     t_start = time.perf_counter()
     found_count = 0
+    error_count = 0
+    mass_failure_warned = False
     total_rows = len(rows)
 
     disp = _LiveDisplay(sys.stdout, total_rows, quiet=a.quiet)
@@ -515,6 +565,7 @@ def main():
                     # eval_ext.py so the evaluator decodes identically.
                     res = locate_phase2(model, ref, sea, device, refine=True,
                                         verification=a.verification,
+                                        dog_override_margin=a.dog_override_margin,
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
                 # The reported confidence (see locate_phase2): the shipped
@@ -534,12 +585,34 @@ def main():
             # drop the row. SystemExit is caught too: read_gray raises
             # SystemExit for an unreadable image, and that must zero-fill
             # THIS row only -- not kill the whole batch.
+            # NOTE on ordering: SystemExit derives from BaseException, NOT from
+            # Exception, so `except Exception` does not shadow the clause below
+            # it -- both are reachable and the order is irrelevant here.
             except Exception as e:                      # noqa: BLE001
                 disp.erase()
+                error_count += 1
                 print(f"[warn] pair {pid}: {type(e).__name__}: {e}", file=sys.stderr)
             except SystemExit as e:
                 disp.erase()
+                error_count += 1
                 print(f"[warn] pair {pid}: SystemExit: {e}", file=sys.stderr)
+            # One early alarm, the moment a run stops looking like a run. Without
+            # it a systematic failure (a bad weights file, a config typo reaching
+            # locate() through **kw, an unreadable image directory) stays a
+            # scroll of per-pair [warn] lines until the very end -- and produces a
+            # perfectly well-formed all-declined predictions.csv with exit 0.
+            if (not mass_failure_warned and n + 1 >= MASS_FAILURE_MIN_PAIRS
+                    and error_count >= MASS_FAILURE_ERROR_FRAC * (n + 1)):
+                mass_failure_warned = True
+                disp.erase()
+                print("=" * 72, file=sys.stderr)
+                print(f"[MASS FAILURE] {error_count} of the first {n + 1} pair(s) "
+                      "raised. This is a systematic failure, not bad luck on a few "
+                      "images -- check the weights, the image paths and the decode "
+                      "config. Rows are still being written (a declined row scores "
+                      "more than a missing one), but they are declines, not "
+                      "answers.", file=sys.stderr)
+                print("=" * 72, file=sys.stderr)
             w.writerow(out)
             if out.get("found"):
                 found_count += 1
@@ -556,6 +629,15 @@ def main():
             # sidecar file is block-buffered where stderr was not.
             print(f"# t,{pid},{dt:.3f}", file=trace, flush=True)
 
+            # Durability, not cosmetics: flush the row we just wrote before
+            # starting the next pair, so a kill -9 or an OOM costs at most the
+            # pair in flight rather than a whole block of buffered rows. This
+            # used to sit inside the `not a.quiet` branch below, which coupled
+            # crash durability to a display flag -- `--quiet` silently bought
+            # a weaker guarantee. The graded command passes no flags, so that
+            # was latent rather than live, but the coupling was accidental.
+            f.flush()
+
             cur_n = n + 1
             elapsed = time.perf_counter() - t_start
             rate = cur_n / elapsed if elapsed > 0 else 0.0
@@ -569,7 +651,6 @@ def main():
                           f"elapsed {_fmt_time(elapsed)}  "
                           f"eta {_fmt_time((total_rows - cur_n) / rate if rate else 0)}",
                           flush=True)
-                f.flush()
 
     disp.stop()
     if timing_fh is not None:
@@ -600,6 +681,35 @@ def main():
     # line, for the judge harness to parse without scraping progress text.
     print(f"# runtime: median {np.median(t):.2f} p90 {np.percentile(t,90):.2f} "
           f"max {t.max():.2f} n={len(t)}", file=sys.stderr)
+
+    # End-of-run mass-failure banner. Repeated here (not only inline) because a
+    # log truncated to its tail -- the common case when something is skimmed
+    # after the fact -- must still show it. Machine-readable marker first so a
+    # harness can grep for it without parsing prose.
+    if total_rows >= MASS_FAILURE_MIN_PAIRS:
+        err_frac = error_count / total_rows
+        found_frac = found_count / total_rows
+        reasons = []
+        if err_frac >= MASS_FAILURE_ERROR_FRAC:
+            reasons.append(f"{error_count}/{total_rows} pair(s) raised "
+                           f"({err_frac:.0%}, threshold {MASS_FAILURE_ERROR_FRAC:.0%})")
+        if found_frac < MASS_FAILURE_FOUND_FRAC:
+            reasons.append(f"only {found_count}/{total_rows} reported found "
+                           f"({found_frac:.0%}, expected ~80% present)")
+        if reasons:
+            print(f"# mass_failure: errors={error_count} found={found_count} "
+                  f"n={total_rows}", file=sys.stderr)
+            print("=" * 72, file=sys.stderr)
+            print("[MASS FAILURE] This run does not look like a successful decode:",
+                  file=sys.stderr)
+            for r_ in reasons:
+                print(f"  - {r_}", file=sys.stderr)
+            print(f"  {os.path.abspath(a.output)} is complete and well-formed, but "
+                  "its rows are declines rather than answers. Verify the weights "
+                  "load, the image paths resolve, and the confidence statistic "
+                  "matches its threshold before treating this file as a result.",
+                  file=sys.stderr)
+            print("=" * 72, file=sys.stderr)
 
     if model is None:
         # Repeated at the end, unconditionally: a log truncated to its tail

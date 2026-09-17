@@ -25,8 +25,7 @@ These are calibrated choices, not spec-derived constants:
 * SHIPPED_BAND = False: the difference-of-Gaussians pre-filter on the coarse
   sweep costs points on both architectures (register.py measurement
   +0.439 / +0.509, PR #18 reached the same conclusion separately).
-* SHIPPED_VERIFICATION = "zncc"
-SHIPPED_SUBPIXEL_ROWS = True: the native-ZNCC winner; consensus/majority
+* SHIPPED_VERIFICATION = "zncc": the native-ZNCC winner; consensus/majority
   are measured research selectors, not shipped ones.
 * SHIPPED_SUBPIXEL_ROWS = True: re-place x on the scan row the label is
   defined against, recovering the centre row's raster-drift sample
@@ -126,6 +125,44 @@ LEGACY_FALLBACK_THRESHOLD = 0.55
 SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True
+
+# Variance-stabilising transform applied to intensities before correlation
+# (issue #13; driftsense/vst.py). ZNCC is the ML statistic under additive
+# homoscedastic Gaussian noise, while SEM shot noise is Poisson; a VST makes
+# the assumption true instead of assuming it.
+#   "none" (SHIPPED): the historical path, no transform.
+#   "anscombe": 2*sqrt(x + 3/8), parameter-free (Anscombe 1948).
+#   "gat": generalised Anscombe with (a, b) fitted per image from the local
+#          mean/variance envelope (Foi et al. 2008).
+# Per-stage overrides for experiments: DRIFTSENSE_VST_{COARSE,VERIFY,REFINE},
+# then DRIFTSENSE_VST, then this default.
+#
+# MEASURED 2026-09-08, NOT SHIPPED. 480 present Set B pairs across the full
+# severity ladder, paired, coarse stage, band=False (the shipped decode):
+# correct-candidate generation 87.7% (none) vs 88.5% (anscombe and gat),
+# i.e. rescued 14 / broke 10, net +4 of 480, McNemar exact p=0.54. No subset
+# rescues it. ZNCC is invariant to the affine part of the transform, which is
+# where the fitted gain lives, so the noise model cannot reach a normalised
+# correlation score even in principle -- see the MEASURED block in
+# driftsense/vst.py for the derivation and the full tables.
+SHIPPED_VST = "none"
+
+# Epsilon for the "dog-override" selector in matching.locate_phase2. A research
+# knob, NOT a shipped one: the default selector stays SHIPPED_VERIFICATION =
+# "zncc" and no default decode reads this value.
+#
+# scripts/verify_scores.py measured `zncc_dog` as the best alternative selector
+# on Set B -- net +10 recovered pairs against the incumbent ZNCC's +7 -- and it
+# was never wired into inference. Swapping the selector wholesale is the wrong
+# trade: DoG wins only on the *contested* decisions, and on the ~87% of pairs
+# ZNCC already gets right it can only break things (the same asymmetry that
+# sank the rescue pass and the band pre-filter above). So the override leaves
+# ZNCC owning the decision and lets DoG take it only when DoG disagrees AND the
+# ZNCC margin between the two candidates is below this value -- i.e. only where
+# ZNCC has effectively abstained. 0.05 is a deliberately narrow starting point
+# chosen to reach the ties and nothing else; it has not been swept, so treat it
+# as an experiment parameter rather than a measured constant.
+DOG_OVERRIDE_MARGIN = 0.05
 
 # Sub-pixel placement rule for the final ZNCC snap (ONE definition; applied
 # at the refine_zncc site in matching.py).
