@@ -83,6 +83,10 @@ ALLOW = [
     # them because it is what validates a generated output/ directory, and
     # requirements.txt because the generator pins its own environment.
     "generator/generate_phase2.py",
+    # Phase 3 dataset generator: emits GDS references + params JSON alongside
+    # the search images. A Phase 3 dataset cannot be reproduced from the
+    # Phase 2 generator alone, so this ships with the generator deliverable.
+    "generate_phase3_dataset.py",
     "generator/baseline.py",
     "generator/score.py",
     "generator/contact_sheet.py",
