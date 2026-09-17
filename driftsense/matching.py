@@ -763,21 +763,41 @@ def parabolic(a: float, b: float, c: float) -> float:
     return float(np.clip(0.5 * (a - c) / denom, -1.0, 1.0))
 
 
+# The sub-pixel placement rules refine_zncc can apply. "parabola" is the
+# shipped default; "dft" is Guizar-Sicairos upsampled-DFT (no interpolation
+# kernel); "bicubic" is correlation-surface upsampling. All three share this
+# function's contract, window and returned `score`, so they are drop-in
+# alternatives and can be A/B'd on the same decode.
+SUBPIXEL_VARIANTS = ("parabola", "bicubic", "dft")
+
+
 def refine_zncc(search: np.ndarray, template: np.ndarray,
-                cx: float, cy: float, radius: int = REFINE_RADIUS) -> tuple[float, float, float]:
+                cx: float, cy: float, radius: int = REFINE_RADIUS,
+                variant: str | None = None) -> tuple[float, float, float]:
     """Snap a coarse centre to the local ZNCC optimum at full resolution.
 
     Searches +/- `radius` px around the coarse box position. The placement
-    rule is the shipped config (driftsense.config.SHIPPED_SUBPIXEL, ONE
-    definition): "bicubic" upsamples the correlation surface around the peak
-    (driftsense.subpixel.refine_bicubic; rescues the 1px-tier boundary pairs,
-    Debella-Gilo & Kaab 2011), "parabola" is the historical 1-D parabolic
-    fit through the peak. Both share this function's contract and window.
+    rule is `variant`, defaulting to the shipped config
+    (driftsense.config.SHIPPED_SUBPIXEL, ONE definition):
+
+    * "parabola" -- the historical 1-D parabolic fit through the peak;
+    * "bicubic"  -- bicubic upsampling of the correlation surface
+      (driftsense.subpixel.refine_bicubic; Debella-Gilo & Kaab 2011);
+    * "dft"      -- Guizar-Sicairos upsampled-DFT cross-correlation
+      (driftsense.subpixel.refine_upsampled_dft), which evaluates the exact
+      ZNCC surface on a fine grid with no interpolation kernel at all.
+
+    All three share this function's contract and window, so they are
+    drop-in alternatives and can be A/B'd on one decode.
     """
     from driftsense.config import SHIPPED_SUBPIXEL
-    if SHIPPED_SUBPIXEL == "bicubic":
+    variant = str(variant or SHIPPED_SUBPIXEL).lower()
+    if variant == "bicubic":
         from driftsense.subpixel import refine_bicubic
         return refine_bicubic(search, template, cx, cy, radius=radius)
+    if variant == "dft":
+        from driftsense.subpixel import refine_upsampled_dft
+        return refine_upsampled_dft(search, template, cx, cy, radius=radius)
     h, w = search.shape
     th, tw = template.shape
     bx, by = cx - tw / 2.0, cy - th / 2.0
@@ -901,7 +921,8 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
 def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
                      radius: int = 3, lag: int = DRIFT_ROW_LAG,
                      min_corr: float = DRIFT_ROW_MIN_CORR,
-                     max_shift: float = DRIFT_MAX_SHIFT) -> tuple[float, float] | None:
+                     max_shift: float = DRIFT_MAX_SHIFT,
+                     variant: str | None = None) -> tuple[float, float] | None:
     """Re-place a match at the drift row the label is defined on.
 
     Returns the corrected `(x, y)`, or None to decline -- the caller then keeps
@@ -975,7 +996,7 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
                      borderMode=cv2.BORDER_REPLICATE)
 
     rx, ry, _ = refine_zncc(standardize(flat / 255.0), standardize(template / 255.0),
-                            cx - xa, cy - ya, radius=radius)
+                            cx - xa, cy - ya, radius=radius, variant=variant)
     nx, ny = rx + xa + float(dense[ci]), ry + ya
     if not np.isfinite(nx) or abs(nx - cx) > max_shift:
         return None                       # runaway re-match; keep the rigid answer
@@ -1091,7 +1112,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   early_exit_zncc: float | None = None,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0,
-                  subpixel_rows: bool = True, **kw) -> dict:
+                  subpixel_rows: bool = True, subpixel: str | None = None,
+                  **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     band=False is the measured default (full 2,250-pair A/B, 2026-08-31):
@@ -1123,6 +1145,12 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     valid_verification = {"zncc", "majority", "consensus"}
     if verification not in valid_verification:
         raise ValueError(f"verification must be one of {sorted(valid_verification)}")
+    # Sub-pixel placement rule for both the ZNCC snap and the drift-row
+    # re-match. Resolved once here so a single decode cannot mix rules.
+    from driftsense.config import SHIPPED_SUBPIXEL
+    subpixel = str(subpixel or SHIPPED_SUBPIXEL).lower()
+    if subpixel not in SUBPIXEL_VARIANTS:
+        raise ValueError(f"subpixel must be one of {list(SUBPIXEL_VARIANTS)}")
 
     # The baseline path never enters this block. Research instrumentation and
     # optional selectors share one set of full-search feature maps per pair.
@@ -1192,7 +1220,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             template = make_template(reference, m, rot)
             rx, ry, zn = refine_zncc(search_corr_std,
                                      standardize(template / 255.0),
-                                     cx, cy, radius=refine_radius)
+                                     cx, cy, radius=refine_radius,
+                                     variant=subpixel)
             if np.hypot(rx - cx, ry - cy) <= 10.0:
                 out.update({"x": rx, "y": ry})
             out["zncc"] = float(zn)
@@ -1328,7 +1357,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             tpl = make_template(reference, best["scale"], best["theta"])
             rx, ry, zn = refine_zncc(standardize(search / 255.0),
                                      standardize(tpl / 255.0),
-                                     best["x"], best["y"], radius=2)
+                                     best["x"], best["y"], radius=2,
+                                     variant=subpixel)
             if np.hypot(rx - best["x"], ry - best["y"]) <= 3.0:
                 best.update({"x": rx, "y": ry, "zncc": float(zn)})
 
@@ -1354,7 +1384,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         # rigid answer, which is what the pipeline produced before this stage.
         try:
             tpl = make_template(reference, best["scale"], best["theta"])
-            moved = drift_row_refine(search, tpl, best["x"], best["y"])
+            moved = drift_row_refine(search, tpl, best["x"], best["y"],
+                                     variant=subpixel)
             if moved is not None:
                 best["x"] = moved[0]
         except Exception as e:  # noqa: BLE001
