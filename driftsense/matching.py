@@ -264,6 +264,38 @@ DRIFT_ROW_MIN_CORR = 0.30
 DRIFT_MAX_SHIFT = 5.0      # upper bound; the effective clamp is drift-scaled
 DRIFT_CLAMP_K = 2.0        # clamp = clip(K * measured drift sd, 2.0, DRIFT_MAX_SHIFT)
 
+# Issue #89. Two corrections to the stage above, both measured on the v2 dev
+# split (400 present pairs) and confirmed on the untouched holdout split:
+#
+#   DRIFT_ROW_ALIGN   resample the template onto the search frame's own row
+#                     grid before reading per-row offsets. cy is sub-pixel, so
+#                     template row i generally straddles two search rows, which
+#                     costs correlation height for nothing -- the horizontal
+#                     shift being measured belongs to the search row either
+#                     way. The effect is real but SMALL, and it is kept
+#                     because it was verified rather than assumed: mean
+#                     centre-row correlation 0.6042 -> 0.6071 on dev, and the
+#                     gain tracks how far off the grid the template sits, which
+#                     is the signature the mechanism predicts (+0.0006 where
+#                     |offset| < 0.125 px, rising monotonically to +0.0057 near
+#                     half a pixel). Worth about +0.02 localisation points on
+#                     its own; it has not measured negative on any split.
+#   DRIFT_SHRINK_SIGMA
+#                     the row measurement is m = s + e: the row's own drift
+#                     sample plus measurement noise. Taking m whole was
+#                     measurably WORSE than declining at both ends of the
+#                     severity ladder -- on dev, mean |dx| at severity 0 went
+#                     0.233 (no correction) -> 0.251 (corrected) and at
+#                     severity 4 0.773 -> 0.839, because a quiet frame has
+#                     almost no drift to recover and a severity-4 row is
+#                     measured badly. Scaling m by its own signal-to-noise
+#                     repairs both ends (0.207 and 0.754) while keeping the
+#                     middle. sigma_m is modelled as this constant over the
+#                     row's correlation peak; credit is flat from 0.20 to 0.40
+#                     on both splits. None restores the unshrunk correction.
+DRIFT_ROW_ALIGN = True
+DRIFT_SHRINK_SIGMA = 0.25
+
 # Drift-immune rotation from vertical strip offsets (issue #88); see
 # `strip_rotation` for the geometry and driftsense.config for why the stage
 # ships. Every value below was chosen on the v2 dev split (400 present pairs),
@@ -960,13 +992,37 @@ def row_pitch(template: np.ndarray) -> float | None:
     return None
 
 
+def _row_median(img: np.ndarray, k: int) -> np.ndarray:
+    """Median over a 1 x k horizontal window.
+
+    Row-preserving on purpose: impulse noise goes, and every scan row keeps its
+    own raster-drift sample. A 2-D median would mix neighbouring rows, whose
+    drift samples are independent, and so would blur out the very quantity
+    `row_offsets` is measuring.
+    """
+    if k < 3:
+        return img
+    pad = int(k) // 2
+    p = np.pad(img.astype(np.float32), ((0, 0), (pad, pad)), mode="edge")
+    return np.median(np.lib.stride_tricks.sliding_window_view(p, int(k), axis=1), axis=2)
+
+
 def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
-                lag: int = DRIFT_ROW_LAG, return_corr: bool = False):
+                lag: int = DRIFT_ROW_LAG, return_corr: bool = False,
+                hmedian: int = 0, align_rows: bool = False):
     """Per-row horizontal offset between the search frame and the posed template.
 
     `make_template` returns the reference already rotated and scaled into the
     search frame, so template row i lines up with exactly one search row --
     which is the granularity raster drift acts on.
+
+    `hmedian` (odd, >= 3) applies a row-preserving 1 x k median to both sides
+    first. `align_rows` resamples the template onto the search frame's own row
+    grid before correlating: `cy` is sub-pixel, so template row i generally
+    straddles two search rows, which costs every row's correlation peak height
+    for no gain -- the horizontal shift being measured belongs to the search
+    row either way. Both default off here; `drift_row_refine` turns them on
+    or off according to the measured constants.
 
     Returns `(offset, peak)`, each of length `template.shape[0]`, with NaN where
     the 1-D correlation peak landed on the window edge and cannot be
@@ -981,6 +1037,17 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
 
     win = search[y0:y0 + th, x0 - lag:x0 + tw + lag].astype(np.float32)
     tpl = template.astype(np.float32)
+    if align_rows:
+        # The template's top row sits at cy - th/2, the window's at y0, so the
+        # template is resampled down the column by their difference.
+        dy = (cy - th / 2.0) - y0
+        if abs(dy) > 1e-3:
+            tpl = cv2.warpAffine(tpl, np.float32([[1, 0, 0], [0, 1, dy]]), (tw, th),
+                                 flags=cv2.INTER_LINEAR,
+                                 borderMode=cv2.BORDER_REPLICATE)
+    if hmedian and hmedian >= 3:
+        win = _row_median(win, int(hmedian) | 1)
+        tpl = _row_median(tpl, int(hmedian) | 1)
     tpl = tpl - tpl.mean(axis=1, keepdims=True)
     tn = np.sqrt((tpl ** 2).sum(axis=1))
     tn[tn < 1e-6] = 1e-6
@@ -1034,22 +1101,35 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
                      radius: int = 3, lag: int = DRIFT_ROW_LAG,
                      min_corr: float = DRIFT_ROW_MIN_CORR,
                      max_shift: float = DRIFT_MAX_SHIFT,
-                     label_convention: str = "edge") -> tuple[float, float] | None:
+                     label_convention: str = "edge",
+                     hmedian: int = 0, align_rows: bool = DRIFT_ROW_ALIGN,
+                     shrink_sigma: float | None = DRIFT_SHRINK_SIGMA) -> tuple[float, float] | None:
     """Re-place a match at the drift row the label is defined on.
 
     Returns the corrected `(x, y)`, or None to decline -- the caller then keeps
     the rigid estimate. Declining is deliberate and common (~19% of pairs):
     loosening `min_corr` to correct more pairs was measured *worse* on the full
     set, because a badly measured row is worse than no correction at all.
+    Between declining and believing a row whole there is a third option, which
+    is what `shrink_sigma` does: believe it in proportion to how well it was
+    measured (issue #89; see the constants block).
 
     `cx, cy` and the returned point are pixel-edge coordinates whatever
     `label_convention` says; the convention only selects which row's drift
     sample the label carries (see `label_row`).
+
+    `hmedian` applies a row-preserving 1 x k median first. It is off because it
+    was measured NEGATIVE on the v2 dev split -- localisation 38.92 -> 38.61
+    points at k=3 and 38.46 at k=5, with the worst error growing 3.2 -> 4.2 px:
+    the median admits more rows past `min_corr` but blunts the horizontal
+    structure the sub-pixel peak is fitted to. Kept as a parameter because it
+    is the obvious thing to reach for and the measurement is worth preserving.
     """
     if label_convention not in LABEL_CONVENTIONS:
         raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
                          f"got {label_convention!r}")
-    off, peak, corr = row_offsets(search, template, cx, cy, lag=lag, return_corr=True)
+    off, peak, corr = row_offsets(search, template, cx, cy, lag=lag, return_corr=True,
+                                  hmedian=hmedian, align_rows=align_rows)
     if off is None:
         return None
     ok = np.isfinite(off) & (peak > min_corr)
@@ -1085,8 +1165,9 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
         return None                       # the row that decides the answer is unusable
 
     # Gaps are interpolated only to flatten the patch; the centre row itself is
-    # never interpolated (see the `ok[ci]` guard) because drift is white and an
-    # interpolated value carries none of its neighbours' information.
+    # never interpolated (the guard above requires its own finite measurement)
+    # because drift is white and an interpolated value carries none of its
+    # neighbours' information.
     dense = np.interp(np.arange(th), np.arange(th)[ok], off[ok])
 
     # Scale the runaway guard to the drift this pair actually shows: at severity
@@ -1116,7 +1197,22 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
 
     rx, ry, _ = refine_zncc(standardize(flat / 255.0), standardize(template / 255.0),
                             cx - xa, cy - ya, radius=radius)
-    nx, ny = rx + xa + float(dense[ci]), ry + ya
+    # How much of the row's measured offset to believe (issue #89). The
+    # measurement is  m = s + e:  the row's own drift sample s (sd sigma_j)
+    # plus measurement noise e (sd sigma_m). `resid_sd` above already
+    # estimates sigma_j^2 + sigma_m^2 -- it is the scatter of the row offsets
+    # about their smooth trend -- and sigma_m falls as the row's correlation
+    # peak rises, so model it as shrink_sigma / peak. The minimum-MSE estimate
+    # of s is then m * (1 - sigma_m^2 / resid_sd^2), which shrinks the
+    # correction toward the rigid answer exactly when the row is either
+    # poorly measured or barely drifting. shrink_sigma=None keeps the
+    # unshrunk correction this stage shipped with.
+    row_shift = float(dense[ci])
+    if shrink_sigma is not None:
+        sigma_m = shrink_sigma / max(float(peak[ci]), 1e-3)
+        w = 1.0 - sigma_m ** 2 / max(resid_sd ** 2, 1e-9)
+        row_shift *= float(np.clip(w, 0.0, 1.0))
+    nx, ny = rx + xa + row_shift, ry + ya
     if not np.isfinite(nx) or abs(nx - cx) > max_shift:
         return None                       # runaway re-match; keep the rigid answer
     return float(nx), float(ny)
