@@ -50,6 +50,7 @@ from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
 from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 from driftsense.config import SHIPPED_LABEL_CONVENTION  # noqa: E402
+from driftsense.config import SHIPPED_STRIP_ROTATION  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
@@ -538,6 +539,7 @@ def main():
                                         verification=a.verification,
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
+                                        strip_rot=SHIPPED_STRIP_ROTATION,
                                         label_convention=a.label_convention)
                 # The reported confidence (see locate_phase2): the shipped
                 # legacy min(network score, native ZNCC) on the model path,
