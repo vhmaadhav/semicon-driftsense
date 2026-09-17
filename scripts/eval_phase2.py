@@ -47,6 +47,7 @@ from driftsense.matching import locate_phase2
 from driftsense.config import (SHIPPED_BAND, SHIPPED_SUBPIXEL_ROWS,
                                SHIPPED_THRESHOLD, SHIPPED_VERIFICATION)
 from driftsense.rubric import score
+from driftsense import provenance
 
 
 def main():
@@ -55,6 +56,7 @@ def main():
     ap.add_argument("--weights", default=I.DEFAULT_WEIGHTS)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--threads", type=int, default=4, help="reference machine has 4 cores")
+    ap.add_argument("--allow-dirty", action="store_true", help="measure against an uncommitted worktree")
     ap.add_argument("--out", default=None,
                     help="per-pair CSV (default: <split>/phase2_eval.csv). Keep it: "
                          "every severity/stratum breakdown is computed from this "
@@ -62,7 +64,16 @@ def main():
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
 
-    d = pd.read_csv(os.path.join(a.split, "manifest.csv"))
+    manifest_path = os.path.join(a.split, "manifest.csv")
+    prov = provenance.record(
+        split=os.path.abspath(a.split), weights=os.path.abspath(a.weights),
+        manifest=manifest_path, threads=a.threads, limit=a.limit or None,
+        shipped=dict(threshold=SHIPPED_THRESHOLD, band=SHIPPED_BAND,
+                     verification=SHIPPED_VERIFICATION,
+                     subpixel_rows=SHIPPED_SUBPIXEL_ROWS))
+    provenance.require_clean(prov, allow_dirty=a.allow_dirty)
+
+    d = pd.read_csv(manifest_path)
     if a.limit:
         d = d.head(a.limit)
     model, device = I.load_model(a.weights)
@@ -104,6 +115,14 @@ def main():
     o = pd.DataFrame(rows)
     out = a.out or os.path.join(a.split, "phase2_eval.csv")
     o.to_csv(out, index=False)
+
+    p = o[o.found == 1]
+    prov["pairs"] = dict(total=int(len(o)), present=int(len(p)),
+                         absent=int((o.found == 0).sum()))
+    prov["runtime_secs"] = dict(
+        median=float(o.secs.median()), mean=float(o.secs.mean()),
+        p90=float(o.secs.quantile(0.90)), max=float(o.secs.max()))
+    provenance.write(os.path.join(a.split, "provenance.json"), prov)
 
     # One shared rubric implementation (driftsense.rubric.score): submission
     # masking, A/B strata when labelled, reject-positive F1 at the shipped

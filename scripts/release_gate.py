@@ -93,9 +93,25 @@ def sha256_file(path):
 
 
 def git(*args):
+    """Trailing newline only. `--porcelain` encodes status in the first two
+    columns, so a leading space is data -- stripping it shifts every path by
+    one character."""
     proc = subprocess.run(["git"] + list(args), cwd=REPO,
                           capture_output=True, text=True)
-    return proc.returncode, (proc.stdout or "").strip()
+    return proc.returncode, (proc.stdout or "").rstrip("\r\n")
+
+
+def porcelain_paths(status):
+    """Paths from `git status --porcelain`, handling renames and quoting."""
+    paths = []
+    for line in (status or "").splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        paths.append(path.strip('"'))
+    return paths
 
 
 def gate_clean_worktree(allow_dirty=False):
@@ -103,7 +119,7 @@ def gate_clean_worktree(allow_dirty=False):
     if code != 0:
         return gate("clean worktree", False,
                     "git status failed; not a checkout?")
-    dirty = [line for line in out.splitlines() if line.strip()]
+    dirty = porcelain_paths(out)
     if dirty and allow_dirty:
         return gate("clean worktree", True,
                     "DIRTY (" + str(len(dirty)) + " path(s)) -- allowed by "
@@ -111,7 +127,7 @@ def gate_clean_worktree(allow_dirty=False):
     return gate("clean worktree", not dirty,
                 "clean" if not dirty else
                 str(len(dirty)) + " uncommitted path(s): "
-                + ", ".join(line[3:] for line in dirty[:5])
+                + ", ".join(dirty[:5])
                 + ("..." if len(dirty) > 5 else ""))
 
 
@@ -198,10 +214,11 @@ def write_provenance(path, zip_path):
     _, sha = git("rev-parse", "HEAD")
     _, branch = git("rev-parse", "--abbrev-ref", "HEAD")
     _, dirty = git("status", "--porcelain")
+    sha, branch = sha.strip(), branch.strip()
     record = {
         "commit": sha,
         "branch": branch,
-        "dirty": len([ln for ln in dirty.splitlines() if ln.strip()]),
+        "dirty": len(porcelain_paths(dirty)),
         "zip_sha256": sha256_file(zip_path) if zip_path else None,
         "zip_bytes": os.path.getsize(zip_path) if zip_path else None,
         "python": platform.python_version(),
