@@ -34,7 +34,9 @@ temporary directory and audits only that extraction:
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
+import io
 import os
 import sys
 import zipfile
@@ -46,6 +48,34 @@ REPO = os.path.dirname(HERE)
 # the manifest
 # --------------------------------------------------------------------------
 
+# driftsense/ is allow-listed one module at a time (see the ALLOW entry).
+# Reachability from the graded entry points is verified at build time, so this
+# list cannot silently drop a module register.py needs; it can only refuse to
+# ship one nothing needs.
+DRIFTSENSE_SHIP = [
+    "__init__",
+    # reachable from register.py / infer.py / generate_dataset.py
+    "calibration", "config", "generate", "matching", "model",
+    "policy", "presets", "subpixel", "verification", "vst",
+    # vst ships even though SHIPPED_VST == "none": matching.py imports it at
+    # module scope and calls vst.resolve_mode() on every coarse sweep, so an
+    # extraction without it fails on import before the first pair decodes.
+    # PR #20 landed driftsense/vst.py; PR #26 authored this list against a
+    # tree that did not have it yet. Each was green alone and red together --
+    # which is why check_driftsense() now runs in CI, not just at build time.
+
+    # training-side library. Not reachable from the graded entry points
+    # (train.py and evaluate.py are both DENY-listed), but shipped alongside
+    # TRAINING.md historically. Named explicitly so that stays a decision
+    # rather than a side effect of walking the directory.
+    "dataset", "engine", "stream_dataset",
+]
+
+NL_BULLET = chr(10) + "  - "
+
+# The files whose imports define what driftsense/ must contain.
+ENTRY_POINTS = ["register.py", "infer.py", "generate_dataset.py"]
+
 # Every entry is repo-relative. A file ships as itself; a directory ships as
 # its whole subtree minus the PRUNE_* rules below. Grouped by why it ships.
 ALLOW = [
@@ -55,7 +85,15 @@ ALLOW = [
     "generate_dataset.py",   # "generate_dataset.py documented" (slide 5)
 
     # -- the model --------------------------------------------------------
-    "driftsense",            # the package register.py / infer.py import
+    # driftsense/ ships module by module, never as a directory walk. Research
+    # code lands in this package while an experiment is live -- row refiners,
+    # scan banks, confidence heads -- and a walk would put all of it in front
+    # of a judge purely because it sits next to the shipped decode path. A
+    # module absent from DRIFTSENSE_SHIP does not ship; check_driftsense()
+    # then fails the build if an entry point actually needs one that is
+    # missing, so the closed list cannot ship a hole either.
+    *["driftsense/" + m + ".py" for m in DRIFTSENSE_SHIP],
+    "driftsense/diagrams",   # slide4.png, the figure README.md references
     "weights/driftsense.pt",  # the ONLY checkpoint that ships (see DENY)
 
     # -- environment ------------------------------------------------------
@@ -171,6 +209,20 @@ PRUNE_GLOBS = ["*.pyc", "*.pyo", "*.tmp", ".DS_Store", "*~", "*.orig", "*.rej",
 # LFS pointer is small, loads as garbage, and is easy to miss by eye.
 MIN_WEIGHTS_BYTES = 1_000_000
 
+# weights/driftsense.pt on disk carries training-resume state -- `optimizer`
+# (8.22 MB) and `raw_model` (4.13 MB, the pre-EMA duplicate) -- neither of
+# which the shipped inference path ever reads: infer.load_model consumes only
+# `ckpt.get("model", ckpt)` and `ckpt.get("arch_kwargs")`, and
+# check_submission_zip.py's own checkpoint check asserts only a `model` key.
+# There is no weight-hash pin anywhere that a re-save would invalidate
+# (verified: grepped for sha256/hexdigest against weights/ -- none).
+#
+# Stripped at PACKAGE time, not on disk: the file `train.py`/`checkpoint_soup.py`
+# read for a training resume is untouched, so this cannot break that lineage.
+# 16.50 MB -> 4.13 MB in the artifact, a 75% cut, for zero behaviour change.
+STRIP_TRAINING_STATE_FROM = {WEIGHTS_ONLY}
+CHECKPOINT_SHIP_KEYS = ("model", "arch_kwargs", "arch")
+
 # generator/.gitattributes routes *.png through Git LFS, so the 41 images in
 # generator/output/ are pointers in the repository and only become real bytes
 # when LFS smudges them on checkout. Build on a machine where that did not
@@ -202,6 +254,25 @@ def prune_dir(repo, abspath):
     return rel not in PRUNE_EXCEPTIONS
 
 
+def stripped_checkpoint_bytes(path):
+    """Re-serialise a checkpoint keeping only what inference reads.
+
+    Deferred import: torch is a heavy, optional-at-collection-time dependency,
+    and every other path through this builder (--list, a DENY hit, a missing
+    file) never needs it.
+    """
+    import torch
+    ckpt = torch.load(path, map_location="cpu", weights_only=True)
+    minimal = {k: ckpt[k] for k in CHECKPOINT_SHIP_KEYS if k in ckpt}
+    if "model" not in minimal:
+        raise ValueError(f"{path}: no 'model' key -- refusing to strip a "
+                         f"checkpoint that would ship broken")
+    import io
+    buf = io.BytesIO()
+    torch.save(minimal, buf)
+    return buf.getvalue()
+
+
 def is_lfs_pointer(path):
     """True for an unfetched Git LFS pointer standing in for real content."""
     try:
@@ -222,6 +293,77 @@ def deny_reason(arcname):
         if fnmatch.fnmatch(arcname, pattern):
             return why
     return None
+
+
+def driftsense_imports(path):
+    """driftsense.* submodule names imported by one source file."""
+    with io.open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read(), filename=path)
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.level:                      # from .x import y
+                if node.module:
+                    found.add(node.module.split(".")[0])
+                else:
+                    found.update(a.name for a in node.names)
+            elif node.module and node.module.split(".")[0] == "driftsense":
+                parts = node.module.split(".")
+                if len(parts) > 1:
+                    found.add(parts[1])
+                else:                           # from driftsense import x
+                    found.update(a.name for a in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                parts = alias.name.split(".")
+                if parts[0] == "driftsense" and len(parts) > 1:
+                    found.add(parts[1])
+    return found
+
+
+def check_driftsense(repo=REPO):
+    """Reasons the driftsense/ manifest is wrong, else an empty list.
+
+    Walks imports out from ENTRY_POINTS. Every driftsense module the graded
+    entry points can actually reach has to be in DRIFTSENSE_SHIP -- that is
+    the direction that would ship a broken artifact. The other direction is
+    deliberate: a module nothing reaches simply does not ship.
+    """
+    pkg = os.path.join(repo, "driftsense")
+    if not os.path.isdir(pkg):
+        return ["driftsense/ is missing from the working tree"]
+
+    reached, queue = set(), []
+    for entry in ENTRY_POINTS:
+        path = os.path.join(repo, entry)
+        if os.path.isfile(path):
+            queue.extend(driftsense_imports(path))
+    while queue:
+        name = queue.pop()
+        if name in reached:
+            continue
+        reached.add(name)
+        module = os.path.join(pkg, name + ".py")
+        if os.path.isfile(module):
+            queue.extend(driftsense_imports(module))
+
+    shipped = set(DRIFTSENSE_SHIP)
+    on_disk = {f[:-3] for f in os.listdir(pkg) if f.endswith(".py")}
+    problems = []
+
+    unshipped = sorted((reached & on_disk) - shipped)
+    if unshipped:
+        problems.append(
+            "DRIFTSENSE_SHIP omits module(s) the entry points import: "
+            + ", ".join(unshipped)
+            + ". The submission would extract and fail on import.")
+
+    phantom = sorted(shipped - on_disk)
+    if phantom:
+        problems.append(
+            "DRIFTSENSE_SHIP names module(s) that do not exist: "
+            + ", ".join(phantom) + ". Fix the list, do not ship a hole.")
+    return problems
 
 
 def collect(repo=REPO):
@@ -271,6 +413,11 @@ def fail(message):
 
 
 def build(out_path, repo=REPO):
+    broken = check_driftsense(repo)
+    if broken:
+        return fail("driftsense/ manifest is inconsistent:" + NL_BULLET
+                    + NL_BULLET.join(broken))
+
     members, missing = collect(repo)
     if missing:
         return fail("manifest entries missing from the working tree:\n  - "
@@ -307,6 +454,10 @@ def build(out_path, repo=REPO):
     if parent:
         os.makedirs(parent, exist_ok=True)
     tmp_path = out_path + ".partial"
+    # Bytes actually shipped per member -- not os.path.getsize(abspath), which
+    # would report the on-disk (unstripped) checkpoint size and misstate the
+    # archive's own uncompressed total in the report below.
+    shipped_size = {}
     try:
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED,
                              compresslevel=6) as zf:
@@ -314,8 +465,22 @@ def build(out_path, repo=REPO):
                 info = zipfile.ZipInfo(arcname, date_time=ZIP_DATE_TIME)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 info.external_attr = 0o644 << 16
-                with open(abspath, "rb") as fh:
-                    zf.writestr(info, fh.read())
+                if arcname in STRIP_TRAINING_STATE_FROM:
+                    try:
+                        data = stripped_checkpoint_bytes(abspath)
+                    except Exception as exc:  # noqa: BLE001
+                        return fail(f"{arcname}: could not strip training "
+                                   f"state for shipping ({type(exc).__name__}: "
+                                   f"{exc}) -- shipping the full file unstripped "
+                                   f"is safer than shipping nothing, so fix this "
+                                   f"rather than silently falling back")
+                    zf.writestr(info, data)
+                    shipped_size[arcname] = len(data)
+                else:
+                    with open(abspath, "rb") as fh:
+                        data = fh.read()
+                    zf.writestr(info, data)
+                    shipped_size[arcname] = len(data)
 
         # Second, independent pass: audit the finished archive's own namelist
         # instead of trusting the collection that produced it.
@@ -340,17 +505,17 @@ def build(out_path, repo=REPO):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    report(out_path, members)
+    report(out_path, members, shipped_size)
     return 0
 
 
-def report(out_path, members):
-    raw = sum(os.path.getsize(p) for _, p in members)
+def report(out_path, members, shipped_size):
+    raw = sum(shipped_size[a] for a, _ in members)
     tops = {}
     for arcname, abspath in members:
         top = arcname.split("/")[0] if "/" in arcname else "(root files)"
         count, size = tops.get(top, (0, 0))
-        tops[top] = (count + 1, size + os.path.getsize(abspath))
+        tops[top] = (count + 1, size + shipped_size[arcname])
 
     print("built " + out_path)
     print("  " + str(len(members)) + " files, " + human(raw)

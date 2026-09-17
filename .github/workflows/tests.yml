@@ -21,3 +21,11 @@ jobs:
         run: python -m pytest -q
       - name: Validate register.py end-to-end against the output contract
         run: python scripts/check_register_contract.py
+      # The control that would have caught the vst break. PR #20 added
+      # driftsense/vst.py and PR #26 authored the closed ship manifest that
+      # has to name it; each was green alone and red together, and nothing
+      # ran the builder between the merge and the discovery. pytest alone is
+      # not enough here -- the gate also proves the build is reproducible and
+      # that nothing denied (notably .agents/) reached the archive.
+      - name: Release gate (buildable, reproducible, no denied content)
+        run: python scripts/release_gate.py

@@ -101,6 +101,17 @@ def imported_names(src):
                 names.add(alias.name)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             names.add(node.module)
+            # `from pkg import mod` binds a MODULE, not just a name, so the
+            # dotted form has to be offered to resolve_local too -- otherwise
+            # `from driftsense import vst` resolves only to driftsense/
+            # __init__.py and driftsense/vst.py is never scanned. That is a
+            # hole in the no-network guarantee, not a cosmetic miss: it was
+            # found when the audit reported 10 scanned files with vst.py in
+            # the archive but absent from the list. resolve_local() already
+            # walks dotted parts longest-first, so a `from pkg.mod import
+            # NAME` simply falls back to pkg/mod.py as before.
+            for alias in node.names:
+                names.add(node.module + "." + alias.name)
     return names
 
 
