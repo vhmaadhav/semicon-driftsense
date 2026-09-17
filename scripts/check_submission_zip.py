@@ -62,10 +62,16 @@ REQUIRED_PATHS = [
     "requirements.txt",
     "failure_analysis.pdf",
     "generate_dataset.py",
+    # Phase 3 entry point. Required so a ZIP built from a tree where it was
+    # dropped fails the check here rather than on the scored run; it must sit
+    # at the extraction root beside register.py, which it imports.
+    "phase3.py",
     os.path.join("weights", "driftsense.pt"),
 ]
 WEIGHTS_REL = os.path.join("weights", "driftsense.pt")
 ORGANIZER_CMD = "python register.py --input pairs.csv --output predictions.csv"
+# Phase 3 runs the same command shape against a GDS-reference pairs.csv.
+PHASE3_CMD = "python phase3.py --input pairs.csv --output predictions.csv"
 
 NETWORK_MARKERS = ("requests.", "urllib.", "socket.", "httpx.", "urlopen")
 SUBPROC_NET_RE = re.compile(r"\b(curl|wget)\b")

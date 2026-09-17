@@ -54,6 +54,15 @@ ALLOW = [
     "infer.py",              # ship loader; register.py imports it
     "generate_dataset.py",   # "generate_dataset.py documented" (slide 5)
 
+    # -- Phase 3 entry point ----------------------------------------------
+    # Ships ALONGSIDE register.py, never replacing it: Phase 1/2 still apply and
+    # register.py stays the graded command until Phase 3 opens. phase3.py
+    # imports register.py for the shared runtime (thread cap, mass-failure
+    # thresholds, output contract), so the two must travel together.
+    # driftsense/gds.py and driftsense/pairs3.py are inside the "driftsense"
+    # subtree below and come along automatically.
+    "phase3.py",             # GDS reference: --input pairs.csv --output ...
+
     # -- the model --------------------------------------------------------
     "driftsense",            # the package register.py / infer.py import
     "weights/driftsense.pt",  # the ONLY checkpoint that ships (see DENY)
