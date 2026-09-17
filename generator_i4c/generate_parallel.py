@@ -2,8 +2,8 @@
 """Parallel front-end for generate_dataset.py / generate_cad_dataset.py.
 
 Both upstream CLIs are single-process: one sample at a time on one core. This
-runs N copies at once, each writing its own shard split with its own seed
-(base_seed + shard index), then merges the shard manifests into one
+splits the job into fixed-size chunks, runs N copies at once, each writing its
+own chunk split with its own seed (base_seed + chunk index), then merges the shard manifests into one
 `<output-dir>/<split>/manifest.csv` whose paths are relative to that
 directory. The upstream scripts are called unmodified.
 
@@ -15,6 +15,11 @@ Examples:
     python generate_parallel.py --cad --num-samples 2000 --split cad_train --seed 200
     # extra upstream flags go after --
     python generate_parallel.py --num-samples 1000 --split hard -- --no-match-prob 0.3
+
+Resuming: if the run is interrupted (terminal closed, Ctrl+C, reboot), rerun
+the exact same command. Finished chunks carry a .done marker and are skipped;
+unfinished ones are regenerated from their seed, so the result is identical to
+an uninterrupted run.
 """
 
 import argparse
@@ -35,6 +40,8 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42, help="shard k uses seed + k")
     p.add_argument("--workers", type=int, default=16,
                    help="parallel processes (default 16: throughput plateaus beyond this on the 14700HX -- ~9 samples/s measured at 16, 20 and 28)")
+    p.add_argument("--chunk-size", type=int, default=25,
+                   help="samples per resumable chunk (an interruption loses at most the chunks in flight)")
     p.add_argument("--cad", action="store_true", help="use generate_cad_dataset.py (GDSII reference)")
     p.add_argument("extra", nargs=argparse.REMAINDER, help="flags passed through to the generator after --")
     return p.parse_args()
@@ -44,52 +51,68 @@ def main():
     args = parse_args()
     extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra
     script = os.path.join(HERE, "generate_cad_dataset.py" if args.cad else "generate_dataset.py")
-    workers = max(1, min(args.workers, args.num_samples))
     split_dir = os.path.join(args.output_dir, args.split)
     shard_root = os.path.join(split_dir, "shards")
     os.makedirs(shard_root, exist_ok=True)
 
-    # Even split; the first shards absorb the remainder.
-    base, rem = divmod(args.num_samples, workers)
-    counts = [base + (k < rem) for k in range(workers)]
+    # Fixed-size chunks, chunk k seeded seed + k. The chunking depends only on
+    # --num-samples/--chunk-size, never on --workers, so a rerun with the same
+    # arguments reproduces the same chunks and can skip finished ones.
+    counts = [min(args.chunk_size, args.num_samples - s)
+              for s in range(0, args.num_samples, args.chunk_size)]
+    names = [f"s{k:04d}" for k in range(len(counts))]
+    done_marker = lambda k: os.path.join(shard_root, names[k] + ".done")  # noqa: E731
+    todo = [k for k in range(len(counts)) if not os.path.exists(done_marker(k))]
+    skipped = sum(counts) - sum(counts[k] for k in todo)
+    workers = max(1, min(args.workers, len(todo) or 1))
 
     env = dict(os.environ, OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
                MKL_NUM_THREADS="1", OPENCV_FOR_THREADS_NUM="1")
-    procs = []
-    for k, n in enumerate(counts):
-        log = open(os.path.join(shard_root, f"s{k:02d}.log"), "w")
-        cmd = [sys.executable, script, "--num-samples", str(n), "--split", f"s{k:02d}",
-               "--output-dir", shard_root, "--seed", str(args.seed + k), *extra]
-        procs.append((k, subprocess.Popen(cmd, cwd=HERE, env=env, stdout=log, stderr=subprocess.STDOUT), log))
 
-    print(f"{args.num_samples} samples, {workers} workers, "
+    print(f"{args.num_samples} samples in {len(counts)} chunks, {workers} workers, "
           f"{'CAD' if args.cad else 'image'} generator -> {split_dir}")
+    if skipped:
+        print(f"  resuming: {skipped} samples already done, {len(todo)} chunks left")
     t0 = time.time()
-    failed = []
-    while procs:
-        time.sleep(2)
-        for item in list(procs):
+    failed, running, queue = [], [], list(todo)
+    finished = skipped
+    while queue or running:
+        while queue and len(running) < workers:
+            k = queue.pop(0)
+            # A chunk without its .done marker was interrupted: regenerate it whole.
+            log = open(os.path.join(shard_root, names[k] + ".log"), "w")
+            cmd = [sys.executable, script, "--num-samples", str(counts[k]), "--split", names[k],
+                   "--output-dir", shard_root, "--seed", str(args.seed + k), *extra]
+            running.append((k, subprocess.Popen(cmd, cwd=HERE, env=env, stdout=log,
+                                                stderr=subprocess.STDOUT), log))
+        time.sleep(1)
+        for item in list(running):
             k, p, log = item
-            if p.poll() is not None:
-                log.close()
-                procs.remove(item)
-                if p.returncode:
-                    failed.append(k)
-        done = sum(_rows(os.path.join(shard_root, f"s{k:02d}", "manifest.csv")) for k in range(workers))
-        rate = done / max(time.time() - t0, 1e-9)
-        eta = (args.num_samples - done) / rate if rate else 0
-        print(f"\r  {done}/{args.num_samples}  {rate:.1f} samples/s  ETA {eta/60:.1f} min   ", end="", flush=True)
+            if p.poll() is None:
+                continue
+            log.close()
+            running.remove(item)
+            if p.returncode:
+                failed.append(names[k])
+            else:
+                open(done_marker(k), "w").close()
+                finished += counts[k]
+        in_flight = sum(_rows(os.path.join(shard_root, names[k], "manifest.csv")) for k, _, _ in running)
+        made = finished - skipped + in_flight
+        rate = made / max(time.time() - t0, 1e-9)
+        eta = (args.num_samples - finished - in_flight) / rate if rate else 0
+        print(f"\r  {finished + in_flight}/{args.num_samples}  {rate:.1f} samples/s  "
+              f"ETA {eta/60:.1f} min   ", end="", flush=True)
     print()
     if failed:
-        raise SystemExit(f"shards failed: {failed} -- see {shard_root}\\sNN.log")
+        raise SystemExit(f"chunks failed: {failed} -- see logs in {shard_root}; rerun the same command to retry")
 
-    # Merge: prefix every *_path column with shards/sNN so paths resolve from split_dir.
+    # Merge: prefix every *_path column with shards/<chunk> so paths resolve from split_dir.
     merged = os.path.join(split_dir, "manifest.csv")
     total = 0
     with open(merged, "w", newline="") as out:
         writer = None
-        for k in range(workers):
-            shard = f"s{k:02d}"
+        for shard in names:
             with open(os.path.join(shard_root, shard, "manifest.csv"), newline="") as f:
                 reader = csv.DictReader(f)
                 if writer is None:
