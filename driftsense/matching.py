@@ -857,6 +857,40 @@ def refine_zncc(search: np.ndarray, template: np.ndarray,
     return (x0c + pj + dx) + tw / 2.0, (y0c + pi + dy) + th / 2.0, float(score)
 
 
+# Median kernel for the confidence's ZNCC term (issue #87). 3x3 is the smallest
+# median that removes isolated impulses; the code comment in locate_phase2 on
+# the denoise option records that a 5x5 median destroys matches outright.
+CONFIDENCE_MEDIAN_KSIZE = 3
+
+
+def denoised_zncc(reference: np.ndarray, search: np.ndarray, cx: float, cy: float,
+                  scale: float, rotation_deg: float, radius: int = REFINE_RADIUS,
+                  ksize: int = CONFIDENCE_MEDIAN_KSIZE) -> float:
+    """Peak ZNCC of the posed template within +/- `radius` px of (cx, cy)
+    (pixel-edge), measured on a median-filtered copy of the search frame.
+
+    A presence statistic, not a localiser: the frame copy is used for this
+    number only. Returns 0.0 where the window leaves the frame, like
+    `refine_zncc`.
+    """
+    frame = search if search.dtype in (np.uint8, np.uint16, np.float32) else search.astype(np.float32)
+    med = standardize(cv2.medianBlur(frame, int(ksize)) / 255.0)
+    tpl = standardize(make_template(reference, scale, rotation_deg) / 255.0)
+    # The same window arithmetic as refine_zncc, which only the peak value of
+    # is needed here (and which tests stub for the localisation path).
+    h, w = med.shape
+    th, tw = tpl.shape
+    x0 = int(round(cx - tw / 2.0)) - radius
+    y0 = int(round(cy - th / 2.0)) - radius
+    x0c, y0c = max(x0, 0), max(y0, 0)
+    x1c, y1c = min(x0 + tw + 2 * radius, w), min(y0 + th + 2 * radius, h)
+    if x1c - x0c < tw + 1 or y1c - y0c < th + 1:
+        return 0.0
+    res = cv2.matchTemplate(med[y0c:y1c, x0c:x1c].astype(np.float32),
+                            tpl.astype(np.float32), cv2.TM_CCOEFF_NORMED)
+    return float(cv2.minMaxLoc(res)[1])
+
+
 # --- Sub-pixel: the centre row's raster-drift sample ------------------------
 #
 # Raster drift shifts each scan row of the search frame horizontally by its own
@@ -1443,6 +1477,11 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     #
     # y is deliberately left alone: it is already at 0.081 px median error on
     # set B because raster drift has no vertical component.
+    #
+    # The rigid answer -- where the posed template actually aligns -- is what
+    # the confidence is measured at (issue #87); the row re-placement below
+    # moves x to the label's scan row, not to a better template alignment.
+    rigid_xy = (float(best["x"]), float(best["y"]))
     if subpixel_rows:
         # Never let the refinement cost a pair. register.py zero-fills the whole
         # row on any exception, so a throw here would turn a correctly located
@@ -1502,7 +1541,21 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     # always wins -- while ZNCC can be respectable on a degraded frame with no
     # true instance. The fused statistic subsumes both heights plus four
     # peak-quality/contest signals, and measured better on held-out AUC.
-    if SHIPPED_CONFIDENCE == "fused6":
+    #
+    # "min_med3" (issue #87): the same min(), with the ZNCC term measured on a
+    # 3x3-median copy of the frame at the final pose and the rigid answer. On
+    # v2 frames the min() is set by ZNCC on present pairs -- impulse, speckle
+    # and shot noise drag a true match to 0.37 while the network stays >= 0.69
+    # -- and by the network on absent pairs. A median restores correlation
+    # where there is structure to restore and cannot invent it where there is
+    # none, so it lifts present pairs and leaves absent ones where they were.
+    # Only this term sees the filtered frame: the network was trained on noisy
+    # frames, and the localisation stages keep the raw pixels.
+    if SHIPPED_CONFIDENCE == "min_med3":
+        best["zncc_med3"] = denoised_zncc(reference, search, rigid_xy[0], rigid_xy[1],
+                                          best["scale"], best["theta"])
+        best["confidence"] = float(min(float(best.get("score", 0.0)), best["zncc_med3"]))
+    elif SHIPPED_CONFIDENCE == "fused6":
         from driftsense.calibration import calibrate_shipped
         best["confidence"] = float(calibrate_shipped({
             "score": float(best.get("score", 0.0)),

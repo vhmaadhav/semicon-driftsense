@@ -51,6 +51,10 @@ from __future__ import annotations
 #             (.agents/B_CALIBRATION_REPORT.md); held-out AUC 0.9877 ->
 #             0.9915. Zero inference cost, no decode change.
 #   "legacy_min": the historical min(network score, native ZNCC).
+#   "min_med3": min(network score, ZNCC on a 3x3-median copy of the search
+#             frame at the final pose and the rigid answer) -- issue #87. The
+#             median touches this one number only; network and localisation
+#             keep the raw frame. See the block above SHIPPED_THRESHOLD.
 # The parity test pins register.py and eval_ext.py to this module's values.
 # --------------------------------------------------------------------------
 # Uncontested-hypothesis early exit (PR #51).
@@ -76,22 +80,48 @@ EARLY_EXIT_GATES = (
     (0.72, 0.72, 0.35, 0.04),   # clear coarse lead over the runner-up
 )
 
-SHIPPED_CONFIDENCE = "legacy_min"
+SHIPPED_CONFIDENCE = "min_med3"
 
 # Found threshold, in the units of whichever SHIPPED_CONFIDENCE is active.
 # The statistic and its threshold are ONE unit system -- change both or
 # neither (tests/test_submission_parity.py pins the coupling, not the value).
 #
-# Current: SHIPPED_CONFIDENCE="legacy_min", so 0.18 gates min(net, zncc) on the
-# shipped learned path. It is the shipped threshold, NOT a fallback value --
-# the fallback has its own gate below.
+# Current: SHIPPED_CONFIDENCE="min_med3" gated at 0.55 (issue #87), chosen on
+# the v2 dev split only (scripts/gen_phase2_v2_val.py, 500 pairs, seed
+# 850001) and confirmed on untouched splits -- see below.
 #
-# If SHIPPED_CONFIDENCE is ever set back to "fused6", this must move to 0.4870
-# at the same time: there the score column is a calibrated P(present) and 0.18
-# in those units decides nothing (re-tuned on the 2,250 holdout against the
-# total rubric with the downward bias convention -- declined present pairs
-# forfeit localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b).
-SHIPPED_THRESHOLD = 0.18
+# Why the statistic changed: on the dev split the historical legacy_min cannot
+# separate present from absent at any threshold (absent max 0.529, present
+# min 0.370; best total 82.47 in a narrow band, and 72.00 at 0.55 because 65
+# degraded present pairs fall below it). The median-ZNCC term separates it
+# (present min 0.592, absent max 0.529) and holds 82.41-82.80 for every
+# threshold from 0.35 to 0.60. Ablation: moving legacy_min's ZNCC to the final
+# pose changes nothing; the median is the whole effect.
+#
+# Why 0.55: the rule was fixed before any held-out split was scored -- inside
+# the empty band between the dev absent max (0.529) and present min (0.592),
+# shifted toward the absent side by the cost ratio (a declined present pair
+# also forfeits localisation and pose, ~2.7x an accepted absent pair):
+# 0.529 + 0.063 / 3.7 = 0.546 -> 0.55. That it equals
+# LEGACY_FALLBACK_THRESHOLD below is a coincidence of two separate
+# calibrations in two unit systems, not a shared value.
+#
+# Confirmed on data not used for the choice (paired against legacy_min@0.18,
+# same decode otherwise; localisation, scale and rotation bit-identical):
+#   v2 holdout (500, seed 850002)  80.23 -> 82.39, +2.16 [+1.40, +3.09];
+#                                  absent accepted 25 -> 0, present declined 0.
+#                                  present min 0.571, absent max 0.493; total
+#                                  82.20-82.39 for any threshold in [0.45, 0.60].
+#   mentor 25-pair v2 set          81.73 -> 83.40 (absent accepted 1 -> 0).
+#   fresh 48-pair v2 set (s777)    79.34 -> 81.99 (absent accepted 3 -> 0).
+#   generator/output (original generator, pixel-edge labels): 82.75 -> 82.75.
+# Runtime unchanged (median 2.11/2.12 s -> 2.06/2.13 s per pair, 4 threads).
+#
+# Previous pairings, kept consistent if ever restored: "legacy_min" -> 0.18
+# (swept on the original Phase 2 distribution); "fused6" -> 0.4870 (a
+# calibrated P(present), re-tuned on the 2,250 holdout against the total
+# rubric -- .agents/B_CALIBRATION_REPORT.md Result 4b).
+SHIPPED_THRESHOLD = 0.55
 # The no-weights ZNCC fallback in register.py scores a raw NCC, which is
 # neither unit system above, so it carries its own gate. Raised 0.18 -> 0.55 on
 # origin/phase2 (#54, issue #36) when the fallback stopped being a silent

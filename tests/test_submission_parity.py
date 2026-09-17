@@ -92,10 +92,17 @@ def test_register_threshold_default_is_the_shared_shipped_value():
     # Shipped default reverted to legacy_min on 2026-09-03 (PR #48 review):
     # fused6 measured -0.443 on an untouched holdout, P(better) = 0.011, and
     # moved rejection F1 away from the +4 bonus gate. See driftsense/config.py.
-    assert SHIPPED_CONFIDENCE in ("legacy_min", "fused6")
+    #
+    # 2026-09-17, issue #87: min_med3 (median-filtered ZNCC term) gated at 0.55,
+    # chosen on the v2 dev split and confirmed on held-out v2 splits.
+    assert SHIPPED_CONFIDENCE in ("legacy_min", "fused6", "min_med3")
     if SHIPPED_CONFIDENCE == "legacy_min":
         assert SHIPPED_THRESHOLD == pytest.approx(0.18), (
             "legacy min(score, zncc) is gated at 0.18")
+    elif SHIPPED_CONFIDENCE == "min_med3":
+        assert SHIPPED_THRESHOLD == pytest.approx(0.55), (
+            "min(score, median-ZNCC) is gated at 0.55; the legacy 0.18 would "
+            "accept absent pairs whose median-ZNCC sits in 0.2-0.5")
     else:
         assert SHIPPED_THRESHOLD == pytest.approx(0.4870), (
             "fused6 emits calibrated P(present); its gate is 0.4870, not the "
