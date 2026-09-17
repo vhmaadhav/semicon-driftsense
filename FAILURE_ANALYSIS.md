@@ -42,6 +42,13 @@ Living source for the final `failure_analysis.pdf` (max 2 pages). Keep this evid
 - **Mitigation:** fixed pose geometry, post-write dual verification, explicit semantic absence labels, Set-C similarity auditing, and supersampled anti-aliasing comparisons are integrated in `generator/`.
 - **Remaining limitation:** the coarse NCC baseline's error is not monotone at severity level 4 because periodic structure can create a harder wrong basin at a lower nominal degradation level. This is retained in the report rather than hidden by relabelling.
 
+## Evaluation follow-up - 8 September 2026
+
+- **Observed:** review of #75 reproduced coupled A/B sampling (identical 70 relative positions in equal 875-row pools) and silent 179-pair grades with only 39 C rows. Fixed with independent named random streams and an unweighted quota guard. Regression tests caught both before the fix.
+- **Measured impact:** 10,000 draws at t=.18, seed 0: pool P(F1>=.90) .6943 -> .6904; severity-3/4-only B .4733 -> .4658. The full-pool subtotal remains 77.5778/85. These small sampling changes do not establish a model improvement or invalidate the severity trend.
+- **Model priorities:** of Set B's 3.515 lost localisation points, 1.654 arise from accepted 1-5px predictions, 1.081 from accepted >5px predictions, and .779 from declined real pairs. Fine precision and wrong-basin handling need separate ablations.
+- **Remaining limitation:** saved-prediction reanalysis only; conditional fixed-pool draw intervals are not population-mean confidence intervals or blind-distribution guarantees. Evidence: `docs/research/rubric85-sampling-2026-09-08.md` and companion JSON.
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.

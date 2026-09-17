@@ -233,3 +233,26 @@ def test_bootstrap_smoke(mod, frame):
     out2 = mod.bootstrap(frame, thresholds=[0.5], draws=200, seed=0)
     assert out2[0]["p_f1_ge_bonus"] == r["p_f1_ge_bonus"]
     assert out2[0]["e_total"] == pytest.approx(r["e_total"])
+
+
+def test_equal_sized_strata_do_not_select_identical_positions(mod, frame):
+    """Resetting one seed per set couples every A/B choice in equal pools."""
+    draw = mod.stratified_draw(frame, seed=17)
+    a = {p.rsplit('_', 1)[-1] for p in draw.loc[draw['set'] == 'A', 'pair_id']}
+    b = {p.rsplit('_', 1)[-1] for p in draw.loc[draw['set'] == 'B', 'pair_id']}
+    # Independent 70-of-875 draws overlap ~5.6 positions, not all 70.
+    assert len(a & b) < 25
+
+
+def test_bootstrap_refuses_short_unmixed_stratum(mod, frame):
+    short = frame.drop(frame.index[frame['set'] == 'C'][39:])
+    with pytest.raises(ValueError, match='quota|needs'):
+        mod.bootstrap(short, thresholds=[0.18], draws=2)
+
+
+def test_first_simulated_grade_matches_standalone_draw(mod, frame):
+    drawn = mod.stratified_draw(frame, seed=23)
+    expected = mod.rubric(drawn, .5)
+    simulated = mod.bootstrap(frame, thresholds=[.5], draws=1, seed=23)[0]
+    assert simulated['e_total'] == pytest.approx(expected['total'])
+    assert simulated['mean_f1'] == pytest.approx(expected['f1_reject'])
