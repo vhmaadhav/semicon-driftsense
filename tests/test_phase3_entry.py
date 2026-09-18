@@ -297,3 +297,112 @@ def test_a_systematic_failure_raises_the_mass_failure_marker(tmp_path):
               "--allow-fallback", "--quiet"])
     assert "mass_failure" in r.stderr, (
         "a 100%-failure run must be impossible to miss")
+
+
+# --------------------------------------------------------------------------
+# The CAD / threshold decision boundary
+# --------------------------------------------------------------------------
+#
+# ``predict_pair`` carries two independent found-decisions and they must stay
+# independent:
+#
+#   CAD path        found = the CAD-to-CAD support decision   (threshold-free)
+#   image fallback  found = score >= threshold                (threshold-driven)
+#
+# ``--threshold`` was fitted for the Phase 2 image matcher, against a
+# correlation score. The CAD decision is the share of interior reference
+# polygons found at an exact integer-nm crop origin -- a different quantity on
+# a different scale. Gating the CAD branch on it declines pairs whose
+# ``support`` is 1.000, which is the same loss #108 repaired from the other
+# side: an exact anchor thrown away because a *second*, weaker signal did not
+# clear a bar meant for something else.
+#
+# This is not hypothetical. The Phase 3 calibration work (#102) re-fits that
+# threshold and edits this exact function, and its own rebase onto this branch
+# has to resolve a conflict here. These two tests are the thing that fails if
+# the resolution lets the threshold reach the CAD branch -- or, in the other
+# direction, if someone "fixes" the coupling by making the fallback
+# threshold-free as well.
+
+
+class _StubAnchor:
+    """Stand-in for ``cad_anchor.register``'s result.
+
+    ``score`` sits in the pose-unverified band [0.05, 0.10] on purpose: it is
+    below every threshold the repo has ever shipped, so a threshold that
+    reaches this branch flips ``found`` to 0 and the test fails loudly rather
+    than subtly.
+    """
+    x, y, theta, scale = 412.5, 173.25, 3.5, 10.0
+    found, score, support = 1, 0.07, 1.0
+    coarse_peak, n_interior, theta_coarse = 0.41, 40, 3.0
+    tiles_used, tiles_total, tile_ncc, tile_resid_px = 0, 64, 0.0, 0.0
+    yield_r2, magnification, reason = 0.0, 10.0, "cad-anchored/pose-unverified"
+
+
+@pytest.fixture
+def _blank_image(monkeypatch):
+    """Neither branch reads real pixels in these tests; only the wiring."""
+    blank = np.zeros((1000, 1000), np.uint8)
+    monkeypatch.setattr(phase3.I, "read_gray", lambda *a, **k: blank)
+    monkeypatch.setattr(phase3.gds, "render_reference", lambda *a, **k: blank)
+    return blank
+
+
+def test_cad_decision_is_not_gated_by_the_image_matcher_threshold(
+        monkeypatch, _blank_image):
+    monkeypatch.setattr(phase3.cad_anchor, "register",
+                        lambda *a, **k: _StubAnchor())
+
+    seen = set()
+    for thr in (0.0, 0.20, 0.55, 0.75, 0.99):
+        r = phase3.predict_pair(None, None, "ref.gds", "s.png", "search.gds",
+                                threshold=thr)
+        assert r["method"] == "cad", (
+            f"threshold {thr} pushed a CAD-anchored pair onto the image "
+            "fallback")
+        seen.add((r["found"], round(r["score"], 6)))
+
+    assert seen == {(1, 0.07)}, (
+        "the CAD found-decision moved with --threshold. `found` on that branch "
+        "is cad_anchor's support decision and must not consult a constant "
+        f"fitted for the image matcher. Saw: {sorted(seen)}")
+
+
+def test_image_fallback_still_honours_the_threshold(monkeypatch, _blank_image):
+    """The other half of the same contract.
+
+    Decoupling must not be achieved by making *everything* threshold-free --
+    the fallback is the Phase 2 matcher and its threshold is load-bearing
+    there.
+    """
+    monkeypatch.setattr(phase3, "decode", lambda *a, **k: {
+        "x": 1.0, "y": 2.0, "theta": 0.0, "scale": 10.0, "confidence": 0.50})
+    model = object()   # not None, so the learned path is taken
+
+    lo = phase3.predict_pair(model, None, "ref.gds", "s.png", "", threshold=0.20)
+    hi = phase3.predict_pair(model, None, "ref.gds", "s.png", "", threshold=0.75)
+
+    assert lo["method"] == hi["method"] == "image"
+    assert (lo["found"], hi["found"]) == (1, 0), (
+        "the image fallback stopped tracking --threshold; a score of 0.50 must "
+        "be found at 0.20 and declined at 0.75")
+
+
+def test_an_unusable_search_cad_falls_back_and_says_so(monkeypatch, _blank_image):
+    """The seam itself: when the CAD path declines to answer, the pair moves to
+    the threshold-driven branch and the reason survives into the row, so a
+    blind run can be audited afterwards."""
+    monkeypatch.setattr(phase3.cad_anchor, "register", _raise_unavailable)
+    monkeypatch.setattr(phase3, "decode", lambda *a, **k: {
+        "x": 1.0, "y": 2.0, "theta": 0.0, "scale": 10.0, "confidence": 0.50})
+
+    r = phase3.predict_pair(object(), None, "ref.gds", "s.png", "search.gds",
+                            threshold=0.20)
+    assert r["method"] == "image"
+    assert "cad unavailable" in r["note"]
+    assert r["found"] == 1
+
+
+def _raise_unavailable(*a, **k):
+    raise phase3.cad_anchor.CadAnchorUnavailable("forced: no search-frame CAD")
