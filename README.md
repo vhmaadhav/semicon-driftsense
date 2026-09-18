@@ -35,6 +35,14 @@ Runs CPU-only, no network access, weights load from `weights/driftsense.pt`
 automatically. Reference machine: 4-core x86, 8 GB RAM, no GPU, Python 3.11;
 median ≤5 s/pair, 20 s hard timeout.
 
+### Phase 3 entry point (Reference is GDSII CAD layout)
+
+```bash
+python phase3.py --input pairs.csv --output predictions.csv
+```
+
+Accepts `pairs.csv` with Phase 3 schema (`pair_id, reference_gds_path, search_path`), parses GDSII design layouts via `gdstk`, renders the 8-layer stack to reference raster, and runs the registration pipeline under the same output contract. Runs CPU-only, no network access.
+
 ## Quick start
 
 Requires **Python 3.11**, matching the reference machine. `requirements.txt`
