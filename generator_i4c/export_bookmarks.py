@@ -28,7 +28,9 @@ import cv2
 import gdstk
 import numpy as np
 
-from generate_cad_varied import applied_rotation_deg, full_canvas_cell
+# cad_export, not generate_cad_varied: importing the latter swaps in its
+# crash-safe corner rounding, and these samples must render exactly as upstream.
+from cad_export import applied_rotation_deg, full_canvas_cell
 from src.cad_pipeline import SCALE_FACTOR, CadGenerationParams, build_cad_geometry, render_cad_sample
 
 

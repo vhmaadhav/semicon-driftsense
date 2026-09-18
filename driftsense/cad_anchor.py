@@ -84,6 +84,13 @@ SCALE_BELIEVE = 0.03
 # on true frames tx ran -1.94..-0.35 px, tracking -shear/2 (r = 0.92). A
 # 1.5 px bar applied it on 27% of pairs and cost them ~1.7 px each.
 TRANSLATION_BELIEVE_PX = 5.0
+# A search CAD must span at least this share of the search frame on each axis.
+# Datasets written without a real search CAD point search_gds_path at the
+# reference file (1000 nm against a 10000 nm frame); that must fall back,
+# not answer.
+MIN_FRAME_COVERAGE = 0.5
+# And the frame fit must agree on at least this share of all tile positions.
+MIN_TILE_SHARE = 0.25
 
 
 class CadAnchorUnavailable(RuntimeError):
@@ -192,6 +199,13 @@ def _bboxes(polys: dict) -> dict:
 def load_search_cad(path: str, image_shape: tuple) -> SearchCad:
     polys, nl = read_gds_layers(path)
     h, w = image_shape
+    pts = np.concatenate([np.concatenate(ps) for ps in polys.values() if ps])
+    span = pts.max(axis=0) - pts.min(axis=0)
+    need = np.array([w, h], float) * SEARCH_NM_PER_PX * MIN_FRAME_COVERAGE
+    if np.any(span < need):
+        raise CadAnchorUnavailable(
+            f"search CAD spans {span[0]:.0f} x {span[1]:.0f} nm, not the {w * SEARCH_NM_PER_PX:.0f} nm "
+            "search frame -- it is not a search-side CAD")
     masks = layer_masks(polys, nl, (w, h), SEARCH_NM_PER_PX)
     if masks.max() <= 0:
         raise CadAnchorUnavailable("search CAD has no geometry inside the search frame")
@@ -546,6 +560,8 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     if best is None:
         raise CadAnchorUnavailable("no rotation candidate aligned the frame")
     _, th0, shift, (theta, ds, b, pts, keep, resid) = best
+    if keep.sum() < MIN_TILE_SHARE * n_tiles:
+        raise CadAnchorUnavailable(f"only {int(keep.sum())} of {n_tiles} tiles aligned")
     out.theta_coarse = th0
 
     # Yield fit on the aligned frame, then one more pass on the fitted render.

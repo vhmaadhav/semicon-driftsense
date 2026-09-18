@@ -251,3 +251,14 @@ def test_paths_relative_to_the_dataset_root_resolve_when_run_from_it(generated, 
     p = next(csv.DictReader(open(out)))
     assert p["found"] == "1"
     assert math.hypot(float(p["x"]) - float(r["gt_x"]), float(p["y"]) - float(r["gt_y"])) < 0.25
+
+
+def test_a_reference_passed_as_the_search_cad_falls_back(generated):
+    """Datasets written without a real search CAD (the upstream CLI, the older
+    repo generator) point search_gds_path at the reference file. That must
+    raise so phase3.py falls back -- never answer from a 1000 nm 'frame'."""
+    (d, rows), _ = generated
+    r = rows[0]
+    img = cv2.imread(str(d / r["search_path"]), cv2.IMREAD_GRAYSCALE)
+    with pytest.raises(CA.CadAnchorUnavailable):
+        CA.register(str(d / r["reference_gds_path"]), str(d / r["reference_gds_path"]), img)
