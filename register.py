@@ -11,7 +11,10 @@ Scale semantics, fixed by the Phase 2 task material (slide 5 + prompt section
 recovered down-scaling factor z -- nominally in [8, 12], i.e. the search
 image's nm/px -- NOT the reference-to-search linear factor 1/z (the two
 readings differ by ~100x). theta is degrees, CCW positive as displayed,
-about the match centre.
+about the match centre. x, y are written in the pixel convention of the
+grader's labels, driftsense.config.SHIPPED_LABEL_CONVENTION: "center" (the
+Phase 2 v2 extension generator: pixel i spans [i-0.5, i+0.5]) or "edge" (the
+original Phase 2 generator: pixel i spans [i, i+1)); issue #86.
 
 Two properties are treated as non-negotiable, because the scoring rules make
 them expensive to get wrong:
@@ -36,7 +39,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import infer as I  # noqa: E402
-from driftsense.matching import locate_phase2  # noqa: E402
+from driftsense.matching import LABEL_CONVENTIONS, locate_phase2  # noqa: E402
 
 # The shipped Phase 2 operating point lives in driftsense.config (the ONE
 # definition of the shipped decode config, so eval_ext.py and the parity tests
@@ -46,6 +49,8 @@ from driftsense.matching import locate_phase2  # noqa: E402
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
 from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
+from driftsense.config import SHIPPED_LABEL_CONVENTION  # noqa: E402
+from driftsense.config import SHIPPED_STRIP_ROTATION  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
 from driftsense.config import DOG_OVERRIDE_MARGIN  # noqa: E402
 
@@ -416,6 +421,16 @@ def main():
                          "selector. Default %(default)s (driftsense.config."
                          "DOG_OVERRIDE_MARGIN); 0.0 disables every override, so the "
                          "selector degrades exactly to zncc.")
+    ap.add_argument("--label-convention", default=SHIPPED_LABEL_CONVENTION,
+                    choices=LABEL_CONVENTIONS,
+                    help="pixel convention the x, y columns are written in, "
+                         "matching the grader's labels (default: the shipped "
+                         "driftsense.config value). 'center': pixel i spans "
+                         "[i-0.5, i+0.5] -- the Phase 2 v2 extension "
+                         "generator. 'edge': pixel i spans [i, i+1) -- the "
+                         "original Phase 2 generator and our own data. It "
+                         "also selects the scan row whose raster-drift sample "
+                         "the label carries (issue #86)")
     ap.add_argument("--threads", type=int, default=0,
                     help="torch/OpenCV thread cap. 0 (default) auto-caps to "
                          "min(4, CPU cores) to match the 4-core reference "
@@ -553,6 +568,13 @@ def main():
                     # rather than the caller's --threshold.
                     res = I.zncc_fallback(ref, sea)
                     threshold = LEGACY_FALLBACK_THRESHOLD
+                    # zncc_fallback reports top-left + tw/2 (pixel-edge), the
+                    # decoder's internal convention; re-express it exactly as
+                    # locate_phase2 does, so the output file never mixes
+                    # conventions between the two paths (issue #86).
+                    if a.label_convention == "center":
+                        res["x"] = float(res["x"]) - 0.5
+                        res["y"] = float(res["y"]) - 0.5
                 else:
                     threshold = a.threshold
                     # band=False: the difference-of-Gaussians pre-filter on
@@ -567,7 +589,9 @@ def main():
                                         verification=a.verification,
                                         dog_override_margin=a.dog_override_margin,
                                         band=SHIPPED_BAND,
-                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
+                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
+                                        strip_rot=SHIPPED_STRIP_ROTATION,
+                                        label_convention=a.label_convention)
                 # The reported confidence (see locate_phase2): the shipped
                 # legacy min(network score, native ZNCC) on the model path,
                 # raw ZNCC on the fallback path.

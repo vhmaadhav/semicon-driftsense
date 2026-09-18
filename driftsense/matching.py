@@ -269,6 +269,58 @@ DRIFT_ROW_MIN_CORR = 0.30
 DRIFT_MAX_SHIFT = 5.0      # upper bound; the effective clamp is drift-scaled
 DRIFT_CLAMP_K = 2.0        # clamp = clip(K * measured drift sd, 2.0, DRIFT_MAX_SHIFT)
 
+# Issue #89. Two corrections to the stage above, both measured on the v2 dev
+# split (400 present pairs) and confirmed on the untouched holdout split:
+#
+#   DRIFT_ROW_ALIGN   resample the template onto the search frame's own row
+#                     grid before reading per-row offsets. cy is sub-pixel, so
+#                     template row i generally straddles two search rows, which
+#                     costs correlation height for nothing -- the horizontal
+#                     shift being measured belongs to the search row either
+#                     way. The effect is real but SMALL, and it is kept
+#                     because it was verified rather than assumed: mean
+#                     centre-row correlation 0.6042 -> 0.6071 on dev, and the
+#                     gain tracks how far off the grid the template sits, which
+#                     is the signature the mechanism predicts (+0.0006 where
+#                     |offset| < 0.125 px, rising monotonically to +0.0057 near
+#                     half a pixel). Worth about +0.02 localisation points on
+#                     its own; it has not measured negative on any split.
+#   DRIFT_SHRINK_SIGMA
+#                     the row measurement is m = s + e: the row's own drift
+#                     sample plus measurement noise. Taking m whole was
+#                     measurably WORSE than declining at both ends of the
+#                     severity ladder -- on dev, mean |dx| at severity 0 went
+#                     0.233 (no correction) -> 0.251 (corrected) and at
+#                     severity 4 0.773 -> 0.839, because a quiet frame has
+#                     almost no drift to recover and a severity-4 row is
+#                     measured badly. Scaling m by its own signal-to-noise
+#                     repairs both ends (0.207 and 0.754) while keeping the
+#                     middle. sigma_m is modelled as this constant over the
+#                     row's correlation peak; credit is flat from 0.20 to 0.40
+#                     on both splits. None restores the unshrunk correction.
+DRIFT_ROW_ALIGN = True
+DRIFT_SHRINK_SIGMA = 0.25
+
+# Drift-immune rotation from vertical strip offsets (issue #88); see
+# `strip_rotation` for the geometry and driftsense.config for why the stage
+# ships. Every value below was chosen on the v2 dev split (400 present pairs),
+# on a surface that is flat around each of them:
+#   strips     6 and 8 tie (credit 0.958 / 0.957), 12 drops to 0.931, and 16
+#              leaves strips narrower than the 8 px floor, i.e. a no-op.
+#   lag        2 / 3 / 5 all within 0.002 credit.
+#   iters      1 and 2 within 0.002; one pass is taken because it is cheaper
+#              (the correction is ~0.1 deg, so re-posing buys no linearity).
+#   min_peak   0.20 and 0.35 within 0.002.
+STRIP_ROT_N = 8            # vertical strips the posed template is cut into
+STRIP_ROT_LAG = 3          # +/- px searched around the rigid match, per strip
+STRIP_ROT_ITERS = 1        # re-pose and re-measure this many times
+STRIP_ROT_MIN_PEAK = 0.20  # a strip below this correlation carries no geometry
+STRIP_ROT_MIN_STRIPS = 4   # fewer usable strips than this: decline
+STRIP_ROT_MAX_DELTA = 1.0  # deg; a larger correction than this is a runaway
+STRIP_ROT_SIGMA_PRIOR = 0.15   # deg; polish_pose's own error sd in the blend
+DESTREAK_WIN = 15          # rows in the running median of the row profile
+DESTREAK_K = 4.0           # MADs above the running median that count as a streak
+
 # Samples in the coarse scale sweep. This is a *sampling* parameter, not a
 # ranking one, and it was undersampling its own objective: 17 points across
 # [8, 12] is a 2.5% step at m=10, while the correlation-vs-scale peak is only
@@ -831,6 +883,40 @@ def refine_zncc(search: np.ndarray, template: np.ndarray,
     return (x0c + pj + dx) + tw / 2.0, (y0c + pi + dy) + th / 2.0, float(score)
 
 
+# Median kernel for the confidence's ZNCC term (issue #87). 3x3 is the smallest
+# median that removes isolated impulses; the code comment in locate_phase2 on
+# the denoise option records that a 5x5 median destroys matches outright.
+CONFIDENCE_MEDIAN_KSIZE = 3
+
+
+def denoised_zncc(reference: np.ndarray, search: np.ndarray, cx: float, cy: float,
+                  scale: float, rotation_deg: float, radius: int = REFINE_RADIUS,
+                  ksize: int = CONFIDENCE_MEDIAN_KSIZE) -> float:
+    """Peak ZNCC of the posed template within +/- `radius` px of (cx, cy)
+    (pixel-edge), measured on a median-filtered copy of the search frame.
+
+    A presence statistic, not a localiser: the frame copy is used for this
+    number only. Returns 0.0 where the window leaves the frame, like
+    `refine_zncc`.
+    """
+    frame = search if search.dtype in (np.uint8, np.uint16, np.float32) else search.astype(np.float32)
+    med = standardize(cv2.medianBlur(frame, int(ksize)) / 255.0)
+    tpl = standardize(make_template(reference, scale, rotation_deg) / 255.0)
+    # The same window arithmetic as refine_zncc, which only the peak value of
+    # is needed here (and which tests stub for the localisation path).
+    h, w = med.shape
+    th, tw = tpl.shape
+    x0 = int(round(cx - tw / 2.0)) - radius
+    y0 = int(round(cy - th / 2.0)) - radius
+    x0c, y0c = max(x0, 0), max(y0, 0)
+    x1c, y1c = min(x0 + tw + 2 * radius, w), min(y0 + th + 2 * radius, h)
+    if x1c - x0c < tw + 1 or y1c - y0c < th + 1:
+        return 0.0
+    res = cv2.matchTemplate(med[y0c:y1c, x0c:x1c].astype(np.float32),
+                            tpl.astype(np.float32), cv2.TM_CCOEFF_NORMED)
+    return float(cv2.minMaxLoc(res)[1])
+
+
 # --- Sub-pixel: the centre row's raster-drift sample ------------------------
 #
 # Raster drift shifts each scan row of the search frame horizontally by its own
@@ -880,13 +966,37 @@ def row_pitch(template: np.ndarray) -> float | None:
     return None
 
 
+def _row_median(img: np.ndarray, k: int) -> np.ndarray:
+    """Median over a 1 x k horizontal window.
+
+    Row-preserving on purpose: impulse noise goes, and every scan row keeps its
+    own raster-drift sample. A 2-D median would mix neighbouring rows, whose
+    drift samples are independent, and so would blur out the very quantity
+    `row_offsets` is measuring.
+    """
+    if k < 3:
+        return img
+    pad = int(k) // 2
+    p = np.pad(img.astype(np.float32), ((0, 0), (pad, pad)), mode="edge")
+    return np.median(np.lib.stride_tricks.sliding_window_view(p, int(k), axis=1), axis=2)
+
+
 def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
-                lag: int = DRIFT_ROW_LAG, return_corr: bool = False):
+                lag: int = DRIFT_ROW_LAG, return_corr: bool = False,
+                hmedian: int = 0, align_rows: bool = False):
     """Per-row horizontal offset between the search frame and the posed template.
 
     `make_template` returns the reference already rotated and scaled into the
     search frame, so template row i lines up with exactly one search row --
     which is the granularity raster drift acts on.
+
+    `hmedian` (odd, >= 3) applies a row-preserving 1 x k median to both sides
+    first. `align_rows` resamples the template onto the search frame's own row
+    grid before correlating: `cy` is sub-pixel, so template row i generally
+    straddles two search rows, which costs every row's correlation peak height
+    for no gain -- the horizontal shift being measured belongs to the search
+    row either way. Both default off here; `drift_row_refine` turns them on
+    or off according to the measured constants.
 
     Returns `(offset, peak)`, each of length `template.shape[0]`, with NaN where
     the 1-D correlation peak landed on the window edge and cannot be
@@ -901,6 +1011,17 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
 
     win = search[y0:y0 + th, x0 - lag:x0 + tw + lag].astype(np.float32)
     tpl = template.astype(np.float32)
+    if align_rows:
+        # The template's top row sits at cy - th/2, the window's at y0, so the
+        # template is resampled down the column by their difference.
+        dy = (cy - th / 2.0) - y0
+        if abs(dy) > 1e-3:
+            tpl = cv2.warpAffine(tpl, np.float32([[1, 0, 0], [0, 1, dy]]), (tw, th),
+                                 flags=cv2.INTER_LINEAR,
+                                 borderMode=cv2.BORDER_REPLICATE)
+    if hmedian and hmedian >= 3:
+        win = _row_median(win, int(hmedian) | 1)
+        tpl = _row_median(tpl, int(hmedian) | 1)
     tpl = tpl - tpl.mean(axis=1, keepdims=True)
     tn = np.sqrt((tpl ** 2).sum(axis=1))
     tn[tn < 1e-6] = 1e-6
@@ -927,18 +1048,62 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
     return off, peak
 
 
+LABEL_CONVENTIONS = ("edge", "center")
+
+
+def label_row(cy: float, label_convention: str = "edge") -> int:
+    """The search row whose raster-drift sample a label at `cy` carries.
+
+    `cy` is in the decoder's own pixel-edge convention (centre = top-left +
+    th/2). Both generators read `row_shift[round(y)]`, but each in its own
+    convention: ours with the pixel-edge y (`generate.correct_gt`), the Phase 2
+    v2 extension generator with the pixel-centre y, which is `cy - 0.5`
+    (`phase2_pipeline.drift_forward_pt`). The two pick different rows whenever
+    the pixel-centre y has a fractional part below one half -- about half of
+    all pairs -- and per-row jitter is white, so the wrong row carries no
+    information about the labelled one (issue #86).
+    """
+    if label_convention == "center":
+        return int(round(cy - 0.5))
+    if label_convention == "edge":
+        return int(round(cy))
+    raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                     f"got {label_convention!r}")
+
+
 def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
                      radius: int = 3, lag: int = DRIFT_ROW_LAG,
                      min_corr: float = DRIFT_ROW_MIN_CORR,
-                     max_shift: float = DRIFT_MAX_SHIFT) -> tuple[float, float] | None:
+                     max_shift: float = DRIFT_MAX_SHIFT,
+                     label_convention: str = "edge",
+                     hmedian: int = 0, align_rows: bool = DRIFT_ROW_ALIGN,
+                     shrink_sigma: float | None = DRIFT_SHRINK_SIGMA) -> tuple[float, float] | None:
     """Re-place a match at the drift row the label is defined on.
 
     Returns the corrected `(x, y)`, or None to decline -- the caller then keeps
     the rigid estimate. Declining is deliberate and common (~19% of pairs):
     loosening `min_corr` to correct more pairs was measured *worse* on the full
     set, because a badly measured row is worse than no correction at all.
+    Between declining and believing a row whole there is a third option, which
+    is what `shrink_sigma` does: believe it in proportion to how well it was
+    measured (issue #89; see the constants block).
+
+    `cx, cy` and the returned point are pixel-edge coordinates whatever
+    `label_convention` says; the convention only selects which row's drift
+    sample the label carries (see `label_row`).
+
+    `hmedian` applies a row-preserving 1 x k median first. It is off because it
+    was measured NEGATIVE on the v2 dev split -- localisation 38.92 -> 38.61
+    points at k=3 and 38.46 at k=5, with the worst error growing 3.2 -> 4.2 px:
+    the median admits more rows past `min_corr` but blunts the horizontal
+    structure the sub-pixel peak is fitted to. Kept as a parameter because it
+    is the obvious thing to reach for and the measurement is worth preserving.
     """
-    off, peak, corr = row_offsets(search, template, cx, cy, lag=lag, return_corr=True)
+    if label_convention not in LABEL_CONVENTIONS:
+        raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                         f"got {label_convention!r}")
+    off, peak, corr = row_offsets(search, template, cx, cy, lag=lag, return_corr=True,
+                                  hmedian=hmedian, align_rows=align_rows)
     if off is None:
         return None
     ok = np.isfinite(off) & (peak > min_corr)
@@ -969,13 +1134,14 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
 
     th, tw = template.shape
     y0 = int(round(cy - th / 2.0))
-    ci = int(round(cy)) - y0              # the search row `correct_gt` labels against
+    ci = label_row(cy, label_convention) - y0   # the search row the label is read against
     if not (0 <= ci < th) or not ok[ci]:
         return None                       # the row that decides the answer is unusable
 
     # Gaps are interpolated only to flatten the patch; the centre row itself is
-    # never interpolated (see the `ok[ci]` guard) because drift is white and an
-    # interpolated value carries none of its neighbours' information.
+    # never interpolated (the guard above requires its own finite measurement)
+    # because drift is white and an interpolated value carries none of its
+    # neighbours' information.
     dense = np.interp(np.arange(th), np.arange(th)[ok], off[ok])
 
     # Scale the runaway guard to the drift this pair actually shows: at severity
@@ -1005,10 +1171,178 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
 
     rx, ry, _ = refine_zncc(standardize(flat / 255.0), standardize(template / 255.0),
                             cx - xa, cy - ya, radius=radius)
-    nx, ny = rx + xa + float(dense[ci]), ry + ya
+    # How much of the row's measured offset to believe (issue #89). The
+    # measurement is  m = s + e:  the row's own drift sample s (sd sigma_j)
+    # plus measurement noise e (sd sigma_m). `resid_sd` above already
+    # estimates sigma_j^2 + sigma_m^2 -- it is the scatter of the row offsets
+    # about their smooth trend -- and sigma_m falls as the row's correlation
+    # peak rises, so model it as shrink_sigma / peak. The minimum-MSE estimate
+    # of s is then m * (1 - sigma_m^2 / resid_sd^2), which shrinks the
+    # correction toward the rigid answer exactly when the row is either
+    # poorly measured or barely drifting. shrink_sigma=None keeps the
+    # unshrunk correction this stage shipped with.
+    row_shift = float(dense[ci])
+    if shrink_sigma is not None:
+        sigma_m = shrink_sigma / max(float(peak[ci]), 1e-3)
+        w = 1.0 - sigma_m ** 2 / max(resid_sd ** 2, 1e-9)
+        row_shift *= float(np.clip(w, 0.0, 1.0))
+    nx, ny = rx + xa + row_shift, ry + ya
     if not np.isfinite(nx) or abs(nx - cx) > max_shift:
         return None                       # runaway re-match; keep the rigid answer
     return float(nx), float(ny)
+
+
+# --- Rotation: the drift-immune half of the residual ------------------------
+#
+# `polish_pose` fits rotation with a 2-D ZNCC, which uses both components of
+# the displacement a rotation error produces. Only one of them is trustworthy
+# on a raster-scanned frame.
+#
+# A rotation error `d` (radians) displaces template point (u, v) -- column and
+# row, measured from the template centre -- by approximately (d*v, -d*u):
+#
+#   * the HORIZONTAL part, d*v, varies along the row axis. So does raster
+#     drift, which shifts every scan row horizontally by its own amount: a
+#     linear shear across the frame is indistinguishable from a rotation of
+#     -(shear / height), and the per-row jitter on top of it is noise in the
+#     same channel. On the v2 extension's severity ladder that shear alone is
+#     worth 0.06-0.17 deg of apparent rotation -- the same order as the whole
+#     error budget, and with the sign the measurements show.
+#   * the VERTICAL part, -d*u, varies along the column axis. Drift, shear,
+#     scale error and (to first order) barrel distortion contribute no term
+#     that is linear in the column, because none of them move content
+#     vertically. So the slope of strip-wise vertical offset against strip
+#     centre isolates the rotation residual.
+#
+# Hence: cut the posed template into vertical strips, measure each strip's own
+# vertical offset, and regress. Two practical requirements, both measured:
+# charging streaks (full-width bright rows) give strips a strong false vertical
+# lock, and impulse noise flattens their correlation peaks, so the correlation
+# copy is de-streaked and median-filtered first; and the estimate is blended
+# with `polish_pose`'s rather than replacing it, because on a poorly textured
+# strip set the regression is the noisier of the two.
+
+
+def destreak(img: np.ndarray, win: int = DESTREAK_WIN,
+             k: float = DESTREAK_K) -> np.ndarray:
+    """Remove additive full-width bright rows (charging streaks) from `img`.
+
+    A streak raises a whole scan row's level, so it shows up as a positive
+    outlier in the row-median profile against that profile's own running
+    median. Only positive excursions beyond `k` MADs are subtracted, and only
+    the offending rows are touched: an ordinary row keeps its exact values.
+
+    For correlation inputs only -- the network keeps raw pixels.
+    """
+    f = img.astype(np.float32)
+    prof = np.median(f, axis=1)
+    pad = int(win) // 2
+    base = np.median(np.lib.stride_tricks.sliding_window_view(
+        np.pad(prof, pad, mode="edge"), int(win)), axis=1)
+    ex = prof - base
+    mad = float(np.median(np.abs(ex - np.median(ex)))) + 1e-6
+    fix = np.where(ex > k * 1.4826 * mad, ex, 0.0).astype(np.float32)
+    if not fix.any():
+        return img
+    return np.clip(f - fix[:, None], 0, 255).astype(img.dtype)
+
+
+def strip_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
+                  n_strips: int = STRIP_ROT_N, lag: int = STRIP_ROT_LAG):
+    """Vertical offset of each vertical strip of the posed template.
+
+    Each strip is matched in a +/- `lag` px window around where the rigid
+    answer puts it, in both axes, so a horizontal anchor error inside the
+    window is absorbed rather than aliased into the vertical reading.
+
+    Returns (u, dy, peak): strip centres relative to the template centre, their
+    sub-pixel vertical offsets, and the correlation peak that produced each.
+    """
+    th, tw = template.shape
+    x0 = int(round(cx - tw / 2.0))
+    y0 = int(round(cy - th / 2.0))
+    h, w = search.shape
+    sw = tw // int(n_strips)
+    if sw < 8:
+        return np.empty(0), np.empty(0), np.empty(0)
+    S = search.astype(np.float32)
+    T = template.astype(np.float32)
+    us, dys, peaks = [], [], []
+    for k in range(int(n_strips)):
+        a = k * sw
+        strip = T[:, a:a + sw]
+        ya, yb = y0 - lag, y0 + th + lag
+        xa, xb = x0 + a - lag, x0 + a + sw + lag
+        if ya < 0 or xa < 0 or yb > h or xb > w or strip.std() < 1e-3:
+            continue
+        res = cv2.matchTemplate(S[ya:yb, xa:xb], strip, cv2.TM_CCOEFF_NORMED)
+        _, mx, _, loc = cv2.minMaxLoc(res)
+        j, i = loc
+        if not (0 < i < res.shape[0] - 1):
+            continue                      # peak on the window edge: unresolved
+        us.append(a + sw / 2.0 - tw / 2.0)
+        dys.append((i - lag) + parabolic(res[i - 1, j], res[i, j], res[i + 1, j]))
+        peaks.append(mx)
+    return np.array(us), np.array(dys), np.array(peaks)
+
+
+def strip_rotation(reference: np.ndarray, search: np.ndarray, cx: float, cy: float,
+                   scale: float, rotation_deg: float,
+                   n_strips: int = STRIP_ROT_N, lag: int = STRIP_ROT_LAG,
+                   iters: int = STRIP_ROT_ITERS,
+                   min_peak: float = STRIP_ROT_MIN_PEAK,
+                   min_strips: int = STRIP_ROT_MIN_STRIPS,
+                   max_delta: float = STRIP_ROT_MAX_DELTA,
+                   sigma_prior: float = STRIP_ROT_SIGMA_PRIOR,
+                   prefilter: bool = True) -> tuple[float, float] | None:
+    """Rotation refined from vertical strip offsets, blended with the input.
+
+    `search` is the native frame; `cx, cy` are the RIGID pixel-edge match
+    (before any drift-row re-placement), which is where the posed template
+    actually aligns. `rotation_deg` is `polish_pose`'s answer, and doubles as
+    the prior: the returned angle is the inverse-variance blend of it with the
+    strip regression, so a well-determined regression is adopted nearly whole
+    and a noisy one barely moves the answer.
+
+    Returns (rotation_deg, sigma) in degrees, or None to decline -- too few
+    usable strips, or a correction beyond `max_delta` (a runaway, not a
+    sub-degree residual). `sigma` is the regression's own standard error.
+    """
+    frame = destreak(search) if prefilter else search
+    if prefilter:
+        frame = cv2.medianBlur(frame, 3)
+    theta = float(rotation_deg)
+    sigma = float("inf")
+    for _ in range(max(int(iters), 1)):
+        tpl = make_template(reference, scale, theta)
+        u, dy, peak = strip_offsets(frame, tpl, cx, cy, n_strips=n_strips, lag=lag)
+        ok = peak > min_peak
+        if ok.sum() < max(int(min_strips), 3):
+            return None
+        # Weighted least squares, weights peak^2: a strip's correlation height
+        # is what says how well its own offset is determined.
+        u_, dy_, w = u[ok], dy[ok], peak[ok] ** 2
+        sw = w.sum()
+        um = (w * u_).sum() / sw
+        suu = (w * (u_ - um) ** 2).sum()
+        if suu <= 1e-9:
+            return None
+        slope = (w * (u_ - um) * dy_).sum() / suu
+        resid = dy_ - (slope * (u_ - um) + (w * dy_).sum() / sw)
+        dof = max(int(ok.sum()) - 2, 1)
+        # Standard error of the slope (the weights' overall scale cancels),
+        # then of the angle it implies. Floored: a handful of strips can agree
+        # by luck, and a zero sigma would let the blend below adopt the
+        # regression whole on that evidence.
+        s2 = (w * resid ** 2).sum() / dof
+        sigma = max(float(np.degrees(np.sqrt(max(s2, 0.0) / suu))), 0.02)
+        theta -= np.degrees(slope)
+    delta = theta - float(rotation_deg)
+    if not np.isfinite(delta) or abs(delta) > max_delta:
+        return None
+    # Inverse-variance blend with the polish estimate (prior sd `sigma_prior`).
+    wgt = sigma_prior ** 2 / (sigma_prior ** 2 + sigma ** 2)
+    return float(rotation_deg) + float(wgt * delta), float(sigma)
 
 
 def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
@@ -1130,12 +1464,28 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   hypotheses: int = 3, coarse_scales: int = COARSE_SCALES,
                   band: bool = False, return_hypotheses: bool = False,
                   early_exit_zncc: float | None = None,
-                  rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc",
                   dog_override_margin: float = DOG_OVERRIDE_MARGIN,
                   denoise: int = 0,
-                  subpixel_rows: bool = True, **kw) -> dict:
+                  subpixel_rows: bool = True, label_convention: str = "edge",
+                  strip_rot: bool = False, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
+
+    label_convention names the pixel convention of the labels the answer will
+    be scored against (driftsense.config.SHIPPED_LABEL_CONVENTION, issue #86).
+    Every stage works in pixel-edge coordinates; "center" re-expresses only the
+    reported x, y (0.5 px up-left) and reads the raster-drift sample from the
+    row a pixel-centre label is defined on. The default "edge" is the
+    convention of our own generator and training data, and reproduces the
+    historical output exactly. Diagnostics under return_hypotheses stay in the
+    internal pixel-edge frame.
+
+    strip_rot adds the drift-immune rotation refinement (issue #88;
+    driftsense.config.SHIPPED_STRIP_ROTATION). It changes `theta` only, and
+    the stages below it -- the drift-row re-placement and the confidence --
+    then build their templates from that pose. Defaults to False here, like
+    label_convention's "edge", so the signature default reproduces the
+    historical output exactly; register.py passes the shipped value.
 
     band=False is the measured default (full 2,250-pair A/B, 2026-08-31):
     band-passing the coarse probe cost 0.45 rubric points (paired loc delta
@@ -1180,6 +1530,9 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     valid_verification = {"zncc", "majority", "consensus", "dog-override"}
     if verification not in valid_verification:
         raise ValueError(f"verification must be one of {sorted(valid_verification)}")
+    if label_convention not in LABEL_CONVENTIONS:
+        raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                         f"got {label_convention!r}")
 
     # The baseline path never enters this block. Research instrumentation and
     # optional selectors share one set of full-search feature maps per pair --
@@ -1395,6 +1748,11 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     best["winner_margin"] = winner_margin(candidates, best)
 
     if refine and polish:
+        # Kept for analysis: the pose the polish started from. Free (they are
+        # already in hand) and the only way an offline sweep can separate what
+        # the polish did from what the stages after it did.
+        best["theta_pre_polish"] = float(best["theta"])
+        best["scale_pre_polish"] = float(best["scale"])
         pm, pr, _ = polish_pose(reference, search, best["x"], best["y"],
                                 best["scale"], best["theta"])
         best["theta"] = float(pr)
@@ -1421,6 +1779,29 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
             if np.hypot(rx - best["x"], ry - best["y"]) <= 3.0:
                 best.update({"x": rx, "y": ry, "zncc": float(zn)})
 
+        # Rotation, re-measured on the one axis raster drift cannot reach, and
+        # blended with the answer above (issue #88; see `strip_rotation` and
+        # driftsense.config.SHIPPED_STRIP_ROTATION). Placed here, before the
+        # drift-row re-placement and the confidence, so that every stage below
+        # uses one final pose -- the template those stages build is the better
+        # one for it. Anchored at x, y as they stand now, which is the rigid
+        # ZNCC match: where the posed template actually aligns.
+        #
+        # Like the drift-row stage below, this must never cost a pair:
+        # register.py zero-fills the whole row on an exception, turning a
+        # located pair into found=0. Any failure keeps `polish_pose`'s answer,
+        # which is what the pipeline produced before this stage existed.
+        if strip_rot:
+            try:
+                got = strip_rotation(reference, search, best["x"], best["y"],
+                                     best["scale"], best["theta"])
+                if got is not None:
+                    best["theta_polish"] = float(best["theta"])
+                    best["theta"], best["theta_sigma"] = float(got[0]), float(got[1])
+            except Exception as e:  # noqa: BLE001
+                warnings.warn(f"strip rotation skipped: {type(e).__name__}: {e}",
+                              RuntimeWarning, stacklevel=2)
+
     # Re-place the match on the scan row the label is actually defined against.
     # Runs after every pose decision is final, so it can only move x -- it never
     # feeds back into scale, rotation or the confidence, and a decline leaves the
@@ -1433,6 +1814,15 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     #
     # y is deliberately left alone: it is already at 0.081 px median error on
     # set B because raster drift has no vertical component.
+    #
+    # The rigid answer -- where the posed template actually aligns -- is what
+    # the confidence is measured at (issue #87); the row re-placement below
+    # moves x to the label's scan row, not to a better template alignment.
+    rigid_xy = (float(best["x"]), float(best["y"]))
+    # Reported for analysis, and the anchor `strip_rotation` uses. Stays in the
+    # internal pixel-edge frame whatever `label_convention` says, like every
+    # other diagnostic.
+    best["rigid_x"], best["rigid_y"] = rigid_xy
     if subpixel_rows:
         # Never let the refinement cost a pair. register.py zero-fills the whole
         # row on any exception, so a throw here would turn a correctly located
@@ -1443,12 +1833,23 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         # rigid answer, which is what the pipeline produced before this stage.
         try:
             tpl = make_template(reference, best["scale"], best["theta"])
-            moved = drift_row_refine(search, tpl, best["x"], best["y"])
+            moved = drift_row_refine(search, tpl, best["x"], best["y"],
+                                     label_convention=label_convention)
             if moved is not None:
                 best["x"] = moved[0]
         except Exception as e:  # noqa: BLE001
             warnings.warn(f"sub-pixel row refinement skipped: "
                           f"{type(e).__name__}: {e}", RuntimeWarning, stacklevel=2)
+
+    # Report the answer in the labels' pixel convention (issue #86). Last
+    # geometric step on purpose: every stage above keeps pixel-edge
+    # coordinates (top-left + tw/2), which is what the network was trained on
+    # and what the ZNCC snap and the drift-row reader assume. A pixel-centre
+    # label names the same point 0.5 px up-left, and the rotation-dependent
+    # part of that difference is under 0.005 px.
+    if label_convention == "center":
+        best["x"] = float(best["x"]) - 0.5
+        best["y"] = float(best["y"]) - 0.5
 
     # The statement guarantees the true pose lies in these boxes and the rules
     # explicitly permit hard-coding them, so clipping a reported value into the
@@ -1481,7 +1882,21 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     # always wins -- while ZNCC can be respectable on a degraded frame with no
     # true instance. The fused statistic subsumes both heights plus four
     # peak-quality/contest signals, and measured better on held-out AUC.
-    if SHIPPED_CONFIDENCE == "fused6":
+    #
+    # "min_med3" (issue #87): the same min(), with the ZNCC term measured on a
+    # 3x3-median copy of the frame at the final pose and the rigid answer. On
+    # v2 frames the min() is set by ZNCC on present pairs -- impulse, speckle
+    # and shot noise drag a true match to 0.37 while the network stays >= 0.69
+    # -- and by the network on absent pairs. A median restores correlation
+    # where there is structure to restore and cannot invent it where there is
+    # none, so it lifts present pairs and leaves absent ones where they were.
+    # Only this term sees the filtered frame: the network was trained on noisy
+    # frames, and the localisation stages keep the raw pixels.
+    if SHIPPED_CONFIDENCE == "min_med3":
+        best["zncc_med3"] = denoised_zncc(reference, search, rigid_xy[0], rigid_xy[1],
+                                          best["scale"], best["theta"])
+        best["confidence"] = float(min(float(best.get("score", 0.0)), best["zncc_med3"]))
+    elif SHIPPED_CONFIDENCE == "fused6":
         from driftsense.calibration import calibrate_shipped
         best["confidence"] = float(calibrate_shipped({
             "score": float(best.get("score", 0.0)),

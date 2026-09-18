@@ -35,6 +35,9 @@ These are calibrated choices, not spec-derived constants:
   the issue #19 promotion gate. Costs 1.9 ms median per pair. Pose,
   rejection and calibration are bit-identical -- the correction moves only x.
   Evidence: .agents/SUBPIXEL_DRIFT.md. Set to False to revert entirely.
+* SHIPPED_LABEL_CONVENTION = "center": the pixel convention the grader's
+  (x, y) labels are written in. It is a property of the dataset, not of the
+  model -- see the block above the constant (issue #86).
 """
 
 from __future__ import annotations
@@ -47,6 +50,10 @@ from __future__ import annotations
 #             (.agents/B_CALIBRATION_REPORT.md); held-out AUC 0.9877 ->
 #             0.9915. Zero inference cost, no decode change.
 #   "legacy_min": the historical min(network score, native ZNCC).
+#   "min_med3": min(network score, ZNCC on a 3x3-median copy of the search
+#             frame at the final pose and the rigid answer) -- issue #87. The
+#             median touches this one number only; network and localisation
+#             keep the raw frame. See the block above SHIPPED_THRESHOLD.
 # The parity test pins register.py and eval_ext.py to this module's values.
 # --------------------------------------------------------------------------
 # Uncontested-hypothesis early exit (PR #51).
@@ -72,22 +79,48 @@ EARLY_EXIT_GATES = (
     (0.72, 0.72, 0.35, 0.04),   # clear coarse lead over the runner-up
 )
 
-SHIPPED_CONFIDENCE = "legacy_min"
+SHIPPED_CONFIDENCE = "min_med3"
 
 # Found threshold, in the units of whichever SHIPPED_CONFIDENCE is active.
 # The statistic and its threshold are ONE unit system -- change both or
 # neither (tests/test_submission_parity.py pins the coupling, not the value).
 #
-# Current: SHIPPED_CONFIDENCE="legacy_min", so 0.18 gates min(net, zncc) on the
-# shipped learned path. It is the shipped threshold, NOT a fallback value --
-# the fallback has its own gate below.
+# Current: SHIPPED_CONFIDENCE="min_med3" gated at 0.55 (issue #87), chosen on
+# the v2 dev split only (scripts/gen_phase2_v2_val.py, 500 pairs, seed
+# 850001) and confirmed on untouched splits -- see below.
 #
-# If SHIPPED_CONFIDENCE is ever set back to "fused6", this must move to 0.4870
-# at the same time: there the score column is a calibrated P(present) and 0.18
-# in those units decides nothing (re-tuned on the 2,250 holdout against the
-# total rubric with the downward bias convention -- declined present pairs
-# forfeit localisation+pose -- see .agents/B_CALIBRATION_REPORT.md Result 4b).
-SHIPPED_THRESHOLD = 0.18
+# Why the statistic changed: on the dev split the historical legacy_min cannot
+# separate present from absent at any threshold (absent max 0.529, present
+# min 0.370; best total 82.47 in a narrow band, and 72.00 at 0.55 because 65
+# degraded present pairs fall below it). The median-ZNCC term separates it
+# (present min 0.592, absent max 0.529) and holds 82.41-82.80 for every
+# threshold from 0.35 to 0.60. Ablation: moving legacy_min's ZNCC to the final
+# pose changes nothing; the median is the whole effect.
+#
+# Why 0.55: the rule was fixed before any held-out split was scored -- inside
+# the empty band between the dev absent max (0.529) and present min (0.592),
+# shifted toward the absent side by the cost ratio (a declined present pair
+# also forfeits localisation and pose, ~2.7x an accepted absent pair):
+# 0.529 + 0.063 / 3.7 = 0.546 -> 0.55. That it equals
+# LEGACY_FALLBACK_THRESHOLD below is a coincidence of two separate
+# calibrations in two unit systems, not a shared value.
+#
+# Confirmed on data not used for the choice (paired against legacy_min@0.18,
+# same decode otherwise; localisation, scale and rotation bit-identical):
+#   v2 holdout (500, seed 850002)  80.23 -> 82.39, +2.16 [+1.40, +3.09];
+#                                  absent accepted 25 -> 0, present declined 0.
+#                                  present min 0.571, absent max 0.493; total
+#                                  82.20-82.39 for any threshold in [0.45, 0.60].
+#   mentor 25-pair v2 set          81.73 -> 83.40 (absent accepted 1 -> 0).
+#   fresh 48-pair v2 set (s777)    79.34 -> 81.99 (absent accepted 3 -> 0).
+#   generator/output (original generator, pixel-edge labels): 82.75 -> 82.75.
+# Runtime unchanged (median 2.11/2.12 s -> 2.06/2.13 s per pair, 4 threads).
+#
+# Previous pairings, kept consistent if ever restored: "legacy_min" -> 0.18
+# (swept on the original Phase 2 distribution); "fused6" -> 0.4870 (a
+# calibrated P(present), re-tuned on the 2,250 holdout against the total
+# rubric -- .agents/B_CALIBRATION_REPORT.md Result 4b).
+SHIPPED_THRESHOLD = 0.55
 # The no-weights ZNCC fallback in register.py scores a raw NCC, which is
 # neither unit system above, so it carries its own gate. Raised 0.18 -> 0.55 on
 # origin/phase2 (#54, issue #36) when the fallback stopped being a silent
@@ -163,6 +196,92 @@ SHIPPED_VST = "none"
 # chosen to reach the ties and nothing else; it has not been swept, so treat it
 # as an experiment parameter rather than a measured constant.
 DOG_OVERRIDE_MARGIN = 0.05
+
+# Refine rotation from the vertical offsets of vertical template strips, and
+# blend that with polish_pose's answer (driftsense.matching.strip_rotation,
+# issue #88). ONE definition; register.py passes it to locate_phase2
+# (strip_rot=...), and tests/test_submission_parity.py pins that.
+#
+# Why a second estimator at all: polish_pose fits rotation with a 2-D ZNCC,
+# and on a raster-scanned frame one of those two dimensions is corrupted. A
+# rotation error displaces template point (u, v) by (d*v, -d*u); the
+# horizontal half varies along the row axis, which is exactly the axis raster
+# drift acts on, so the v2 extension's 1-3 px shear alone impersonates
+# 0.06-0.17 deg of rotation. The vertical half varies along the column axis,
+# where drift, shear, scale error and barrel distortion contribute nothing.
+# Started AT the ground-truth pose, polish_pose still walks ~0.2 deg away on
+# degraded v2 frames, so the objective is biased, not merely under-searched.
+#
+# Why a blend and not a replacement: the strip regression is the noisier of
+# the two whenever the strips are poorly textured, so the two are combined by
+# inverse variance, with the regression's own standard error against a fixed
+# prior for polish_pose (STRIP_ROT_SIGMA_PRIOR in matching.py). Measured on
+# the v2 dev split (400 present pairs), rotation credit: polish alone 0.895,
+# blend 0.958, unblended strip estimate 0.925 -- i.e. adopting the regression
+# whole gives back half the gain. The prior is flat from 0.10 to 0.22
+# (credit 0.955-0.961); 0.15 is the middle of that plateau.
+#
+# Dev split, end to end: 82.80 -> 83.41, paired +0.61 95% CI [+0.43, +0.80],
+# P(delta >= +0.35) = 0.998; rotation 8.95 -> 9.58 / 10 with every severity
+# bucket improving (sev 0: 0.912 -> 1.000, sev 4: 0.817 -> 0.858).
+#
+# Every knob (strips, lag, iterations, peak floor, prior) was chosen on the
+# v2 dev split alone -- 13 configurations x 6 priors, on a surface that is
+# flat around the chosen point (driftsense.matching, STRIP_ROT_* block).
+#
+# Confirmed on data not used for that choice (paired, same decode otherwise;
+# scale, rejection and AUC are bit-identical on every set):
+#   v2 holdout (500, seed 850002)  82.39 -> 83.18, +0.79 [+0.61, +1.00];
+#                                  rotation 8.79 -> 9.54, localisation
+#                                  38.81 -> 38.86.
+#   v2 stress split (250, severity 3-4 heavy)
+#                                  82.53 -> 83.15, +0.62 [+0.31, +0.94];
+#                                  rotation 8.76 -> 9.53.
+#   mentor 25-pair v2 set          83.40 -> 83.58; rotation 8.89 -> 9.56, and
+#                                  one Set B pair already sitting on the 1 px
+#                                  tier boundary (0.984 px) crossed it at
+#                                  1.064 px -- the stage moves x only through
+#                                  the template the drift-row stage builds.
+#   generator/output (the ORIGINAL generator, pixel-edge labels, no raster
+#                                  shear in its severity ladder): 82.75 ->
+#                                  82.96, rotation 9.21 -> 9.43. Unlike #86,
+#                                  this is not a v2-only correction.
+# Cost: +3 ms median per pair (20 pairs, interleaved on/off in one process at
+# 4 threads: 2.270 s -> 2.271 s median).
+SHIPPED_STRIP_ROTATION = True
+
+# Pixel convention of the grader's (x, y) labels (issue #86). ONE definition;
+# register.py passes it to locate_phase2 (label_convention=...), and
+# tests/test_submission_parity.py pins that.
+#   "edge":   pixel i spans [i, i+1), so a template placed at top-left p has
+#             its centre at p + tw/2. Our own generator (driftsense.generate:
+#             area_convention_offset), our training labels and the original
+#             Phase 2 generator (generator/src/pipeline.py: gt_x0 + box_w/2)
+#             are written this way, so locate_phase2 keeps "edge" as its
+#             signature default and every internal evaluator on that data
+#             (engine.evaluate, scripts/eval_ext.py) stays correct as it is.
+#   "center": pixel i spans [i-0.5, i+0.5] -- OpenCV warpAffine coordinates.
+#             The mentor's Phase 2 v2 (extension) generator labels
+#             M @ (x0 + 499.5, y0 + 499.5) with the canvas centre (N-1)/2
+#             mapped to (1000-1)/2, and its bundled baseline reports
+#             loc + (tw-1)/2. Same point, reported 0.5 px up-left.
+# The convention also decides WHICH scan row a label's raster-drift sample is
+# read from: v2 reads row_shift[round(y_center)], our generator
+# row_shift[round(y_edge)] -- a different row on about half of all pairs.
+#
+# Measured (A/B/C, threshold 0.18; scale, rotation, rejection and AUC are
+# bit-identical between the two settings -- only x, y move):
+#   mentor 25-pair v2 set:   "edge" 76.71 -> "center" 81.73/85 (loc A 0.911 ->
+#                            1.000, B 0.822 -> 0.978); paired +5.02, 95% CI
+#                            [+2.67, +7.69].
+#   fresh 48-pair v2 set (the mentor's generate_phase2_dataset_v2.py,
+#                            --seed 777, seed-disjoint): 77.03 -> 79.34;
+#                            paired +2.31, 95% CI [+1.16, +3.57]; mean y
+#                            error +0.54 -> +0.04 px.
+#   generator/output (pixel-edge labels): "edge" 82.75, "center" 79.93 -- the
+#                            same half pixel costs points the other way, which
+#                            is why this is a flag and not a new default.
+SHIPPED_LABEL_CONVENTION = "center"
 
 # Sub-pixel placement rule for the final ZNCC snap (ONE definition; applied
 # at the refine_zncc site in matching.py).

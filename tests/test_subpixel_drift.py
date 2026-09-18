@@ -163,3 +163,59 @@ def test_unwrap_rescues_a_whole_pitch_error_but_not_a_real_sample():
         # never a whole pitch away from it
         assert abs(moved[0] - cx) < pitch, \
             "a correction of a full lattice pitch means the unwrap failed"
+
+
+# ------------------------------------------------- shrinkage (issue #89)
+
+def test_correction_is_scaled_by_how_much_the_frame_actually_drifts():
+    """A quiet frame gets a small correction, a drifting one a large correction.
+
+    The measured row offset is the row's own drift sample plus measurement
+    noise; with almost no drift to recover, nearly all of it is noise, and
+    applying it whole was measured to make x worse than not correcting at all.
+    """
+    moved = {}
+    for sd in (0.05, 1.2):
+        ref, search, cx, cy, _ = _scene(jitter_sd=sd, seed=7)
+        tpl = make_template(ref, 10.0, 0.0)
+        got = drift_row_refine(search, tpl, cx, cy)
+        moved[sd] = abs(got[0] - cx) if got is not None else 0.0
+    assert moved[0.05] < moved[1.2], (
+        f"quiet frame moved {moved[0.05]:.3f} px, drifting frame {moved[1.2]:.3f} px")
+
+
+def test_shrinkage_never_flips_or_amplifies_the_correction():
+    """It scales the row's offset into [0, 1] of itself -- never past it, never
+    against it, so the stage can only ever move x part of the way it would."""
+    ref, search, cx, cy, _ = _scene(jitter_sd=1.2, seed=11)
+    tpl = make_template(ref, 10.0, 0.0)
+    full = drift_row_refine(search, tpl, cx, cy, shrink_sigma=None)
+    shrunk = drift_row_refine(search, tpl, cx, cy)
+    assert full is not None and shrunk is not None
+    a, b = full[0] - cx, shrunk[0] - cx
+    assert a * b >= 0, "shrinkage must not reverse the correction"
+    assert abs(b) <= abs(a) + 1e-9, "shrinkage must not amplify the correction"
+
+
+def test_shrink_sigma_none_reproduces_the_unshrunk_correction():
+    """The switch is a true off switch: the pre-#89 answer stays reachable."""
+    ref, search, cx, cy, _ = _scene(jitter_sd=1.0, seed=13)
+    tpl = make_template(ref, 10.0, 0.0)
+    got = drift_row_refine(search, tpl, cx, cy, shrink_sigma=None, align_rows=False)
+    assert got is not None
+    off, peak = row_offsets(search, tpl, cx, cy)
+    ci = int(round(cy)) - int(round(cy - tpl.shape[0] / 2.0))
+    assert got[0] - cx == pytest.approx(off[ci], abs=0.5)
+
+
+def test_row_alignment_is_a_no_op_when_the_template_is_already_on_the_grid():
+    """`align_rows` only resamples by the sub-pixel part of the row offset, so
+    at a whole-pixel cy there is nothing to resample and the measurement is
+    bit-identical. That is what makes it safe to leave on."""
+    ref, search, cx, _, _ = _scene(jitter_sd=1.0, seed=17)
+    tpl = make_template(ref, 10.0, 0.0)
+    cy = 150.0 + tpl.shape[0] / 2.0 - round(tpl.shape[0] / 2.0)   # dy == 0
+    plain = row_offsets(search, tpl, cx, cy, align_rows=False)
+    aligned = row_offsets(search, tpl, cx, cy, align_rows=True)
+    for a, b in zip(plain, aligned):
+        np.testing.assert_array_equal(np.nan_to_num(a, nan=-9), np.nan_to_num(b, nan=-9))

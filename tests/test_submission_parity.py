@@ -18,8 +18,10 @@ measuring the shipped system.
     classical fallback ignores band/verification entirely, so parity
     through it would be vacuous); the decode settings are identical by
     construction -- both sides call locate_phase2 with refine=True,
-    verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND and every other
-    parameter left at its default.
+    verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND,
+    subpixel_rows=SHIPPED_SUBPIXEL_ROWS (== its default),
+    label_convention=SHIPPED_LABEL_CONVENTION and every other parameter left
+    at its default.
 """
 
 import argparse
@@ -41,7 +43,9 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 
 from driftsense.config import (SHIPPED_BAND, SHIPPED_THRESHOLD,
-                               SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE)
+                               SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE,
+                               SHIPPED_LABEL_CONVENTION,
+                               SHIPPED_STRIP_ROTATION)
 
 
 def _load_eval_ext():
@@ -89,10 +93,17 @@ def test_register_threshold_default_is_the_shared_shipped_value():
     # Shipped default reverted to legacy_min on 2026-09-03 (PR #48 review):
     # fused6 measured -0.443 on an untouched holdout, P(better) = 0.011, and
     # moved rejection F1 away from the +4 bonus gate. See driftsense/config.py.
-    assert SHIPPED_CONFIDENCE in ("legacy_min", "fused6")
+    #
+    # 2026-09-17, issue #87: min_med3 (median-filtered ZNCC term) gated at 0.55,
+    # chosen on the v2 dev split and confirmed on held-out v2 splits.
+    assert SHIPPED_CONFIDENCE in ("legacy_min", "fused6", "min_med3")
     if SHIPPED_CONFIDENCE == "legacy_min":
         assert SHIPPED_THRESHOLD == pytest.approx(0.18), (
             "legacy min(score, zncc) is gated at 0.18")
+    elif SHIPPED_CONFIDENCE == "min_med3":
+        assert SHIPPED_THRESHOLD == pytest.approx(0.55), (
+            "min(score, median-ZNCC) is gated at 0.55; the legacy 0.18 would "
+            "accept absent pairs whose median-ZNCC sits in 0.2-0.5")
     else:
         assert SHIPPED_THRESHOLD == pytest.approx(0.4870), (
             "fused6 emits calibrated P(present); its gate is 0.4870, not the "
@@ -117,6 +128,33 @@ def test_register_effective_defaults_match_shared_config():
     reg_parser = _argparse_defaults(register.main)
     assert reg_parser.get_default("threshold") == SHIPPED_THRESHOLD
     assert reg_parser.get_default("verification") == SHIPPED_VERIFICATION
+    assert reg_parser.get_default("label_convention") == SHIPPED_LABEL_CONVENTION
+
+
+def test_register_forwards_the_label_convention_to_the_decoder():
+    """The pixel convention is a property of the grader's labels (issue #86):
+    the submission passes the shipped value explicitly, while locate_phase2
+    keeps "edge" as its default for the internal evaluators that score our own
+    pixel-edge data (engine.evaluate, scripts/eval_ext.py)."""
+    from driftsense.matching import LABEL_CONVENTIONS, locate_phase2
+    assert SHIPPED_LABEL_CONVENTION in LABEL_CONVENTIONS
+    assert inspect.signature(locate_phase2).parameters["label_convention"].default == "edge"
+    src = open(os.path.join(REPO_ROOT, "register.py")).read()
+    assert "label_convention=a.label_convention" in src, \
+        "register.py must forward --label-convention to locate_phase2"
+
+
+def test_register_forwards_the_strip_rotation_flag_to_the_decoder():
+    """The drift-immune rotation refinement is a shipped-decode choice (issue
+    #88), so it lives in driftsense.config and register.py forwards it. Like
+    label_convention, locate_phase2's own default is the historical behaviour,
+    so every internal caller that has not opted in is unchanged."""
+    from driftsense.matching import locate_phase2
+    assert isinstance(SHIPPED_STRIP_ROTATION, bool)
+    assert inspect.signature(locate_phase2).parameters["strip_rot"].default is False
+    src = open(os.path.join(REPO_ROOT, "register.py")).read()
+    assert "strip_rot=SHIPPED_STRIP_ROTATION" in src, (
+        "register.py must forward the shipped strip-rotation flag to locate_phase2")
 
 
 def test_locate_phase2_signature_band_default_is_shipped():
@@ -220,7 +258,9 @@ def _eval_decode(rp, sp):
     ref = cv2.imread(rp, cv2.IMREAD_GRAYSCALE)
     sea = cv2.imread(sp, cv2.IMREAD_GRAYSCALE)
     return locate_phase2(model, ref, sea, device, refine=True,
-                         verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND)
+                         verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND,
+                         strip_rot=SHIPPED_STRIP_ROTATION,
+                         label_convention=SHIPPED_LABEL_CONVENTION)
 
 
 def test_end_to_end_submission_parity(tmp_path):

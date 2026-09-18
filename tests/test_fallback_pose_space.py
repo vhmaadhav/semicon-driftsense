@@ -90,9 +90,14 @@ def test_legacy_fallback_threshold_is_a_distinct_calibrated_value():
     """The fallback's raw-ZNCC score and the network's calibrated statistic
     are different unit systems; gating both with the same SHIPPED_THRESHOLD
     (0.18) was the second half of issue #36."""
-    from driftsense.config import LEGACY_FALLBACK_THRESHOLD, SHIPPED_THRESHOLD
+    from driftsense.config import LEGACY_FALLBACK_THRESHOLD
     assert LEGACY_FALLBACK_THRESHOLD == pytest.approx(0.55)
-    assert LEGACY_FALLBACK_THRESHOLD != SHIPPED_THRESHOLD
+    # The learned path's gate is a separate constant in a separate unit system
+    # (SHIPPED_THRESHOLD, coupled to SHIPPED_CONFIDENCE in
+    # test_submission_parity). Since issue #87 its min(network, median-ZNCC)
+    # gate is also 0.55 -- a coincidence of two calibrations -- so equal
+    # numbers are no longer evidence of a shared value; the end-to-end test
+    # below proves the fallback path reads LEGACY_FALLBACK_THRESHOLD itself.
 
 
 def test_register_uses_legacy_threshold_only_on_the_fallback_path(tmp_path, monkeypatch):
