@@ -55,14 +55,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import register as R  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
-from driftsense.config import SHIPPED_BAND, SHIPPED_SUBPIXEL_ROWS  # noqa: E402
-from driftsense.matching import locate_phase2  # noqa: E402
-from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
+from driftsense.config import (  # noqa: E402
+    PHASE3_COARSE_ROTATIONS, PHASE3_LABEL_CONVENTION, PHASE3_ROTATION_BOUNDS, PHASE3_THRESHOLD,
+    SHIPPED_BAND, SHIPPED_STRIP_ROTATION, SHIPPED_SUBPIXEL_ROWS, SHIPPED_VERIFICATION,
+)
+from driftsense.matching import PHASE2_SCALE_BOUNDS, locate_phase2  # noqa: E402
 
 import infer as I  # noqa: E402
 
 OUT_FIELDS = R.OUT_FIELDS
-DEFAULT_FOUND_THRESHOLD = R.DEFAULT_FOUND_THRESHOLD
+DEFAULT_FOUND_THRESHOLD = PHASE3_THRESHOLD
 
 # Mass-failure thresholds. register.py grew these on the private development
 # trunk; this branch's base (origin/main) predates them, and the two trunks
@@ -77,6 +79,31 @@ MASS_FAILURE_MIN_PAIRS = getattr(R, "MASS_FAILURE_MIN_PAIRS", 8)
 # twelve has no true match (~8.3%), so ~92% present, versus Phase 2's ~80%.
 # The inherited FOUND_FRAC of 0.30 is far below either bound and stays valid.
 PHASE3_EXPECTED_PRESENT_FRAC = 0.92
+
+
+# The Phase 3 decode, as keyword arguments to locate_phase2. ONE definition:
+# main() and the evaluation harness (scripts/phase3_eval.py) both go through
+# decode(), so a measured configuration is the shipped one.
+DECODE = dict(
+    refine=True,
+    verification=SHIPPED_VERIFICATION,
+    band=SHIPPED_BAND,
+    subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
+    strip_rot=SHIPPED_STRIP_ROTATION,
+    label_convention=PHASE3_LABEL_CONVENTION,
+    scale_bounds=PHASE2_SCALE_BOUNDS,
+    rotation_bounds=PHASE3_ROTATION_BOUNDS,
+    coarse_rotations=PHASE3_COARSE_ROTATIONS,
+)
+
+
+def decode(model, device, ref, sea, **overrides) -> dict:
+    """Pose and confidence for one rendered reference against one search
+    frame. Returns locate_phase2's dict; `overrides` replace DECODE entries
+    (measurement only -- phase3.py itself passes the defaults)."""
+    kw = dict(DECODE)
+    kw.update(overrides)
+    return locate_phase2(model, ref, sea, device, **kw)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -164,10 +191,8 @@ def main(argv=None) -> int:
                     threshold = R.LEGACY_FALLBACK_THRESHOLD
                 else:
                     threshold = a.threshold
-                    res = locate_phase2(model, ref, sea, device, refine=True,
-                                        verification=a.verification,
-                                        band=SHIPPED_BAND,
-                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
+                    res = decode(model, device, ref, sea,
+                                 verification=a.verification)
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= threshold)
                 out.update({
