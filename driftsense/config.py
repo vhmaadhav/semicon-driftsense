@@ -160,6 +160,59 @@ SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True
 
+# Refine rotation from the vertical offsets of vertical template strips, and
+# blend that with polish_pose's answer (driftsense.matching.strip_rotation,
+# issue #88). ONE definition; register.py passes it to locate_phase2
+# (strip_rot=...), and tests/test_submission_parity.py pins that.
+#
+# Why a second estimator at all: polish_pose fits rotation with a 2-D ZNCC,
+# and on a raster-scanned frame one of those two dimensions is corrupted. A
+# rotation error displaces template point (u, v) by (d*v, -d*u); the
+# horizontal half varies along the row axis, which is exactly the axis raster
+# drift acts on, so the v2 extension's 1-3 px shear alone impersonates
+# 0.06-0.17 deg of rotation. The vertical half varies along the column axis,
+# where drift, shear, scale error and barrel distortion contribute nothing.
+# Started AT the ground-truth pose, polish_pose still walks ~0.2 deg away on
+# degraded v2 frames, so the objective is biased, not merely under-searched.
+#
+# Why a blend and not a replacement: the strip regression is the noisier of
+# the two whenever the strips are poorly textured, so the two are combined by
+# inverse variance, with the regression's own standard error against a fixed
+# prior for polish_pose (STRIP_ROT_SIGMA_PRIOR in matching.py). Measured on
+# the v2 dev split (400 present pairs), rotation credit: polish alone 0.895,
+# blend 0.958, unblended strip estimate 0.925 -- i.e. adopting the regression
+# whole gives back half the gain. The prior is flat from 0.10 to 0.22
+# (credit 0.955-0.961); 0.15 is the middle of that plateau.
+#
+# Dev split, end to end: 82.80 -> 83.41, paired +0.61 95% CI [+0.43, +0.80],
+# P(delta >= +0.35) = 0.998; rotation 8.95 -> 9.58 / 10 with every severity
+# bucket improving (sev 0: 0.912 -> 1.000, sev 4: 0.817 -> 0.858).
+#
+# Every knob (strips, lag, iterations, peak floor, prior) was chosen on the
+# v2 dev split alone -- 13 configurations x 6 priors, on a surface that is
+# flat around the chosen point (driftsense.matching, STRIP_ROT_* block).
+#
+# Confirmed on data not used for that choice (paired, same decode otherwise;
+# scale, rejection and AUC are bit-identical on every set):
+#   v2 holdout (500, seed 850002)  82.39 -> 83.18, +0.79 [+0.61, +1.00];
+#                                  rotation 8.79 -> 9.54, localisation
+#                                  38.81 -> 38.86.
+#   v2 stress split (250, severity 3-4 heavy)
+#                                  82.53 -> 83.15, +0.62 [+0.31, +0.94];
+#                                  rotation 8.76 -> 9.53.
+#   mentor 25-pair v2 set          83.40 -> 83.58; rotation 8.89 -> 9.56, and
+#                                  one Set B pair already sitting on the 1 px
+#                                  tier boundary (0.984 px) crossed it at
+#                                  1.064 px -- the stage moves x only through
+#                                  the template the drift-row stage builds.
+#   generator/output (the ORIGINAL generator, pixel-edge labels, no raster
+#                                  shear in its severity ladder): 82.75 ->
+#                                  82.96, rotation 9.21 -> 9.43. Unlike #86,
+#                                  this is not a v2-only correction.
+# Cost: +3 ms median per pair (20 pairs, interleaved on/off in one process at
+# 4 threads: 2.270 s -> 2.271 s median).
+SHIPPED_STRIP_ROTATION = True
+
 # Pixel convention of the grader's (x, y) labels (issue #86). ONE definition;
 # register.py passes it to locate_phase2 (label_convention=...), and
 # tests/test_submission_parity.py pins that.

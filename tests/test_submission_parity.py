@@ -44,7 +44,8 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 
 from driftsense.config import (SHIPPED_BAND, SHIPPED_THRESHOLD,
                                SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE,
-                               SHIPPED_LABEL_CONVENTION)
+                               SHIPPED_LABEL_CONVENTION,
+                               SHIPPED_STRIP_ROTATION)
 
 
 def _load_eval_ext():
@@ -141,6 +142,19 @@ def test_register_forwards_the_label_convention_to_the_decoder():
     src = open(os.path.join(REPO_ROOT, "register.py")).read()
     assert "label_convention=a.label_convention" in src, \
         "register.py must forward --label-convention to locate_phase2"
+
+
+def test_register_forwards_the_strip_rotation_flag_to_the_decoder():
+    """The drift-immune rotation refinement is a shipped-decode choice (issue
+    #88), so it lives in driftsense.config and register.py forwards it. Like
+    label_convention, locate_phase2's own default is the historical behaviour,
+    so every internal caller that has not opted in is unchanged."""
+    from driftsense.matching import locate_phase2
+    assert isinstance(SHIPPED_STRIP_ROTATION, bool)
+    assert inspect.signature(locate_phase2).parameters["strip_rot"].default is False
+    src = open(os.path.join(REPO_ROOT, "register.py")).read()
+    assert "strip_rot=SHIPPED_STRIP_ROTATION" in src, (
+        "register.py must forward the shipped strip-rotation flag to locate_phase2")
 
 
 def test_locate_phase2_signature_band_default_is_shipped():
@@ -245,6 +259,7 @@ def _eval_decode(rp, sp):
     sea = cv2.imread(sp, cv2.IMREAD_GRAYSCALE)
     return locate_phase2(model, ref, sea, device, refine=True,
                          verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND,
+                         strip_rot=SHIPPED_STRIP_ROTATION,
                          label_convention=SHIPPED_LABEL_CONVENTION)
 
 
