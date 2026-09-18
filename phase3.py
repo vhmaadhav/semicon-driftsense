@@ -53,6 +53,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import register as R  # noqa: E402
+from driftsense import drift_shear  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
@@ -71,6 +72,7 @@ from driftsense.matching import (  # noqa: E402
     PHASE3_ROTATION_BOUNDS,
     PHASE3_SCALE_BOUNDS,
     locate_phase2,
+    make_template,
 )
 
 import infer as I  # noqa: E402
@@ -152,6 +154,22 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=("legacy_min", "zncc"),
                     help="statistic written to the score column "
                          "(default: %(default)s)")
+    # Raster-shear correction (issue #101). OFF by default, and the default is
+    # the whole point of the flag: the correction is POOLED OVER THE BATCH, so
+    # with it on a pair's reported x depends on the other pairs in the same
+    # run. See driftsense/drift_shear.py for why a per-pair amplitude is not
+    # recoverable from one frame, and docs/PHASE3_RASTER_SHEAR.md for the
+    # held-out acceptance table.
+    ap.add_argument("--shear-correct", dest="shear_correct",
+                    action="store_true", default=False,
+                    help="estimate the generator's raster-drift amplitude over "
+                         "the whole batch and undo its x-only label bias "
+                         "(issue #101). Couples the pairs in one run: a pair's "
+                         "x then depends on the batch. Off by default.")
+    ap.add_argument("--shear-gate", type=float, default=drift_shear.SHEAR_GATE,
+                    help="apply the correction only when the pooled amplitude "
+                         "reaches this many px (default %(default)s); below it "
+                         "the reading is not separable from no shear")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -208,6 +226,19 @@ def main(argv=None) -> int:
     total = len(rows)
     mass_failure_warned = False
 
+    # With the correction off the rows stream to disk exactly as before, so a
+    # run that dies half way still leaves the pairs it finished. The pooled
+    # correction cannot do that -- the amplitude is not known until every pair
+    # has been measured -- so that path buffers and writes at the end. The
+    # default path is unchanged.
+    pending = [] if a.shear_correct else None
+    measurements = []
+    # The amplitude is defined against the Search frame's own row count
+    # (`h - 1` in apply_raster_drift), so it is read off the frames rather than
+    # hard-coded to 999: a differently sized Search image must not silently
+    # rescale the correction.
+    shear_rows = 0.0
+
     with open(a.output, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=OUT_FIELDS)
         w.writeheader()
@@ -225,6 +256,7 @@ def main(argv=None) -> int:
                                            size=a.render_size,
                                            min_layer=a.min_layer)
                 sea = I.read_gray(r.search_path)
+                shear_rows = max(shear_rows, float(sea.shape[0] - 1))
                 if model is None:
                     res = I.zncc_fallback(ref, sea)
                     threshold = R.LEGACY_FALLBACK_THRESHOLD
@@ -250,6 +282,22 @@ def main(argv=None) -> int:
                 else:
                     score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= threshold)
+                if a.shear_correct and found and model is not None:
+                    # Measured on the frame the decode just posed, so the row
+                    # correspondence the measurement needs already exists. A
+                    # failure here must never cost the pair its row: the
+                    # measurement is an input to a batch statistic, and a batch
+                    # statistic tolerates a missing sample.
+                    try:
+                        tpl = make_template(ref, float(res.get("scale", 10.0)),
+                                            float(res.get("theta", 0.0)))
+                        measurements.append(drift_shear.measure(
+                            sea, tpl,
+                            centre=(float(res["x"]), float(res["y"]))))
+                    except Exception as e:      # noqa: BLE001
+                        measurements.append(drift_shear.NOT_MEASURED)
+                        print(f"[warn] pair {pid}: shear measurement skipped: "
+                              f"{type(e).__name__}: {e}", file=sys.stderr)
                 out.update({
                     "x": f'{float(res["x"]):.4f}' if found else 0,
                     "y": f'{float(res["y"]):.4f}' if found else 0,
@@ -262,7 +310,10 @@ def main(argv=None) -> int:
                 error_count += 1
                 print(f"[warn] pair {pid}: {type(e).__name__}: {e}",
                       file=sys.stderr)
-            w.writerow(out)
+            if pending is None:
+                w.writerow(out)
+            else:
+                pending.append(out)
             if out.get("found"):
                 found_count += 1
             dt = time.perf_counter() - t0
@@ -279,6 +330,22 @@ def main(argv=None) -> int:
                       "render size. Rows are still being written, but they "
                       "are declines, not answers.", file=sys.stderr)
                 print("=" * 72, file=sys.stderr)
+
+        if pending is not None:
+            correction = drift_shear.pool(measurements, gate=a.shear_gate)
+            print(f"# shear: n={correction.n_pairs} "
+                  f"batch_median={correction.batch_median:.4f} "
+                  f"estimate={correction.estimate:.4f} "
+                  f"applied={correction.amplitude:.4f}"
+                  + (f" ({correction.reason})" if correction.reason else ""),
+                  file=sys.stderr)
+            if correction.applied:
+                for out in pending:
+                    if not out.get("found"):
+                        continue        # a declined row is zero-filled, not moved
+                    out["x"] = (f"{drift_shear.correct_x(float(out['x']), float(out['y']), correction.amplitude, shear_rows):.4f}")
+            for out in pending:
+                w.writerow(out)
 
     # ---- End-of-run summary + mass-failure banner ------------------------
     if total:

@@ -393,17 +393,27 @@ PHASE3_LABEL_CONVENTION = "edge"
 # geometry -- says it is. Fitting dx against y/999 recovers slope -1.2258
 # against the model's -1.50, with the per-quartile medians tracking it.
 #
-# A correction is deliberately NOT shipped. It would have to be per-pair, and
-# it cannot be estimated per-pair: across a 100-row reference patch the shear
-# is a pure translation, so ZNCC is flat in it. A fixed constant is a coin
-# flip -- the 20 curated cases the mentors published use shear_amplitude_px in
-# {0.0, 2.5, 3.0, 3.5, 4.0}, not the 1.5 default, and correcting by 1.5 when
-# the truth is 0.0 costs 2.4 localisation points exactly as it gains 2.4 when
-# the truth is 1.5. Estimating it needs a GLOBAL measurement over the whole
-# frame (the near-horizontal edge family gives the stage rotation, the
-# near-vertical family gives rotation plus shear, and the difference is the
-# shear); that is the open lever, worth up to ~7 points at the high shear
-# amplitudes the curated cases actually use.
+# A correction now exists: driftsense.drift_shear, behind phase3.py's
+# --shear-correct, OFF by default. Issue #101, docs/PHASE3_RASTER_SHEAR.md.
+# Three things in the paragraph above needed correcting once it was measured on
+# a PAIRED amplitude sweep (scripts/gen_phase3_rotated.py --paired):
+#
+#   * the residual is larger than -1.2258 at A = 1.5 suggested. Fitted across
+#     A in {0,1,2,3,4}, the slope is -1.0394*A - 0.271: the decode passes
+#     essentially 104% of the amplitude through, and the cost runs from 0.26 px
+#     median at A = 0 to 2.90 px at A = 4 (<=1px 95% -> 19%).
+#   * the GLOBAL edge-family measurement suggested here was built and is
+#     MEASURED OUT. Both frame-wide variants have unit gain in A on top of a
+#     per-pair offset of sd ~3 px that survives with zero noise, zero jitter
+#     and zero drift -- a global shear maps a lattice to a lattice, so one
+#     frame cannot separate it from the design's own obliquity. That is why
+#     the scan-distortion literature uses two acquisitions.
+#   * per-pair estimation really is out of reach, but for a different reason
+#     than "ZNCC is flat in it": the reference-driven row-offset slope IS
+#     identifiable and unbiased, it is just worth 4.47 px per pair against a
+#     0-4 px signal. Pooled over a batch it is worth 0.79 px, which is why the
+#     shipped correction is per-batch and why enabling it couples the pairs of
+#     one run.
 PHASE3_SUBPIXEL_ROWS = True
 
 

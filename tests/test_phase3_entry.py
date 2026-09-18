@@ -297,3 +297,68 @@ def test_a_systematic_failure_raises_the_mass_failure_marker(tmp_path):
               "--allow-fallback", "--quiet"])
     assert "mass_failure" in r.stderr, (
         "a 100%-failure run must be impossible to miss")
+
+
+# --------------------------------------------------------------------------
+# 9. the raster-shear correction flag (issue #101)
+#
+# The accuracy of the correction needs the organizer's generator and lives in
+# docs/PHASE3_RASTER_SHEAR.md. What belongs here is the entry-point contract:
+# it is off by default, it never costs a row, and turning it on does not
+# change the output shape.
+# --------------------------------------------------------------------------
+
+def test_shear_correction_is_off_by_default():
+    """The correction pools over the batch, so a pair's x depends on the rest
+    of the run. That has to be an explicit choice, not a default."""
+    a = phase3.build_parser().parse_args(["--input", "x", "--output", "y"])
+    assert a.shear_correct is False
+
+
+def test_shear_correction_still_writes_one_row_per_pair_in_order(tmp_path):
+    rows = []
+    for i in range(4):
+        rows.append((_write_gds(tmp_path / f"r{i}.gds", layers=(0, 2 + i)),
+                     _write_png(tmp_path / f"s{i}.png", seed=i)))
+    csvp = _pairs_csv(tmp_path / "pairs.csv", rows)
+    out = tmp_path / "out.csv"
+    r = _run(["--input", csvp, "--output", str(out), "--allow-fallback",
+              "--shear-correct", "--quiet"])
+    assert r.returncode == 0, r.stderr
+    with open(out, newline="") as f:
+        got = list(csv.DictReader(f))
+    assert [row["pair_id"] for row in got] == ["p0", "p1", "p2", "p3"]
+    assert list(got[0]) == list(phase3.OUT_FIELDS)
+
+
+def test_a_tiny_batch_declines_the_correction_rather_than_guessing(tmp_path):
+    """Four pairs cannot support a pooled estimate. The run must still
+    succeed, and must report that it declined."""
+    rows = [(_write_gds(tmp_path / f"r{i}.gds"), _write_png(tmp_path / f"s{i}.png",
+                                                            seed=i))
+            for i in range(4)]
+    csvp = _pairs_csv(tmp_path / "pairs.csv", rows)
+    out = tmp_path / "out.csv"
+    r = _run(["--input", csvp, "--output", str(out), "--allow-fallback",
+              "--shear-correct", "--quiet"])
+    assert r.returncode == 0, r.stderr
+    assert "# shear:" in r.stderr
+    assert "applied=0.0000" in r.stderr
+
+
+def test_shear_correction_leaves_declined_rows_zero_filled(tmp_path):
+    """A declined row is the zero-filled contract row, not a located answer
+    with a correction added to it."""
+    rows = [(_write_gds(tmp_path / f"r{i}.gds"), _write_png(tmp_path / f"s{i}.png",
+                                                            seed=i))
+            for i in range(3)]
+    csvp = _pairs_csv(tmp_path / "pairs.csv", rows)
+    out = tmp_path / "out.csv"
+    r = _run(["--input", csvp, "--output", str(out), "--allow-fallback",
+              "--shear-correct", "--threshold", "2.0", "--quiet"])
+    assert r.returncode == 0, r.stderr
+    with open(out, newline="") as f:
+        got = list(csv.DictReader(f))
+    for row in got:
+        assert row["found"] == "0"
+        assert float(row["x"]) == 0.0 and float(row["y"]) == 0.0

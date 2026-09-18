@@ -58,7 +58,7 @@ DRIFTSENSE_SHIP = [
     "calibration", "config", "generate", "matching", "model",
     "policy", "presets", "subpixel", "verification", "vst",
     # Phase 3 modules
-    "gds", "gds_layers", "pairs3", "params3",
+    "drift_shear", "gds", "gds_layers", "pairs3", "params3",
     # vst ships even though SHIPPED_VST == "none": matching.py imports it at
     # module scope and calls vst.resolve_mode() on every coarse sweep, so an
     # extraction without it fails on import before the first pair decodes.
@@ -174,6 +174,7 @@ ALLOW = [
     "tests/test_scale_semantics.py",
     "tests/test_search_feat_cache.py",
     "tests/test_stream_quota.py",
+    "tests/test_drift_shear.py",
     "tests/test_subpixel.py",
     "tests/test_verification.py",
     "tests/test_write_split.py",
