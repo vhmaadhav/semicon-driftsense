@@ -1,0 +1,1982 @@
+[
+  {
+    "id": "curated_01_rotation_+_raster_shear_+_row_jitter",
+    "label": "Rotation + raster shear + row jitter",
+    "challenge": "The wordline/bitline array sits at a real stage angle, and the raster scan shears and jitters on top of that. Three independent geometric distortions stack -- no single linear correction undoes all of them at once.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 1000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 80.0,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 4.0,
+      "drift_jitter_px": 1.8,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 6.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 516.0,
+      "y": 538.0,
+      "score": 0.7450523376464844,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 1.547495133327633,
+      "dx": -1.5474912210027014,
+      "dy": 0.003479740259990649
+    }
+  },
+  {
+    "id": "curated_02_rotation_+_starved_dose_+_detector_noise",
+    "label": "Rotation + starved dose + detector noise",
+    "challenge": "Near-maximum stage rotation on top of a starved electron dose and heavy detector noise. Fin/gate edges are both rotated and buried in grain.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 2000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 86.3157894736842,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 50.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 8.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 9.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 823.0,
+      "y": 194.0,
+      "score": 0.308738112449646,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 430.4560975516481,
+      "dx": 295.4366677311132,
+      "dy": -313.0648930802204
+    }
+  },
+  {
+    "id": "curated_03_rotation_+_shear_+_cd_bias_grow",
+    "label": "Rotation + shear + CD bias grow",
+    "challenge": "The fabricated storage-node contacts run wider than the design, the raster shears progressively top to bottom, and the frame is rotated on top of both.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 3000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 92.63157894736842,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 12.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 3.5,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 5.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 507.0,
+      "y": 547.0,
+      "score": 0.7382447123527527,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 1.4661673375508302,
+      "dx": -1.4516406389278131,
+      "dy": 0.2058788894329382
+    }
+  },
+  {
+    "id": "curated_04_rotation_+_row_jitter_+_vignette",
+    "label": "Rotation + row jitter + vignette",
+    "challenge": "Row-to-row scan jitter and strong edge vignetting wash out the gate/contact signal near the frame border, while the whole scene sits at an angle.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 4000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 98.94736842105263,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 2.2,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 8.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.5,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 510.0,
+      "y": 535.0,
+      "score": 0.5562981367111206,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 0.9340982058710093,
+      "dx": -0.8801221573582438,
+      "dy": -0.31292881992317234
+    }
+  },
+  {
+    "id": "curated_05_rotation_+_starved_dose_+_polygon_scale_outliers",
+    "label": "Rotation + starved dose + polygon-scale outliers",
+    "challenge": "Local process variation scatters oversized/undersized contacts through the array, shot noise from a starved dose roughens every pixel, and it's rotated too.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 5000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 105.26315789473685,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.5,
+      "polygon_scale_range": 0.3,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 70.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 4.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 792.5,
+      "y": 282.5,
+      "score": 0.4644292891025543,
+      "scale": 11.0,
+      "template_w": 91,
+      "template_h": 91,
+      "distance_px": 352.8994327084315,
+      "dx": 242.9580851225677,
+      "dy": -255.94799956144982
+    }
+  },
+  {
+    "id": "curated_06_max_rotation_+_shear_+_astigmatism",
+    "label": "Max rotation + shear + astigmatism",
+    "challenge": "The full 10-degree rotation cap combined with raster shear and a strongly elliptical beam -- fin edges are directionally smeared, sheared, AND rotated.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 6000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 111.57894736842105,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 3.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.8,
+      "search_rotation_deg": 10.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 517.0,
+      "y": 528.0,
+      "score": 0.8007014393806458,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 1.8800562927834048,
+      "dx": -1.7837250916484209,
+      "dy": -0.5940845574986042
+    }
+  },
+  {
+    "id": "curated_07_rotation_+_charging_streaks_+_speckle",
+    "label": "Rotation + charging streaks + speckle",
+    "challenge": "Bright charging streaks cut across the insulating separator rows, multiplicative speckle roughens the whole array, and it's rotated besides.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 7000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 117.89473684210526,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 7.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 3.0,
+      "charging_streak_intensity": 2.0,
+      "speckle_sigma": 0.5,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 588.5,
+      "y": 288.5,
+      "score": 0.39061495661735535,
+      "scale": 11.0,
+      "template_w": 91,
+      "template_h": 91,
+      "distance_px": 274.07597966935964,
+      "dx": 32.91106433836558,
+      "dy": -272.0928232714623
+    }
+  },
+  {
+    "id": "curated_08_rotation_+_shear_+_cd_shrink",
+    "label": "Rotation + shear + CD shrink",
+    "challenge": "Fins and gates etch narrower than drawn, the raster shears progressively top to bottom, and the frame carries a real stage rotation on top.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 8000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 124.21052631578948,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": -10.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 3.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 6.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 587.5,
+      "y": 520.5,
+      "score": 0.46963781118392944,
+      "scale": 9.5,
+      "template_w": 105,
+      "template_h": 105,
+      "distance_px": 43.56389191976863,
+      "dx": 43.20425509629354,
+      "dy": -5.586145430587749
+    }
+  },
+  {
+    "id": "curated_09_rotation_+_detector_noise_+_gamma_expand",
+    "label": "Rotation + detector noise + gamma expand",
+    "challenge": "A blown-out, overexposed capture with heavy sensor noise, rotated near the 10-degree cap -- low contrast and geometric misalignment together.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 9000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 130.5263157894737,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 10.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 9.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 0.6,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 778.5,
+      "y": 866.5,
+      "score": 0.543784499168396,
+      "scale": 11.0,
+      "template_w": 91,
+      "template_h": 91,
+      "distance_px": 384.4413297010666,
+      "dx": 236.18519309825763,
+      "dy": 303.3342884401019
+    }
+  },
+  {
+    "id": "curated_10_rotation_+_starved_dose_+_cd_bias_grow",
+    "label": "Rotation + starved dose + CD bias grow",
+    "challenge": "Fins and contacts print systematically oversized, the capture is shot-noise starved, and a real stage tilt sits on top of both.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 10000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 136.8421052631579,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 10.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 60.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 5.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 534.0,
+      "y": 525.0,
+      "score": 0.6477386355400085,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 0.8064803787533568,
+      "dx": 0.2607732953949835,
+      "dy": 0.7631565302891659
+    }
+  },
+  {
+    "id": "curated_11_rotation_+_row_jitter_+_salt_pepper",
+    "label": "Rotation + row jitter + salt-pepper",
+    "challenge": "Row-to-row scan jitter and sparse impulse-noise pixels corrupt the array independently of a near-maximum whole-frame rotation.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 11000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 143.1578947368421,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 2.5,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 8.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.025
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 548.0,
+      "y": 531.0,
+      "score": 0.614830732345581,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 1.776416042018093,
+      "dx": 1.0920639294772627,
+      "dy": 1.4010889794277546
+    }
+  },
+  {
+    "id": "curated_12_max_rotation_+_vignette_+_speckle",
+    "label": "Max rotation + vignette + speckle",
+    "challenge": "Full rotation cap, edge vignetting, and brightness-scaled speckle together -- the true match may sit in the dimmest, noisiest part of the frame.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 12000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 149.4736842105263,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 10.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.5,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.4,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 267.5,
+      "y": 590.5,
+      "score": 0.4060293734073639,
+      "scale": 11.0,
+      "template_w": 91,
+      "template_h": 91,
+      "distance_px": 265.90363893081053,
+      "dx": -264.48239918834645,
+      "dy": 27.455522508650574
+    }
+  },
+  {
+    "id": "curated_13_rotation_+_shear_+_detector_noise",
+    "label": "Rotation + shear + detector noise",
+    "challenge": "A sheared raster scan and constant-variance sensor noise both distort the bitline pattern, with a near-maximum stage rotation layered on top.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 13000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 155.78947368421052,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 4.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 8.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 8.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 530.0,
+      "y": 537.0,
+      "score": 0.9630647301673889,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 2.5548545103757814,
+      "dx": -2.533949932305177,
+      "dy": -0.32615841206086316
+    }
+  },
+  {
+    "id": "curated_14_rotation_+_row_jitter_+_charging_streaks",
+    "label": "Rotation + row jitter + charging streaks",
+    "challenge": "Row-to-row jitter and bright charging streaks over the spacer regions both corrupt the fin/gate pattern, on top of a real stage tilt.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 14000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 162.10526315789474,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 2.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 7.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 2.5,
+      "charging_streak_intensity": 1.8,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 562.0,
+      "y": 535.0,
+      "score": 0.6647282242774963,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 0.6072775874353946,
+      "dx": 0.30753425619127484,
+      "dy": -0.5236494528501225
+    }
+  },
+  {
+    "id": "curated_15_rotation_+_starved_dose_+_astigmatism",
+    "label": "Rotation + starved dose + astigmatism",
+    "challenge": "Low-dose shot noise and directional astigmatic blur degrade the signal along with a near-maximum rotation -- three compounding acquisition problems.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 15000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 168.42105263157896,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 45.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.8,
+      "search_rotation_deg": 9.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 524.0,
+      "y": 532.0,
+      "score": 0.5632773041725159,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 1.645200951407973,
+      "dx": 1.4939782340309193,
+      "dy": 0.68899579589106
+    }
+  },
+  {
+    "id": "curated_16_rotation_+_shear_+_cd_grow",
+    "label": "Rotation + shear + CD grow",
+    "challenge": "Systematically oversized fins/contacts on top of a sheared raster scan, captured at a near-maximum stage angle.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 16000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 174.73684210526318,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 15.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 2.5,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 9.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 559.0,
+      "y": 556.0,
+      "score": 0.8956485986709595,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 1.34155340099358,
+      "dx": -1.2356417379961613,
+      "dy": -0.5224509766851497
+    }
+  },
+  {
+    "id": "curated_17_rotation_+_row_jitter_+_gamma_crush",
+    "label": "Rotation + row jitter + gamma crush",
+    "challenge": "A dark, contrast-crushed capture with unstable row-to-row jitter, plus a real whole-frame rotation on top.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 17000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 181.05263157894737,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 2.2,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 7.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 2.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 526.0,
+      "y": 565.0,
+      "score": 0.6915099620819092,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 0.2131435680797606,
+      "dx": 0.06332549122657838,
+      "dy": -0.20351919510130756
+    }
+  },
+  {
+    "id": "curated_18_max_rotation_+_shear_+_detector_noise",
+    "label": "Max rotation + shear + detector noise",
+    "challenge": "The hardest geometric combination: full rotation cap, strong raster shear, and heavy sensor noise all applied to the same frame at once.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 18000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 187.36842105263156,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 4.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 9.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 10.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 832.5,
+      "y": 577.5,
+      "score": 0.41739633679389954,
+      "scale": 11.0,
+      "template_w": 91,
+      "template_h": 91,
+      "distance_px": 278.91474290765694,
+      "dx": 275.76603157042814,
+      "dy": 41.791502044578465
+    }
+  },
+  {
+    "id": "curated_19_rotation_+_starved_dose_+_salt_pepper",
+    "label": "Rotation + starved dose + salt-pepper",
+    "challenge": "Sparse impulse-noise pixels and shot-noise grain from a starved dose combine with a real stage rotation -- individually survivable, compounding together.",
+    "curated": true,
+    "kind": "dram",
+    "seed": 19000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 193.68421052631578,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 70.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 6.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.03
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 531.0,
+      "y": 547.0,
+      "score": 0.8143026232719421,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 0.4638444868175566,
+      "dx": -0.4410522028051673,
+      "dy": -0.1436128906183285
+    }
+  },
+  {
+    "id": "curated_20_max_rotation_+_shear_+_astigmatism",
+    "label": "Max rotation + shear + astigmatism",
+    "challenge": "Directional beam blur and progressive raster shear both smear fin/gate edges, and the whole capture carries the full 10-degree stage rotation.",
+    "curated": true,
+    "kind": "finfet",
+    "seed": 20000,
+    "manual_center": null,
+    "center_bias": true,
+    "structure": {
+      "mat_size_nm": 2600.0,
+      "strip_width_nm": 200.0,
+      "collapse_threshold_nm": 10.0,
+      "no_match_prob": 0.0,
+      "contact_aspect_ratio": 1.6,
+      "contact_thickness_factor": 1.0,
+      "contact_angle_deg": 90.0
+    },
+    "layer_visibility": {
+      "search_min_layer": 0,
+      "reference_min_layer": 0
+    },
+    "fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "sem_acquisition": {
+      "dose_search": 1500.0,
+      "beam_spot_size_nm": 3.0,
+      "shear_amplitude_px": 3.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 2.0,
+      "search_rotation_deg": 10.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "reference_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "search_layer_intensities": {
+      "0": 51,
+      "1": 75,
+      "2": 98,
+      "3": 122,
+      "4": 146,
+      "5": 169,
+      "6": 193,
+      "7": 217
+    },
+    "reference_ops_enabled": true,
+    "reference_fab_distortion": {
+      "polygon_scale_prob": 0.0,
+      "polygon_scale_range": 0.0,
+      "linewidth_bias_nm": 0.0,
+      "corner_rounding_px": 0.0
+    },
+    "reference_sem_acquisition": {
+      "dose_search": 3000.0,
+      "beam_spot_size_nm": 2.0,
+      "shear_amplitude_px": 0.0,
+      "drift_jitter_px": 0.0,
+      "detector_noise_sigma_search": 0.0,
+      "astigmatism_ratio": 1.0,
+      "search_rotation_deg": 0.0,
+      "barrel_distortion_k": 0.0,
+      "vignette_strength": 0.0,
+      "gamma": 1.0,
+      "charging_streak_prob": 0.0,
+      "charging_streak_intensity": 0.0,
+      "speckle_sigma": 0.0,
+      "salt_pepper_prob": 0.0
+    },
+    "zncc": {
+      "x": 563.0,
+      "y": 520.0,
+      "score": 0.7181861400604248,
+      "scale": 10.0,
+      "template_w": 100,
+      "template_h": 100,
+      "distance_px": 3.2998592925234846,
+      "dx": -2.626994496502334,
+      "dy": -1.9969905522560794
+    }
+  }
+]

@@ -1,0 +1,590 @@
+<title>Drift-Sense: Synthetic Dataset Generation</title>
+<link rel="stylesheet" href="style.css?v=4">
+
+<div id="deck">
+
+<!-- 1: TITLE -->
+<section class="slide title-slide">
+  <div class="kicker">SEMICON India Hackathon 2026 &middot; i4C &middot; Applied Materials</div>
+  <h1>Drift-Sense: Synthetic Dataset<br>Generation for Wafer&nbsp;Inspection</h1>
+  <p class="subtitle">Building physically-grounded Reference/Search image pairs when no dataset is provided &mdash; DRAM &amp; FinFET structures, real SEM imaging physics, and the ground truth to train against.</p>
+  <div class="meta">
+    <div><b>Problem statement</b><br>Drift-Sense: AI-Powered Navigation-Error Recovery</div>
+    <div><b>Deliverable</b><br>Turnkey generator + interactive demo</div>
+    <div><b>Format</b><br>Methodology walkthrough</div>
+  </div>
+</section>
+
+<!-- 2: PROBLEM STATEMENT -->
+<section class="slide">
+  <div class="eyebrow">Problem Statement</div>
+  <h1>Recover position after <span class="accent">navigation drift</span></h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">A wafer inspection tool loses track of where it is. It has a small high-resolution <b>Reference</b> patch (where it thinks it should be) and a larger, lower-resolution <b>Search</b> image (what the stage can currently see).</p>
+      <ul class="bullets">
+        <li>Find where the Reference patch appears inside the Search image</li>
+        <li>Output: the <span class="tag good">match center pixel coordinates</span></li>
+        <li>Real tools do this to recover from stage/beam drift without a full re-scan</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <div class="col-title">Given</div>
+      <ul class="bullets">
+        <li><b>Reference image</b> <span class="dim">&mdash; small, high-res patch</span></li>
+        <li><b>Search image</b> <span class="dim">&mdash; large, lower-res field of view</span></li>
+      </ul>
+      <div class="col-title" style="margin-top:0.8em;">Find</div>
+      <ul class="bullets">
+        <li><b>(x, y)</b> <span class="dim">&mdash; center of the matching region, in Search-image pixels</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 3: CORE CHALLENGE -->
+<section class="slide">
+  <div class="eyebrow">The Core Challenge</div>
+  <h1>No dataset is provided</h1>
+  <p class="lede">The hackathon gives you the problem statement &mdash; not the images. Every team has to build their own physically-grounded synthetic Reference/Search pairs before they can train or even test a matching algorithm.</p>
+  <div class="highlight-box">
+    This repo is a <b>turnkey generator</b> for exactly that: DRAM-style and FinFET-style semiconductor structures, rendered at the correct pixel scale, with real SEM acquisition artifacts &mdash; and ground truth coordinates handed to you for free.
+  </div>
+  <div class="chip-row">
+    <span class="tag">DRAM &amp; FinFET geometry</span>
+    <span class="tag">Correct nm/px calibration</span>
+    <span class="tag">SEM noise &amp; distortion model</span>
+    <span class="tag">Ground truth included</span>
+    <span class="tag">Baseline solution included</span>
+  </div>
+</section>
+
+<!-- 4: PHYSICAL CALIBRATION -->
+<section class="slide">
+  <div class="eyebrow">Physical Calibration</div>
+  <h1>Two images, two resolutions</h1>
+  <div class="two-col">
+    <div class="panel">
+      <div class="col-title">Reference</div>
+      <table class="spec">
+        <tr><th>Size</th><td class="num">1000 &times; 1000 px</td></tr>
+        <tr><th>Pixel size</th><td class="num">1 nm / px</td></tr>
+        <tr><th>Field of view</th><td class="num">1 &times; 1 &micro;m</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="col-title">Search</div>
+      <table class="spec">
+        <tr><th>Size</th><td class="num">1000 &times; 1000 px</td></tr>
+        <tr><th>Pixel size</th><td class="num">10 nm / px</td></tr>
+        <tr><th>Field of view</th><td class="num">10 &times; 10 &micro;m</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="highlight-box good">
+    The Reference's footprint inside the Search image is exactly <b>100 &times; 100 px</b>. The "shrunk 10&times;" relationship in the problem statement falls directly out of this pixel-size ratio &mdash; no separate resize step is needed.
+  </div>
+</section>
+
+<!-- 5: GENERATION PIPELINE -->
+<section class="slide">
+  <div class="eyebrow">Generation Approach</div>
+  <h1>One fine canvas, two derived images</h1>
+  <div class="grow center">
+    <div class="flow">
+      <div class="flow-box">
+        <div class="label">Fine canvas</div>
+        10000&times;10000 px<div class="sub">1 nm/px, covers full Search FOV</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-box">
+        <div class="label">Random crop</div>
+        1000&times;1000 px<div class="sub">native resolution</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-box">
+        <div class="label">= Reference</div>
+        SEM-imaged<div class="sub">beam blur, shot noise</div>
+      </div>
+    </div>
+    <div class="flow" style="margin-top:1.6em;">
+      <div class="flow-box" style="min-width:220px;">
+        <div class="label">Same fine canvas</div>
+        whole-canvas beam blur<div class="sub">then 10&times; area-average downsample</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-box">
+        <div class="label">= Search</div>
+        + drift, noise<div class="sub">1000&times;1000 px @ 10 nm/px</div>
+      </div>
+      <div class="flow-arrow">&#8594;</div>
+      <div class="flow-box">
+        <div class="label">Ground truth</div>
+        crop origin &divide; 10<div class="sub">= location in Search px</div>
+      </div>
+    </div>
+  </div>
+  <p class="footnote">Generating one full sample (10000&times;10000 canvas + both derived images) takes roughly 0.3&ndash;0.4s on a laptop CPU.</p>
+</section>
+
+<!-- 6: DRAM GEOMETRY -->
+<section class="slide">
+  <div class="eyebrow">Respecting Real Device Geometry &mdash; DRAM</div>
+  <h1>6F&sup2; folded-bitline cell array</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">Horizontal word lines, vertical bit lines, and a <b>checkerboard</b> of storage-node contacts &mdash; one contact per 2 cells, matching real folded-bitline layouts rather than a naive full grid.</p>
+      <ul class="bullets">
+        <li>Word line pitch &asymp; <b>2F</b>, bit line pitch &asymp; <b>3F</b></li>
+        <li>Per-instance linewidth jitter + position jitter (process variation)</li>
+        <li>Six illustrative presets, F from 24&ndash;80&nbsp;nm</li>
+      </ul>
+    </div>
+    <table class="spec">
+      <tr><th>Preset</th><th>F (nm)</th><th>WL pitch</th><th>BL pitch</th></tr>
+      <tr><td>dram_dense</td><td class="num">24</td><td class="num">48</td><td class="num">72</td></tr>
+      <tr><td>dram_1x</td><td class="num">32</td><td class="num">64</td><td class="num">96</td></tr>
+      <tr><td>dram_compact</td><td class="num">36</td><td class="num">72</td><td class="num">108</td></tr>
+      <tr><td>dram_loose</td><td class="num">48</td><td class="num">96</td><td class="num">144</td></tr>
+      <tr><td>dram_wide</td><td class="num">60</td><td class="num">120</td><td class="num">180</td></tr>
+      <tr><td>dram_legacy</td><td class="num">80</td><td class="num">160</td><td class="num">240</td></tr>
+    </table>
+  </div>
+  <p class="footnote">Illustrative of publicly known 6F&sup2; scaling trends &mdash; not exact proprietary fab specifications.</p>
+</section>
+
+<!-- 7: FINFET GEOMETRY -->
+<section class="slide">
+  <div class="eyebrow">Respecting Real Device Geometry &mdash; FinFET</div>
+  <h1>Fin / gate / contact geometry</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">Parallel vertical fins at fin-pitch/fin-width, perpendicular gate stripes at gate-pitch (contacted poly pitch), and contact/via marks in the diffusion regions between gates.</p>
+      <ul class="bullets">
+        <li>Gate pitch = contacted poly pitch (CPP)</li>
+        <li>Contacts on a checkerboard subset &mdash; one per 2 fin/gap cells</li>
+        <li>Six illustrative presets, fin pitch from 34&ndash;140&nbsp;nm</li>
+      </ul>
+    </div>
+    <table class="spec">
+      <tr><th>Preset</th><th>Fin pitch</th><th>Fin width</th><th>Gate pitch</th></tr>
+      <tr><td>finfet_7nm</td><td class="num">40</td><td class="num">14</td><td class="num">76</td></tr>
+      <tr><td>finfet_10nm</td><td class="num">48</td><td class="num">16</td><td class="num">90</td></tr>
+      <tr><td>finfet_14nm</td><td class="num">60</td><td class="num">20</td><td class="num">110</td></tr>
+      <tr><td>finfet_22nm</td><td class="num">80</td><td class="num">26</td><td class="num">150</td></tr>
+      <tr><td>finfet_28nm</td><td class="num">96</td><td class="num">32</td><td class="num">180</td></tr>
+      <tr><td>finfet_45nm</td><td class="num">140</td><td class="num">46</td><td class="num">260</td></tr>
+    </table>
+  </div>
+  <p class="footnote">Preset names track publicly discussed scaling trends, not any specific fab's real 7/10/14/22/28/45nm node.</p>
+</section>
+
+<!-- 7b: PROCESS LAYER STACK -->
+<section class="slide">
+  <div class="eyebrow">What's Actually Being Drawn</div>
+  <h1>Each structure is a small layer stack</h1>
+  <div class="two-col">
+    <div class="img-frame"><img src="assets/layers/dram_1x_exploded_stack.png" alt="Exploded axonometric view of DRAM process layers"></div>
+    <div>
+      <p class="lede">Real DRAM cells build up bottom-to-top: substrate/active area &rarr; word-line (gate poly) &rarr; bit-line metal &rarr; storage-node contact. Real FinFETs: substrate &rarr; fin &rarr; gate stack &rarr; contact.</p>
+      <ul class="bullets">
+        <li>The generator draws a simplified 3&ndash;4 layer stand-in per architecture &mdash; not every real process step</li>
+        <li>Each layer is individually inspectable (<code class="code-inline">return_layers=True</code>) for QA and for teaching</li>
+        <li>Flattened painter's-algorithm composite (bottom&rarr;top) is exactly what feeds the SEM imaging pipeline</li>
+      </ul>
+    </div>
+  </div>
+  <p class="footnote">Generate your own: <code class="code-inline">python visualize_layers.py --architecture dram_1x</code></p>
+</section>
+
+<!-- 8: ZONE COMPOSITION -->
+<section class="slide">
+  <div class="eyebrow">Large-Scale Composition</div>
+  <h1>Real dies aren't one uniform pattern</h1>
+  <div class="two-col">
+    <div class="img-frame">
+      <img src="assets/dram_1x_search_annotated.png" alt="Annotated search image showing mat/strip zone boundaries and GT box">
+    </div>
+    <div>
+      <p class="lede">A real memory device is built from discrete sub-array <b>mats</b>, separated by strips of visually distinct material &mdash; peripheral circuitry, sense-amp/decoder rows, global routing, scribe lines.</p>
+      <ul class="bullets">
+        <li>The fine canvas tiles <b>independently-generated mats</b>, each drawn from a randomly chosen preset of the same architecture</li>
+        <li>Mats are separated by flatter <span class="tag">strip</span> regions with sparse routing lines &mdash; a different "material" look</li>
+        <li>Cyan boxes: mat boundaries &middot; purple box: the Reference crop's ground-truth location</li>
+      </ul>
+    </div>
+  </div>
+  <p class="footnote">Configurable via <code>mat_size_nm</code> / <code>strip_width_nm</code> &mdash; from a dense patchwork of small blocks to a few large mats.</p>
+</section>
+
+<!-- 9: BOUNDARY BIAS -->
+<section class="slide">
+  <div class="eyebrow">Large-Scale Composition</div>
+  <h1>Crops that straddle a boundary, on purpose</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">Sampling the Reference crop uniformly at random mostly lands deep inside one uniform mat &mdash; the easy case. Real navigation-recovery often has to match a patch that spans two different regions.</p>
+      <ul class="bullets">
+        <li><code class="code-inline">boundary_bias</code> sets the probability of deliberately centering the crop across a mat/strip edge</li>
+        <li>Produces harder, more realistic matches: part periodic structure, part flat/routing material</li>
+        <li>Default 0.35 &mdash; tune per experiment, or force it to 1.0 for a guaranteed edge case</li>
+      </ul>
+    </div>
+    <div class="img-frame">
+      <img src="assets/finfet_10nm_search_annotated.png" alt="FinFET annotated search image showing boundary-straddling crop">
+    </div>
+  </div>
+</section>
+
+<!-- 10: DRAM GALLERY -->
+<section class="slide">
+  <div class="eyebrow">Examples</div>
+  <h1>DRAM &mdash; six presets, six dies</h1>
+  <div class="three-col">
+    <div class="img-frame"><img src="assets/gallery_dram_00_dram_1x.png"></div>
+    <div class="img-frame"><img src="assets/gallery_dram_01_dram_dense.png"></div>
+    <div class="img-frame"><img src="assets/gallery_dram_02_dram_loose.png"></div>
+    <div class="img-frame"><img src="assets/gallery_dram_03_dram_wide.png"></div>
+    <div class="img-frame"><img src="assets/gallery_dram_04_dram_compact.png"></div>
+    <div class="img-frame"><img src="assets/gallery_dram_05_dram_legacy.png"></div>
+  </div>
+  <p class="caption">dram_1x &middot; dram_dense &middot; dram_loose &middot; dram_wide &middot; dram_compact &middot; dram_legacy &mdash; each its own full search image with independent mat/strip layout</p>
+</section>
+
+<!-- 11: FINFET GALLERY -->
+<section class="slide">
+  <div class="eyebrow">Examples</div>
+  <h1>FinFET &mdash; six presets, six dies</h1>
+  <div class="three-col">
+    <div class="img-frame"><img src="assets/gallery_finfet_00_finfet_10nm.png"></div>
+    <div class="img-frame"><img src="assets/gallery_finfet_01_finfet_7nm.png"></div>
+    <div class="img-frame"><img src="assets/gallery_finfet_02_finfet_14nm.png"></div>
+    <div class="img-frame"><img src="assets/gallery_finfet_03_finfet_22nm.png"></div>
+    <div class="img-frame"><img src="assets/gallery_finfet_04_finfet_28nm.png"></div>
+    <div class="img-frame"><img src="assets/gallery_finfet_05_finfet_45nm.png"></div>
+  </div>
+  <p class="caption">finfet_10nm &middot; finfet_7nm &middot; finfet_14nm &middot; finfet_22nm &middot; finfet_28nm &middot; finfet_45nm &mdash; unlimited more via random seeds</p>
+</section>
+
+<!-- 12: SEM IMAGING MODEL DIVIDER -->
+<section class="slide section-slide">
+  <div class="num">02</div>
+  <div class="eyebrow" style="justify-content:center;">SEM Imaging Realism</div>
+  <h1>Two physically distinct kinds of artifact</h1>
+  <p class="lede">Structural defects are a property of the <b>device</b>, applied once. Acquisition artifacts are a property of the <b>imaging</b>, applied separately per image.</p>
+</section>
+
+<!-- 13: STRUCTURAL DEFECTS -->
+<section class="slide">
+  <div class="eyebrow">Structural Defects</div>
+  <h1>Pattern collapse &amp; bridging</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">High-aspect-ratio lines can topple and stick to their neighbor (resist/fin collapse from capillary forces). Applied <b>once</b> to the fine canvas, so it shows up consistently in both derived images.</p>
+      <ul class="bullets">
+        <li>Gaps &ge; threshold: <span class="tag good">never collapse</span></li>
+        <li>Gaps &lt; threshold: collapse with 70% probability (mirrors real process variation)</li>
+        <li>Default threshold = <b>10 nm</b> &mdash; exactly 1 px at the Search image's 10 nm/px resolution</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <div class="col-title">Real function output (seed=42, threshold=10nm)</div>
+      <table class="spec">
+        <tr><th>Gap (nm)</th><th>20</th><th>16</th><th>12</th><th>10</th><th>8</th><th>6</th><th>4</th><th>2</th></tr>
+        <tr><th>Collapsed?</th>
+          <td>No</td><td>No</td><td>No</td><td>No</td>
+          <td>No</td><td class="num">Yes</td><td>No</td><td class="num">Yes</td>
+        </tr>
+      </table>
+      <p class="footnote" style="margin-top:1em;">Gaps at/above 10nm never collapse (by construction). Below that, it's probabilistic &mdash; not every small gap bridges.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 14: POLYGON SCALING -->
+<section class="slide">
+  <div class="eyebrow">Distortion Control</div>
+  <h1>Scaling &amp; softening the drawn polygons</h1>
+  <div class="three-col">
+    <div><div class="img-frame"><img src="assets/polygon_nominal.png"></div><p class="caption">nominal</p></div>
+    <div><div class="img-frame"><img src="assets/polygon_grown.png"></div><p class="caption">linewidth_bias +14nm</p></div>
+    <div><div class="img-frame"><img src="assets/polygon_shrunk.png"></div><p class="caption">linewidth_bias &minus;14nm</p></div>
+  </div>
+  <div class="two-col" style="margin-top:1em;">
+    <div class="img-frame"><img src="assets/polygon_rounded.png"></div>
+    <div>
+      <ul class="bullets">
+        <li><code class="code-inline">linewidth_bias_nm</code> &mdash; deterministic global CD/etch bias, grows or shrinks every drawn feature</li>
+        <li><code class="code-inline">corner_rounding_px</code> &mdash; morphological open/close pass; real lithography/etch never produces perfectly sharp polygon corners <span class="dim">(shown at left: rounded)</span></li>
+        <li>Both stack on top of each pattern's own per-instance width jitter</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 15: BEAM PSF + ASTIGMATISM -->
+<section class="slide">
+  <div class="eyebrow">Acquisition Artifacts</div>
+  <h1>Beam spot &amp; astigmatism</h1>
+  <div class="two-col">
+    <div>
+      <div class="img-frame"><img src="assets/distort_base.png"></div>
+      <p class="caption">circular beam spot (astigmatism_ratio = 1.0)</p>
+    </div>
+    <div>
+      <div class="img-frame"><img src="assets/distort_astigmatism.png"></div>
+      <p class="caption">elliptical beam spot (astigmatism_ratio = 2.4)</p>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:0.8em;">A single physical beam (<code class="code-inline">beam_spot_size_nm</code>, default 5nm) is applied as a Gaussian PSF blur before any downsampling. A real beam is rarely perfectly round &mdash; <code class="code-inline">astigmatism_ratio</code> stretches it, producing sharper detail along one axis than the other.</p>
+</section>
+
+<!-- 16: SHOT + DETECTOR NOISE -->
+<section class="slide">
+  <div class="eyebrow">Acquisition Artifacts</div>
+  <h1>Shot noise &amp; detector noise</h1>
+  <div class="two-col">
+    <div>
+      <div class="img-frame"><img src="assets/noise_clean.png"></div>
+      <p class="caption">high dose (~1e6) &mdash; near noise floor</p>
+    </div>
+    <div>
+      <div class="img-frame"><img src="assets/noise_noisy.png"></div>
+      <p class="caption">low dose (250) + detector noise &sigma;=4</p>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:0.8em;"><b>Poisson shot noise</b>: dose is a proxy for electron count/dwell time &mdash; higher dose (slower, careful scan) means less relative noise. <b>Detector/readout noise</b>: additive Gaussian on top, independent of dose.</p>
+</section>
+
+<!-- 17: RASTER DRIFT -->
+<section class="slide">
+  <div class="eyebrow">Acquisition Artifacts</div>
+  <h1>Raster drift &amp; jitter</h1>
+  <div class="two-col">
+    <div>
+      <div class="img-frame"><img src="assets/drift_none.png"></div>
+      <p class="caption">no shear, no jitter</p>
+    </div>
+    <div>
+      <div class="img-frame"><img src="assets/drift_yes.png"></div>
+      <p class="caption">progressive shear + per-row jitter</p>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:0.8em;">Progressive row-to-row shear (drift accumulating over scan time) plus per-row jitter (vibration) &mdash; a real raster-scan artifact. Applied more strongly to the Search image (slow wide-area scan) than the Reference (fast, careful capture).</p>
+</section>
+
+<!-- 18: VIGNETTE/GAMMA/BARREL/CHARGING -->
+<section class="slide">
+  <div class="eyebrow">Acquisition Artifacts</div>
+  <h1>Vignetting, contrast, lens &amp; charging</h1>
+  <div class="three-col">
+    <div><div class="img-frame"><img src="assets/distort_vignette_gamma.png"></div><p class="caption">vignette 0.85 + gamma 1.8</p></div>
+    <div><div class="img-frame"><img src="assets/distort_barrel.png"></div><p class="caption">barrel distortion k=0.12</p></div>
+    <div><div class="img-frame"><img src="assets/distort_charging.png"></div><p class="caption">charging streaks</p></div>
+  </div>
+  <ul class="bullets" style="margin-top:0.8em;">
+    <li><b>Vignetting</b> &mdash; radial darkening from off-axis collection efficiency falloff</li>
+    <li><b>Gamma</b> &mdash; nonlinear detector gain / contrast mis-calibration</li>
+    <li><b>Barrel/pincushion distortion</b> &mdash; imperfect beam-scan linearity</li>
+    <li><b>Charging streaks</b> &mdash; local sample charging on insulating regions, common on real oxide/dielectric areas</li>
+  </ul>
+</section>
+
+<!-- 19: ALIASING -->
+<section class="slide">
+  <div class="eyebrow">A Free Consequence, Not a Parameter</div>
+  <h1>Why dense structures look "unfocused"</h1>
+  <div class="two-col">
+    <div>
+      <div class="img-frame"><img src="assets/aliasing_reference_patch.png"></div>
+      <p class="caption">same patch, native 1 nm/px</p>
+    </div>
+    <div>
+      <div class="img-frame"><img src="assets/aliasing_search_patch.png"></div>
+      <p class="caption">downsampled to 10 nm/px</p>
+    </div>
+  </div>
+  <div class="highlight-box warn" style="margin-top:0.8em;">
+    DRAM/FinFET cell pitch (&asymp;36&ndash;96nm) becomes only <b>3&ndash;5 px</b> at the Search image's 10nm/px resolution &mdash; below what that sampling rate can faithfully resolve. The periodic structure aliases into a near-random-looking texture. This is <i>not</i> a separate "search blur" fudge factor &mdash; it falls straight out of the shared beam blur plus the 10&times; downsample.
+  </div>
+</section>
+
+<!-- 20: GROUND TRUTH FORMAT -->
+<section class="slide">
+  <div class="eyebrow">Dataset Format</div>
+  <h1>Ground truth &amp; manifest</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">Every generated sample carries its ground truth for free &mdash; no manual labeling.</p>
+      <pre class="code-block"><span class="c"># from src.pipeline.generate_sample()</span>
+{
+  <span class="s">"reference_img"</span>: ndarray,   <span class="c"># 1000x1000</span>
+  <span class="s">"search_img"</span>: ndarray,      <span class="c"># 1000x1000</span>
+  <span class="s">"gt_x"</span>: <span class="n">746.6</span>, <span class="s">"gt_y"</span>: <span class="n">318.8</span>,   <span class="c"># center, search px</span>
+  <span class="s">"gt_box"</span>: (x0, y0, <span class="n">100</span>, <span class="n">100</span>),
+  <span class="s">"mat_rects"</span>: [...], <span class="s">"strip_rects"</span>: [...],
+}</pre>
+    </div>
+    <div class="panel">
+      <div class="col-title">manifest.csv columns</div>
+      <p class="slide-body">
+        <code class="code-inline">id, reference_path, search_path,<br>gt_x, gt_y, gt_box_x/y/w/h, architecture,</code><br>
+        plus every <code class="code-inline">GenerationParams</code> field used for that row (dose, beam spot, drift, distortion, mat/strip sizes, seed &hellip;) &mdash; full reproducibility per sample.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- 20b: SAMPLE FAMILIES -->
+<section class="slide">
+  <div class="eyebrow">Dataset Format</div>
+  <h1>Sample families: one scene, many acquisitions</h1>
+  <div class="img-frame"><img src="assets/sample_family.png" alt="One reference crop paired with five differently-imaged search variants"></div>
+  <p class="lede" style="margin-top:0.8em;"><code class="code-inline">generate_sample_family()</code> fixes one structure and one Reference crop, then renders several Search images under different acquisition conditions (clean, low-dose, heavy drift, speckle/impulse noise, charging). Same ground truth throughout &mdash; the point is that one Reference should stay findable across a <i>range</i> of degraded Search conditions, not just the exact image it was cut from.</p>
+</section>
+
+<!-- 21: BASELINE -->
+<section class="slide">
+  <div class="eyebrow">Baseline Solution</div>
+  <h1>Multi-scale template matching</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">A classical (non-learned) baseline, matching the exact submission interface: takes a reference + search path, prints predicted <code class="code-inline">x,y</code>.</p>
+      <ul class="bullets">
+        <li>Downsample the reference by a candidate scale (searched around 10&times;, not hardcoded)</li>
+        <li><code class="code-inline">cv2.matchTemplate(..., TM_CCOEFF_NORMED)</code> &mdash; this <b>is</b> ZNCC (zero-mean normalized cross-correlation); <code class="code-inline">baseline_solution/zncc.py</code> exposes it under its proper name with a confidence score</li>
+        <li>Keep the best-scoring location across scales</li>
+      </ul>
+    </div>
+    <pre class="code-block"><span class="k">for</span> scale <span class="k">in</span> (<span class="n">9.0</span>, <span class="n">9.5</span>, <span class="n">10.0</span>, <span class="n">10.5</span>, <span class="n">11.0</span>):
+    template = resize(reference, <span class="n">1</span>/scale)
+    result = cv2.matchTemplate(
+        search, template, TM_CCOEFF_NORMED)
+    <span class="k">keep</span> best score across scales
+
+<span class="c"># python baseline_solution/infer.py \</span>
+<span class="c">#   --reference ref.png --search search.png</span>
+<span class="c">#   -&gt; "746.00,326.00"</span></pre>
+  </div>
+</section>
+
+<!-- 21b: EVALUATING THE BASELINE -->
+<section class="slide">
+  <div class="eyebrow">Baseline Solution</div>
+  <h1>How the baseline degrades with noise</h1>
+  <div class="two-col">
+    <div class="img-frame"><img src="assets/eval/pr_curves.png" alt="Precision-recall curves by noise level"></div>
+    <div class="img-frame"><img src="assets/eval/ap_vs_noise.png" alt="Average precision and accuracy vs noise level"></div>
+  </div>
+  <p class="footnote">30 samples/level, mixed DRAM/FinFET presets, <code class="code-inline">baseline_solution/evaluate.py</code>. Real run, not illustrative &mdash; expect noise in the trend itself at this sample size, and note the general fall-off is not perfectly monotonic, consistent with the periodic-matching ambiguity on the next slide.</p>
+</section>
+
+<!-- 22: PERIODICITY LIMITATION -->
+<section class="slide">
+  <div class="eyebrow">A Real Limitation, Found by Testing</div>
+  <h1>Naive matching struggles on periodic structure</h1>
+  <p class="lede">DRAM/FinFET patterns repeat every 3&ndash;5 px at Search resolution. A naive global cross-correlation search can lock onto the <b>wrong periodic repeat</b> &mdash; a genuine matching-ambiguity limitation, not a generator bug.</p>
+  <div class="highlight-box red">
+    Verified directly: the Search image really does contain the true downsampled Reference at the stated ground-truth box (pixel-level diff confirms it). The baseline's global-argmax search is what fails on highly periodic tiles &mdash; worth raising with students as a limitation of naive template matching.
+  </div>
+  <div class="chip-row">
+    <span class="tag warn">Try: local search near a prior</span>
+    <span class="tag warn">Try: feature descriptors</span>
+    <span class="tag warn">Try: phase correlation</span>
+    <span class="tag warn">Try: learned matching</span>
+  </div>
+</section>
+
+<!-- 23: REPO STRUCTURE -->
+<section class="slide">
+  <div class="eyebrow">Repository</div>
+  <h1>What's in the repo</h1>
+  <pre class="code-block">src/
+  presets.py            <span class="c"># DRAM/FinFET nm-scale presets (12 total)</span>
+  patterns/dram.py       finfet.py       zones.py
+  structural_defects.py  sem_imaging.py  pipeline.py
+generate_dataset.py     <span class="c"># CLI -&gt; images + manifest.csv</span>
+visualize_sample.py     <span class="c"># draw GT box, side-by-side view</span>
+baseline_solution/infer.py
+app.py                  <span class="c"># Streamlit interactive explorer</span>
+tests/test_pipeline.py</pre>
+  <p class="footnote">Every image in this deck came straight out of this code &mdash; nothing here is a mockup.</p>
+</section>
+
+<!-- 24: INTERACTIVE DEMO -->
+<section class="slide">
+  <div class="eyebrow">Try It Yourself</div>
+  <h1>Interactive Streamlit explorer</h1>
+  <div class="two-col">
+    <div>
+      <p class="lede">Every slider in the app calls the exact same <code class="code-inline">generate_sample()</code> pipeline shown in this deck &mdash; architecture, all SEM noise/distortion knobs, die-layout sizing, boundary bias.</p>
+      <ul class="bullets">
+        <li>Live on Hugging Face Spaces (Docker SDK)</li>
+        <li>Download reference/search PNGs + metadata JSON directly</li>
+        <li>Regenerate with a new random seed any time</li>
+      </ul>
+    </div>
+    <div class="panel center" style="flex-direction:column; gap:0.8em;">
+      <div class="col-title">Live demo &mdash; scan to open</div>
+      <img src="assets/hf_space_qr.png" alt="QR code to the Hugging Face Space" style="width:150px;height:150px;border-radius:8px;">
+      <p class="slide-body" style="font-family:var(--mono); color:var(--accent-2); font-size:0.85em; text-align:center;">huggingface.co/spaces/<br>aayushraina21/drift-sense-synthetic-data</p>
+    </div>
+  </div>
+</section>
+
+<!-- 25: GETTING STARTED -->
+<section class="slide">
+  <div class="eyebrow">Getting Started</div>
+  <h1>From clone to first sample</h1>
+  <pre class="code-block">python3 -m venv venv &amp;&amp; <span class="k">source</span> venv/bin/activate
+pip install -r requirements.txt
+
+<span class="c"># generate a labeled dataset split</span>
+python generate_dataset.py --num-samples <span class="n">20</span> --split train --seed <span class="n">42</span>
+
+<span class="c"># view one sample with its ground-truth box drawn</span>
+python visualize_sample.py --split train --id <span class="n">0</span>
+
+<span class="c"># run the baseline matcher</span>
+python baseline_solution/infer.py --reference ref.png --search search.png
+
+<span class="c"># run tests / launch the interactive explorer</span>
+pytest tests/
+streamlit run app.py</pre>
+</section>
+
+<!-- 26: STUDENT CHALLENGE -->
+<section class="slide section-slide">
+  <div class="num">03</div>
+  <div class="eyebrow" style="justify-content:center;">Your Turn</div>
+  <h1>Beat the naive baseline</h1>
+  <p class="lede">The generator, the ground truth, and a working (imperfect) baseline are all here. The interesting problem is what's left: periodic-pattern ambiguity, noisy/distorted acquisition, boundary-straddling crops, sub-pixel accuracy.</p>
+</section>
+
+<!-- 27: THANK YOU -->
+<section class="slide title-slide">
+  <div class="kicker">Thank you</div>
+  <div class="two-col" style="align-items:center;">
+    <div>
+      <h1>Questions?</h1>
+      <p class="subtitle">Drift-Sense synthetic dataset generator &mdash; SEMICON India Hackathon 2026 / i4C</p>
+      <div class="meta">
+        <div><b>Live demo</b><br>huggingface.co/spaces/aayushraina21/drift-sense-synthetic-data</div>
+        <div><b>Repo</b><br>shared directly by the organiser</div>
+      </div>
+    </div>
+    <div class="center">
+      <img src="assets/hf_space_qr.png" alt="QR code to the Hugging Face Space" style="width:170px;height:170px;border-radius:8px;">
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div id="progress"></div>
+<div id="hud"><b id="hud-current">1</b> / <span id="hud-total"></span></div>
+<div class="nav-hint">&#8592; &#8594; navigate &middot; F fullscreen</div>
+<button id="nav-prev" style="position:fixed;left:0;top:0;width:15%;height:100%;background:transparent;border:none;cursor:pointer;z-index:10;" aria-label="Previous slide"></button>
+<button id="nav-next" style="position:fixed;right:0;top:0;width:15%;height:100%;background:transparent;border:none;cursor:pointer;z-index:10;" aria-label="Next slide"></button>
+
+<script src="script.js"></script>
