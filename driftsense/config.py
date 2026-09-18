@@ -305,43 +305,46 @@ SHIPPED_SUBPIXEL = "parabola"
 # --------------------------------------------------------------------------
 # Phase 3 found-threshold.
 #
-# SHIPPED_THRESHOLD is a Phase 2 constant and must stay one: it was swept
-# against the Phase 2 rubric on the Phase 2 distribution, where ~20% of pairs
-# are absent. Phase 3 discloses ~1 site in 12 (8.3%).
+# This constant has been wrong twice, both times for the same reason: it was
+# fitted on ONE severity distribution. The history is kept because the failure
+# mode is the interesting part.
 #
-# THE POSITIVE CLASS OF THE REJECTION F1 IS NOT RESOLVED BY THE SOURCE
-# MATERIAL, and this constant lives or dies on it. driftsense/rubric.py has
-# documented the ambiguity since Phase 2:
+#   0.55 (inherited from Phase 2) -> 0.20 -> 0.75 -> 0.55 again.
 #
-#   * reject-as-positive  -- an always-found system scores exactly 0.000;
-#   * present-as-positive -- the same system scores 0.875.
+# Fit 1 swept generator-DEFAULT data under present-as-positive F1 and got 0.20.
+# Fit 2 caught that the F1 positive class is ambiguous (driftsense/rubric.py:
+# reject-positive scores an always-found system 0.000, present-positive scores
+# it 0.875), re-swept under both, and got 0.75. Both fits used data generated
+# with CadGenerationParams() defaults.
 #
-# An earlier revision of this constant was 0.20, swept under present-positive
-# ALONE. That was a mistake of method, not of arithmetic: rubric.py's own
-# policy is that the operating point is "near-optimal under either reading",
-# which is what makes the ambiguity survivable, and 0.20 is near-optimal under
-# only one. Under reject-positive it gives up 5.34 of 85 on the 250-pair fit
-# set and 8.99 on the held-out 60.
+# The defaults are far gentler than the mentors' own 20 curated cases, whose
+# parameters span dose_search 45-3000 (default 200), shear_amplitude_px 0-4
+# (default 1.5), drift_jitter_px 0-2.5 (default 0.5), detector noise 0-10
+# (default 5), astigmatism 1.0-2.0, plus charging streaks, vignette, gamma and
+# salt-pepper that the defaults leave off entirely. Harsh pairs score LOWER
+# across the board, so a threshold fitted on gentle data rejects them wholesale:
+# at 0.75, 23 of 47 present pairs in a harsh draw are declined, each forfeiting
+# localisation (40) and pose (20).
 #
-# Swept under BOTH readings, scoring the 85 measurable points:
+# Swept over BOTH severities and BOTH F1 readings, 85 measurable points:
 #
-#                    250-pair fit              60-pair held out
-#     T        reject  present  worst      reject  present  worst
-#     0.20     58.20   70.43   58.20       56.29   69.93   56.29
-#     0.70     61.74   69.74   61.74       66.29   70.58   66.29
-#     0.75     63.54   69.48   63.54       65.28   69.76   65.28
-#     0.80     63.21   68.67   63.21       65.28   69.76   65.28
+#     T      harsh/rej  harsh/pres  gentle/rej  gentle/pres   WORST
+#     0.20     45.73      60.27       58.19       69.23       45.73
+#     0.55     50.95      58.46       51.89       59.40      *50.95*
+#     0.75     30.79      37.83       29.17       32.01       29.17
 #
-# 0.75 maximises the WORST CASE over both readings on both sets, which is the
-# decision rule rubric.py argues for. It buys +5.34 / +8.99 under the reading
-# that would hurt if we guessed wrong, and costs 0.95 / 0.17 under the other.
-# 0.70-0.80 is a broad plateau on both sets, so this is not a knife edge.
+# 0.55 maximises the worst case, by +21.78 over 0.75 and +5.22 over 0.20.
 #
-# Corollary, recorded because the earlier revision asserted the opposite: "T=0
-# is the argmax at every assumed absent rate from 8% to 40%" is TRUE ONLY under
-# present-positive. Under reject-positive T=0 scores 0.0000 on the 15-point
-# rejection block by construction, and is the worst available choice.
-PHASE3_THRESHOLD = 0.75
+# It is the Phase 2 value, and that is not a coincidence: Phase 2's threshold
+# was swept against the TOTAL rubric over a full severity ladder, which is
+# exactly the robustness both Phase 3 fits lacked. The lesson is not "0.55 is
+# magic" -- it is that a threshold must be fitted across the severity range the
+# blind set can draw from, not across one draw of it.
+#
+# NOTE the matcher is NOT what fails on harsh data. Decoded with no threshold,
+# a harsh draw still puts 32 of 47 present pairs within 5 px (median 2.18 px).
+# The 40.00/85 that 0.75 produced there was almost entirely self-inflicted.
+PHASE3_THRESHOLD = 0.55
 
 
 # --------------------------------------------------------------------------
