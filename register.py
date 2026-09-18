@@ -55,6 +55,17 @@ OUT_FIELDS = ["pair_id", "x", "y", "theta", "scale", "found", "score"]
 # Candidate spellings for the two image columns. The addendum fixes `pair_id`
 # but publishes the rest of the pairs.csv layout separately, so accept the
 # plausible spellings rather than guess one and fail the whole run.
+#
+# The substring fallback in pick_column() is the "rather than fail the whole
+# run" half of that trade, and it is only safe while a header cannot contain
+# two columns matching one role. Phase 3 breaks that assumption: its layout is
+# `search_path, reference_gds_path, search_gds_path, reference_sem_path,
+# params_json_path`, where `reference*` matches BOTH a CAD file and an SEM
+# image. The fallback would pick `reference_gds_path`, hand it to
+# cv2.imread, get None, and read_gray's SystemExit would be swallowed by the
+# per-pair handler into a declined row -- a well-formed, exit-0, all-declined
+# predictions.csv, indistinguishable from an honest all-reject run. Ambiguity
+# is therefore an error now (see pick_column), not a guess.
 REF_KEYS = ("reference", "reference_path", "ref", "ref_path", "reference_image",
             "template", "template_path", "high_res", "highres")
 SEA_KEYS = ("search", "search_path", "sea", "search_image", "wide", "wide_path",
@@ -99,13 +110,36 @@ def cap_threads(requested=0):
 
 
 def pick_column(fieldnames, candidates, role):
+    """Resolve one logical role onto a header spelling.
+
+    Exact matches (case/whitespace-insensitive) win outright. The substring
+    fallback below is kept because Phase 1/2 manifests spell these columns
+    several ways and breaking those would regress real data -- but it now
+    only fires when it selects exactly ONE column. If two or more columns
+    match, this raises instead of returning the first, because on the Phase 3
+    layout that guess is silently wrong (see the REF_KEYS comment above).
+
+    Raising SystemExit rather than a custom exception is deliberate and
+    unchanged: this runs before the per-pair loop, so it aborts the batch
+    loudly with no predictions.csv written, which is the correct outcome for
+    an unreadable schema. Inside the loop the same mistake would become a
+    declined row, which is exactly the silent failure this guards.
+    """
     lowered = {f.lower().strip(): f for f in fieldnames}
     for c in candidates:
         if c in lowered:
             return lowered[c]
-    for f in fieldnames:                      # substring fallback
-        if any(c.split("_")[0] in f.lower() for c in candidates):
-            return f
+    hits = [f for f in fieldnames                 # substring fallback
+            if any(c.split("_")[0] in f.lower() for c in candidates)]
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) > 1:
+        raise SystemExit(
+            f"pairs.csv: the {role} column is ambiguous -- {hits} all match "
+            f"one of {candidates}. Refusing to guess: picking the wrong one "
+            "here yields a well-formed but entirely declined predictions.csv. "
+            "Rename the columns to their canonical Phase 2/3 spellings, or "
+            "pass a schema that names the column explicitly.")
     raise SystemExit(f"pairs.csv: could not find the {role} column among {fieldnames}")
 
 
