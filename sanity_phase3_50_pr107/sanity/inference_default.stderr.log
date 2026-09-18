@@ -1,0 +1,59 @@
+C:\Users\nisha\Python3\Lib\site-packages\numpy\_core\getlimits.py:559: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+C:\Users\nisha\Python3\Lib\site-packages\numpy\_core\getlimits.py:91: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+C:\Users\nisha\Python3\Lib\site-packages\numpy\_core\getlimits.py:559: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+C:\Users\nisha\Python3\Lib\site-packages\numpy\_core\getlimits.py:91: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+# t,p0000,2.011
+# t,p0001,5.246
+# t,p0002,5.362
+# t,p0003,3.510
+# t,p0004,3.750
+# t,p0005,3.567
+# t,p0006,4.015
+# t,p0007,3.508
+# t,p0008,2.038
+# t,p0009,3.743
+# t,p0010,2.130
+# t,p0011,3.554
+# t,p0012,4.929
+# t,p0013,4.398
+# t,p0014,6.381
+# t,p0015,2.569
+# t,p0016,4.569
+# t,p0017,4.320
+# t,p0018,2.002
+# t,p0019,3.498
+# t,p0020,3.626
+# t,p0021,2.001
+# t,p0022,5.800
+# t,p0023,2.280
+# t,p0024,5.556
+# t,p0025,2.009
+# t,p0026,3.811
+# t,p0027,3.485
+# t,p0028,4.005
+# t,p0029,3.863
+# t,p0030,3.708
+# t,p0031,3.983
+# t,p0032,3.503
+# t,p0033,2.174
+# t,p0034,4.953
+# t,p0035,3.699
+# t,p0036,4.831
+# t,p0037,4.171
+# t,p0038,3.402
+# t,p0039,2.054
+# t,p0040,6.068
+# t,p0041,3.524
+# t,p0042,5.357
+# t,p0043,1.817
+# t,p0044,3.318
+# t,p0045,4.764
+# t,p0046,3.240
+# t,p0047,3.288
+# t,p0048,3.273
+# t,p0049,1.954
+# runtime: median 3.626 p90 5.362 max 6.381 n=50

@@ -1,0 +1,38 @@
+{
+  "architecture": "finfet",
+  "generation": {
+    "crop_x0": 5976,
+    "crop_y0": 1321,
+    "preset": "finfet_14nm",
+    "seed": 107
+  },
+  "layer_intensities": {
+    "0": 75,
+    "1": 60,
+    "2": 125,
+    "3": 100,
+    "4": 131,
+    "5": 126,
+    "6": 187,
+    "7": 230
+  },
+  "num_layers": 8,
+  "observable_layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    7
+  ],
+  "occluded_layers": [
+    6
+  ],
+  "present": true,
+  "reference_gds_path": "reference\\p0022.gds",
+  "rotation_deg": 0.0,
+  "scale": 10.0,
+  "schema_version": 1,
+  "search_gds_path": "search\\p0022.gds"
+}

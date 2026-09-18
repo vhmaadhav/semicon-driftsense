@@ -264,7 +264,8 @@ def read_pairs(path: str, mapping: dict | None = None,
             return ""
         if not absolute_paths:
             return v
-        return v if os.path.isabs(v) else os.path.join(base, v)
+        is_abs = os.path.isabs(v) or v.startswith(("/", "\\"))
+        return v if is_abs else os.path.join(base, v)
 
     out = []
     seen = set()

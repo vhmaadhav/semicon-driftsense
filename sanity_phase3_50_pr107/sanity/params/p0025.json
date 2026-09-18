@@ -1,0 +1,38 @@
+{
+  "architecture": "dram",
+  "generation": {
+    "crop_x0": 4140,
+    "crop_y0": 8319,
+    "preset": "dram_1x",
+    "seed": 107
+  },
+  "layer_intensities": {
+    "0": 60,
+    "1": 83,
+    "2": 113,
+    "3": 123,
+    "4": 145,
+    "5": 179,
+    "6": 211,
+    "7": 217
+  },
+  "num_layers": 8,
+  "observable_layers": [
+    0,
+    1,
+    2,
+    3,
+    5,
+    7
+  ],
+  "occluded_layers": [
+    4,
+    6
+  ],
+  "present": true,
+  "reference_gds_path": "reference\\p0025.gds",
+  "rotation_deg": 0.0,
+  "scale": 10.0,
+  "schema_version": 1,
+  "search_gds_path": "search\\p0025.gds"
+}
