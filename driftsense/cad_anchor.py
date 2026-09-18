@@ -69,6 +69,10 @@ FINE_ITERATIONS = 2
 # which the organizer rules out of the evaluation sets) reads as up to ~1%
 # magnification in the vertical fit -- believing that moved answers by 4 px.
 SCALE_BELIEVE = 0.03
+# A whole-frame translation this large is believed. Below it, what phase
+# correlation sees is raster drift's mean (the shear moves rows by up to
+# ~1.25 px on average), which the label does not contain.
+TRANSLATION_BELIEVE_PX = 1.5
 
 
 class CadAnchorUnavailable(RuntimeError):
@@ -313,10 +317,19 @@ def coarse_rotation(img: np.ndarray, model: np.ndarray, max_deg: float) -> float
     return -float(lags[k] + d * (360.0 / ANGLE_BINS))
 
 
-def _rotate(img: np.ndarray, deg: float) -> np.ndarray:
+def _rotate(img: np.ndarray, deg: float, shift=(0.0, 0.0)) -> np.ndarray:
+    """Rotate about the frame centre (cv2 sign), then translate by `shift` px."""
     h, w = img.shape
     M = cv2.getRotationMatrix2D(((w - 1) / 2.0, (h - 1) / 2.0), deg, 1.0)
+    M[:, 2] += shift
     return cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+
+def frame_translation(img: np.ndarray, model_rot: np.ndarray) -> tuple:
+    """Whole-frame shift (px) of the image relative to the rotated model."""
+    win = cv2.createHanningWindow(img.shape[::-1], cv2.CV_32F)
+    (tx, ty), resp = cv2.phaseCorrelate(model_rot.astype(np.float32), img.astype(np.float32), win)
+    return float(tx), float(ty), float(resp)
 
 
 def _parabolic(a, b, c):
@@ -349,7 +362,8 @@ def tile_displacements(img: np.ndarray, model: np.ndarray, tile: int = TILE_PX,
     return np.asarray(rows, np.float64).reshape(-1, 5)
 
 
-def fine_rotation(img: np.ndarray, model: np.ndarray, theta0: float, iterations: int = FINE_ITERATIONS):
+def fine_rotation(img: np.ndarray, model: np.ndarray, theta0: float, iterations: int = FINE_ITERATIONS,
+                  shift=(0.0, 0.0)):
     """Refine the angle from the vertical displacement field.
 
     Raster drift moves each scan row horizontally and nothing vertically, so
@@ -361,7 +375,7 @@ def fine_rotation(img: np.ndarray, model: np.ndarray, theta0: float, iterations:
     cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
     theta, ds, b, keep, pts, resid = theta0, 0.0, 0.0, np.zeros(0, bool), np.zeros((0, 5)), float("nan")
     for _ in range(iterations):
-        pts = tile_displacements(img, _rotate(model, theta))
+        pts = tile_displacements(img, _rotate(model, theta, shift))
         if len(pts) < 6:
             raise CadAnchorUnavailable(f"only {len(pts)} tiles aligned")
         x, y, dy = pts[:, 0] - cx, pts[:, 1] - cy, pts[:, 3]
@@ -469,27 +483,34 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     max_deg = max(abs(rotation_bounds[0]), abs(rotation_bounds[1]))
     th0 = coarse_rotation(img, model, max_deg)
     out.theta_coarse = th0
-    theta, ds, b, pts, keep, resid = fine_rotation(img, model, th0)
+    # The organizer's export puts design and image in one frame (rotation
+    # about the centre, no offset). If a search CAD arrives in another frame,
+    # the offset is large and unambiguous over the whole field; take it.
+    tx, ty, _ = frame_translation(img, _rotate(model, th0))
+    shift = (tx, ty) if math.hypot(tx, ty) > TRANSLATION_BELIEVE_PX else (0.0, 0.0)
+    theta, ds, b, pts, keep, resid = fine_rotation(img, model, th0, shift=shift)
 
     # Yield fit on the aligned frame, then one more pass on the fitted render.
-    vis_rot = np.stack([cv2.GaussianBlur(_rotate(v, theta), (0, 0), 0.6) for v in vis])
+    vis_rot = np.stack([cv2.GaussianBlur(_rotate(v, theta, shift), (0, 0), 0.6) for v in vis])
     greys, r2 = fit_greys(img, vis_rot)
     fitted = cv2.GaussianBlur(compose(vis, greys), (0, 0), 0.6)
     try:
-        theta, ds, b, pts, keep, resid = fine_rotation(img, fitted, theta, iterations=1)
+        theta, ds, b, pts, keep, resid = fine_rotation(img, fitted, theta, iterations=1, shift=shift)
     except CadAnchorUnavailable:
         pass
 
     mag = 1.0 + ds if abs(ds) > SCALE_BELIEVE else 1.0
     px, py = origin[0] + ref_size / 2.0, origin[1] + ref_size / 2.0
-    x, y = design_to_search(px, py, theta, img.shape, magnification=mag)
+    if shift != (0.0, 0.0):
+        shift = (shift[0], shift[1] + b)          # the vertical residual is drift-free
+    x, y = design_to_search(px, py, theta, img.shape, magnification=mag, translation_px=shift)
     lo, hi = rotation_bounds
     out.found = True
     out.x, out.y = float(x), float(y)
     out.theta = float(np.clip(theta, lo, hi))
     out.scale = float(SEARCH_NM_PER_PX / mag)
     out.magnification = mag
-    out.translation_px = (0.0, float(b))
+    out.translation_px = (float(shift[0]), float(shift[1]))
     out.tiles_used, out.tiles_total = int(keep.sum()), int(len(pts))
     out.tile_ncc = float(np.median(pts[keep, 4])) if keep.any() else 0.0
     out.tile_resid_px = resid

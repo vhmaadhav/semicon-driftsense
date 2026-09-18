@@ -216,3 +216,18 @@ def test_phase3_cli_answers_from_the_cad_on_a_blind_split(generated, tmp_path):
         assert math.hypot(float(p["x"]) - float(r["gt_x"]), float(p["y"]) - float(r["gt_y"])) < 0.25
     assert pred[f"a{rows_a[0]['id']}"]["found"] == "0"
     assert float(pred[f"a{rows_a[0]['id']}"]["score"]) < min(float(pred[f"p{r['id']}"]["score"]) for r in rows)
+
+
+def test_a_search_cad_in_an_offset_frame_is_still_registered(generated):
+    """A search CAD whose frame is shifted from the image's (not the
+    organizer's current export, but a plausible other convention): the
+    whole-frame translation is found and carried into the answer."""
+    (d, rows), _ = generated
+    r = rows[0]
+    img = cv2.imread(str(d / r["search_path"]), cv2.IMREAD_GRAYSCALE)
+    dx, dy = 23, -17
+    M = np.float32([[1, 0, dx], [0, 1, dy]])
+    moved = cv2.warpAffine(img, M, img.shape[::-1], borderMode=cv2.BORDER_REFLECT)
+    res = CA.register(str(d / r["reference_gds_path"]), str(d / r["search_gds_path"]), moved)
+    assert res.found
+    assert math.hypot(res.x - (float(r["gt_x"]) + dx), res.y - (float(r["gt_y"]) + dy)) < 1.5
