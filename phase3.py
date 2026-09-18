@@ -57,8 +57,9 @@ from driftsense import cad_anchor  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
-    PHASE3_COARSE_ROTATIONS, PHASE3_LABEL_CONVENTION, PHASE3_ROTATION_BOUNDS, PHASE3_THRESHOLD,
-    SHIPPED_BAND, SHIPPED_STRIP_ROTATION, SHIPPED_SUBPIXEL_ROWS, SHIPPED_VERIFICATION,
+    PHASE3_COARSE_ROTATIONS, PHASE3_FALLBACK_SHEAR_PX, PHASE3_LABEL_CONVENTION, PHASE3_ROTATION_BOUNDS,
+    PHASE3_SUBPIXEL_ROWS, PHASE3_THRESHOLD,
+    SHIPPED_BAND, SHIPPED_STRIP_ROTATION, SHIPPED_VERIFICATION,
 )
 from driftsense.matching import PHASE2_SCALE_BOUNDS, locate_phase2  # noqa: E402
 
@@ -89,7 +90,7 @@ DECODE = dict(
     refine=True,
     verification=SHIPPED_VERIFICATION,
     band=SHIPPED_BAND,
-    subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
+    subpixel_rows=PHASE3_SUBPIXEL_ROWS,
     strip_rot=SHIPPED_STRIP_ROTATION,
     label_convention=PHASE3_LABEL_CONVENTION,
     scale_bounds=PHASE2_SCALE_BOUNDS,
@@ -110,7 +111,7 @@ def decode(model, device, ref, sea, **overrides) -> dict:
 def predict_pair(model, device, ref_gds: str, search_png: str, search_gds: str, *,
                  threshold: float = None, verification: str = SHIPPED_VERIFICATION,
                  render_size: int = gds.REF_SIZE, min_layer: int = 0,
-                 use_cad: bool = True, **overrides) -> dict:
+                 use_cad: bool = True, drift_prior_px: float = None, **overrides) -> dict:
     """One pair's raw answer: pose (always filled), found, score, and how.
 
     Primary path -- the search CAD is on the blind split, so register through
@@ -147,7 +148,13 @@ def predict_pair(model, device, ref_gds: str, search_png: str, search_gds: str, 
         res = decode(model, device, ref, sea, verification=verification, **overrides)
         thr = threshold
     score = float(res.get("confidence", res.get("score", 0.0)))
-    out = {"x": float(res["x"]), "y": float(res["y"]),
+    # The CAD generator labels the undrifted position; raster shear moves the
+    # imaged content left by shear * y / (h - 1) on average, so the matched
+    # content sits left of the label by that much. Add the expected shift.
+    if drift_prior_px is None:
+        drift_prior_px = PHASE3_FALLBACK_SHEAR_PX
+    x_img = float(res["x"]) + drift_prior_px * float(res["y"]) / max(sea.shape[0] - 1, 1)
+    out = {"x": x_img, "y": float(res["y"]),
            "theta": float(res.get("theta", 0.0)), "scale": float(res.get("scale", 10.0)),
            "found": int(score >= thr), "score": score, "method": "image", "note": note}
     for k, v in res.items():
