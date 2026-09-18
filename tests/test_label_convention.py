@@ -65,8 +65,14 @@ def test_center_convention_reads_the_pixel_centre_row():
     ref, search = _two_row_scene()
     tpl = make_template(ref, 10.0, 0.0)
     cx, cy = 150.0, 150.7          # pixel-edge: round -> 151, pixel-centre 150.2 -> 150
-    centre = drift_row_refine(search, tpl, cx, cy, label_convention="center")
-    edge = drift_row_refine(search, tpl, cx, cy, label_convention="edge")
+    # shrink_sigma=None: this test is about WHICH row is read, so it wants the
+    # row's raw offset. The shipped shrinkage (issue #89) scales a correction
+    # by how much drift the pair shows overall, and this scene pins two outlier
+    # rows into an otherwise quiet frame, so it would report a small fraction
+    # of 1.2 px -- correct behaviour, but it would hide the row choice here.
+    kw = dict(shrink_sigma=None)
+    centre = drift_row_refine(search, tpl, cx, cy, label_convention="center", **kw)
+    edge = drift_row_refine(search, tpl, cx, cy, label_convention="edge", **kw)
     assert centre is not None and edge is not None
     assert centre[0] - cx == pytest.approx(-1.2, abs=0.35), "must read row 150"
     assert edge[0] - cx == pytest.approx(+1.2, abs=0.35), "must read row 151"
