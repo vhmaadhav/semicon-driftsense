@@ -81,6 +81,14 @@ def read_gds_layers(path: str) -> tuple:
 
     ``polygons_by_layer`` maps a layer index to a list of ``(N, 2)`` float64
     arrays in design coordinates (nm, 1 nm/px at the reference scale).
+
+    **Only datatype 0 is read.** A GDS layer number is paired with a datatype,
+    and readers conventionally treat ``(layer, 0)`` as the drawn geometry while
+    other datatypes carry annotations, fill, or DRC markers. The organizer-side
+    renderer filters ``datatype=0``; reading every datatype instead would paint
+    geometry the reference does not actually contain, and would silently break
+    the bit-identical property against that renderer. A non-zero datatype is
+    counted and reported rather than dropped in silence.
     """
     gdstk = _require_gdstk()
     try:
@@ -96,27 +104,42 @@ def read_gds_layers(path: str) -> tuple:
     # them rather than silently using the first, so a multi-cell file does not
     # produce a half-empty raster.
     by_layer: dict[int, list] = {}
+    skipped_datatypes: set = set()
     for cell in cells:
         for poly in cell.get_polygons():
+            if int(poly.datatype) != 0:
+                # Not drawn geometry -- do not paint it.
+                skipped_datatypes.add((int(poly.layer), int(poly.datatype)))
+                continue
             by_layer.setdefault(int(poly.layer), []).append(
                 np.asarray(poly.points, dtype=np.float64))
     if not by_layer:
-        raise GdsError(f"{path!r} contains no polygons")
+        extra = (f" (only non-zero datatypes present: {sorted(skipped_datatypes)})"
+                 if skipped_datatypes else "")
+        raise GdsError(f"{path!r} contains no datatype-0 polygons{extra}")
 
     num_layers = max(by_layer) + 1
     return by_layer, num_layers
 
 
 def rasterize_layers(polygons_by_layer: dict, num_layers: int,
-                     size: int = REF_SIZE,
+                     size=REF_SIZE,
                      layer_intensities: dict | None = None,
                      offset: tuple = (0.0, 0.0),
                      min_layer: int = 0) -> np.ndarray:
-    """Paint layers bottom-to-top onto a ``size`` x ``size`` uint8 canvas.
+    """Paint layers bottom-to-top onto a uint8 canvas.
 
-    Painter's algorithm with ``np.maximum``-free direct assignment, matching the
-    organizer-side renderer: a higher layer overwrites a lower one where they
-    overlap, because a real SEM only sees the top surface.
+    Painter's algorithm with direct assignment, matching the organizer-side
+    renderer: a higher layer overwrites a lower one where they overlap, because
+    a real SEM only sees the top surface.
+
+    ``size`` is either an int (square canvas -- the reference convention) or an
+    explicit ``(width, height)`` pair. The pair form matters for layout work: a
+    mat is not square in general, and rasterizing a non-square mat onto a square
+    canvas of ``max(w, h)`` then slicing ``[:h, :w]`` silently drops every
+    polygon beyond the slice. Geometry present in the search image would then be
+    missing from the reference clipped out of the same mat, and the two sides
+    would stop describing the same scene.
 
     ``offset`` shifts design coordinates before rasterizing (used to render a
     sub-window). ``min_layer`` drops everything below an index, which models an
@@ -124,9 +147,13 @@ def rasterize_layers(polygons_by_layer: dict, num_layers: int,
     """
     import cv2  # noqa: PLC0415  (already a hard dependency of the matcher)
 
-    if size <= 0:
-        raise GdsError(f"size must be positive, got {size}")
-    canvas = np.full((size, size), background_intensity(), dtype=np.uint8)
+    if isinstance(size, (tuple, list)):
+        width, height = int(size[0]), int(size[1])
+    else:
+        width = height = int(size)
+    if width <= 0 or height <= 0:
+        raise GdsError(f"size must be positive, got {(width, height)}")
+    canvas = np.full((height, width), background_intensity(), dtype=np.uint8)
     ox, oy = float(offset[0]), float(offset[1])
 
     for layer in range(min_layer, num_layers):
@@ -153,3 +180,49 @@ def render_reference(path: str, size: int = REF_SIZE,
     return rasterize_layers(polys, num_layers, size=size,
                             layer_intensities=layer_intensities,
                             min_layer=min_layer)
+
+
+# ---------------------------------------------------------------------------
+# Search-resolution rasterization
+# ---------------------------------------------------------------------------
+#
+# The search frame is 1000x1000 at 10 nm/px, so the design must also be
+# renderable at that coarser scale: a 1 nm/px raster of the search FOV would be
+# 10000x10000, which is both wasteful and the wrong sampling for matching.
+#
+# The scaling is done by shrinking the DESIGN COORDINATES before rasterizing,
+# not by downsampling a fine raster afterwards. Those differ: raster-then-resize
+# averages antialiased edges, whereas coordinate-scaling re-rasterizes the
+# polygons at the target sampling, which is what a coarser capture actually
+# does. For a 10x step the difference is visible on 1-2 px features.
+
+PIXEL_SIZE_REF_NM = 1
+PIXEL_SIZE_SEARCH_NM = 10
+SCALE_FACTOR = PIXEL_SIZE_SEARCH_NM // PIXEL_SIZE_REF_NM
+
+
+def rasterize_layers_at(polygons_by_layer: dict, num_layers: int, size: int,
+                        nm_per_px: float, **kwargs) -> np.ndarray:
+    """Rasterize design geometry sampled at ``nm_per_px``.
+
+    ``nm_per_px=1`` gives the reference convention; ``nm_per_px=10`` gives the
+    search convention. Coordinates are divided by ``nm_per_px`` before painting
+    so polygons are re-sampled at the target pitch.
+    """
+    if nm_per_px <= 0:
+        raise GdsError(f"nm_per_px must be positive, got {nm_per_px}")
+    if nm_per_px == 1:
+        return rasterize_layers(polygons_by_layer, num_layers, size=size, **kwargs)
+    scaled = {L: [p / float(nm_per_px) for p in polys]
+              for L, polys in polygons_by_layer.items()}
+    return rasterize_layers(scaled, num_layers, size=size, **kwargs)
+
+
+def render_reference_at(path: str, size: int, nm_per_px: float,
+                        layer_intensities: dict | None = None,
+                        min_layer: int = 0) -> np.ndarray:
+    """``.gds`` -> raster at an arbitrary sampling (reference or search)."""
+    polys, num_layers = read_gds_layers(path)
+    return rasterize_layers_at(polys, num_layers, size, nm_per_px,
+                               layer_intensities=layer_intensities,
+                               min_layer=min_layer)
