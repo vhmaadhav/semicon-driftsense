@@ -62,7 +62,10 @@ GUI_BANDS = {
     "detector_noise_sigma_search": (0.0, 7.0),
     "astigmatism_ratio": (0.8, 1.6),
     "search_rotation_deg": (0.0, 8.0),
-    "barrel_distortion_k": (-0.05, 0.05),
+    # Off: the organizer stated the Phase 3 evaluation sets carry no barrel
+    # distortion ("we will not have a data set which has a barrel
+    # distortion"), so it is not sampled here either.
+    "barrel_distortion_k": (0.0, 0.0),
     "vignette_strength": (0.0, 0.3),
     "gamma": (0.7, 1.5),
     "charging_streak_prob": (0.0, 1.5),

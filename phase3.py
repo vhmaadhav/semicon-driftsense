@@ -53,6 +53,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import register as R  # noqa: E402
+from driftsense import cad_anchor  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
@@ -106,6 +107,55 @@ def decode(model, device, ref, sea, **overrides) -> dict:
     return locate_phase2(model, ref, sea, device, **kw)
 
 
+def predict_pair(model, device, ref_gds: str, search_png: str, search_gds: str, *,
+                 threshold: float = None, verification: str = SHIPPED_VERIFICATION,
+                 render_size: int = gds.REF_SIZE, min_layer: int = 0,
+                 use_cad: bool = True, **overrides) -> dict:
+    """One pair's raw answer: pose (always filled), found, score, and how.
+
+    Primary path -- the search CAD is on the blind split, so register through
+    it (driftsense.cad_anchor): find the reference in the search design
+    exactly, then fit the design-to-image rotation over the whole frame.
+    `found` there is the CAD-to-CAD decision; `score` its confidence.
+
+    Fallback -- no usable search CAD, or the frame does not align: render the
+    reference and run the Phase 2 image matcher (decode()), found = score >=
+    threshold, exactly as before.
+    """
+    if threshold is None:
+        threshold = DEFAULT_FOUND_THRESHOLD
+    sea = I.read_gray(search_png)
+    note = ""
+    if use_cad and search_gds:
+        try:
+            r = cad_anchor.register(ref_gds, search_gds, sea, rotation_bounds=PHASE3_ROTATION_BOUNDS,
+                                    ref_size=float(render_size))
+            return {"x": r.x, "y": r.y, "theta": r.theta, "scale": r.scale,
+                    "found": int(r.found), "score": float(r.score), "method": "cad",
+                    "support": r.support, "coarse_peak": r.coarse_peak, "n_interior": r.n_interior,
+                    "theta_coarse": r.theta_coarse, "tiles_used": r.tiles_used,
+                    "tiles_total": r.tiles_total, "tile_ncc": r.tile_ncc,
+                    "tile_resid_px": r.tile_resid_px, "yield_r2": r.yield_r2,
+                    "magnification": r.magnification, "note": r.reason}
+        except cad_anchor.CadAnchorUnavailable as exc:
+            note = f"cad unavailable: {exc}"
+    ref = gds.render_reference(ref_gds, size=render_size, min_layer=min_layer)
+    if model is None:
+        res = I.zncc_fallback(ref, sea)
+        thr = R.LEGACY_FALLBACK_THRESHOLD
+    else:
+        res = decode(model, device, ref, sea, verification=verification, **overrides)
+        thr = threshold
+    score = float(res.get("confidence", res.get("score", 0.0)))
+    out = {"x": float(res["x"]), "y": float(res["y"]),
+           "theta": float(res.get("theta", 0.0)), "scale": float(res.get("scale", 10.0)),
+           "found": int(score >= thr), "score": score, "method": "image", "note": note}
+    for k, v in res.items():
+        if k not in out and isinstance(v, (int, float)):
+            out[k] = float(v)
+    return out
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description="Phase 3: register a GDS reference against a search image.")
@@ -126,6 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--min-layer", type=int, default=0,
                     help="drop design layers below this index when rendering "
                          "the reference")
+    ap.add_argument("--no-cad", action="store_true",
+                    help="skip the CAD-anchored path and match the rendered reference "
+                         "against the image only (measurement / debugging)")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -178,30 +231,21 @@ def main(argv=None) -> int:
                    "found": 0, "score": 0.0}
             t0 = time.perf_counter()
             try:
-                # The one line that differs from register.py: the reference is
-                # rendered from the design file instead of read as an image.
-                # A GdsError here is a per-pair failure like an unreadable
-                # image, which the Phase 2 contract already handles.
-                ref = gds.render_reference(r.reference_gds_path,
-                                           size=a.render_size,
-                                           min_layer=a.min_layer)
-                sea = I.read_gray(r.search_path)
-                if model is None:
-                    res = I.zncc_fallback(ref, sea)
-                    threshold = R.LEGACY_FALLBACK_THRESHOLD
-                else:
-                    threshold = a.threshold
-                    res = decode(model, device, ref, sea,
-                                 verification=a.verification)
-                score = float(res.get("confidence", res.get("score", 0.0)))
-                found = int(score >= threshold)
+                # A GdsError or unreadable image here is a per-pair failure,
+                # which the Phase 2 contract already handles: the row is
+                # written declined.
+                res = predict_pair(model, device, r.reference_gds_path, r.search_path,
+                                   r.search_gds_path, threshold=a.threshold,
+                                   verification=a.verification, render_size=a.render_size,
+                                   min_layer=a.min_layer, use_cad=not a.no_cad)
+                found = int(res["found"])
                 out.update({
-                    "x": f'{float(res["x"]):.4f}' if found else 0,
-                    "y": f'{float(res["y"]):.4f}' if found else 0,
-                    "theta": f'{float(res.get("theta", 0.0)):.4f}' if found else 0,
-                    "scale": f'{float(res.get("scale", 10.0)):.4f}' if found else 0,
+                    "x": f'{res["x"]:.4f}' if found else 0,
+                    "y": f'{res["y"]:.4f}' if found else 0,
+                    "theta": f'{res["theta"]:.4f}' if found else 0,
+                    "scale": f'{res["scale"]:.4f}' if found else 0,
                     "found": found,
-                    "score": f"{score:.6f}",
+                    "score": f'{res["score"]:.6f}',
                 })
             except (Exception, SystemExit) as e:      # noqa: BLE001
                 error_count += 1

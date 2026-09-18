@@ -4,15 +4,15 @@
     # 1. a blind Phase 3 pairs.csv + ground_truth.csv from a generator split
     python scripts/phase3_eval.py prepare --split generator_i4c/output/cad_varied_dev
 
-    # 2. decode every pair through phase3.decode (the shipped decode), in
-    #    parallel; --set overrides one DECODE entry (measurement only)
-    python scripts/phase3_eval.py run --split ... --out runs/dev_base.csv
-    python scripts/phase3_eval.py run --split ... --out runs/dev_norow.csv --set subpixel_rows=False
+    # 2. decode every pair through phase3.predict_pair (the shipped path), in
+    #    parallel; --set overrides one predict_pair argument (measurement only)
+    python scripts/phase3_eval.py run --split ... --out runs/dev.csv
+    python scripts/phase3_eval.py run --split ... --out runs/dev_image.csv --set use_cad=False
 
-    # 3. the Phase 3 rubric at a threshold (default: the shipped one)
-    python scripts/phase3_eval.py score --split ... runs/dev_base.csv
+    # 3. the Phase 3 rubric: found from the run's own decision, or --threshold
+    python scripts/phase3_eval.py score --split ... runs/dev.csv
 
-`run` writes the RAW decode (pose and score for every pair, before the found
+`run` writes the RAW answer (pose and score for every pair, before the found
 mask), so `score` can sweep thresholds and confidence definitions without
 re-decoding. The rubric follows the Phase 3 brief: localisation 40 (tiered at
 1/2/3/5 px, zero for a declined present pair), scale 10 and rotation 10 (on
@@ -57,8 +57,8 @@ def prepare(split: str) -> None:
         w.writerow(PAIRS_FIELDS)
         for r in rows:
             w.writerow([r["id"], r["search_path"], r["reference_gds_path"],
-                        r["reference_gds_path"], "", ""])
-    meta = [c for c in rows[0] if c not in ("id", "shard_id", "match_found", "gt_x", "gt_y",
+                        r.get("search_gds_path", ""), "", ""])
+    meta = [c for c in rows[0] if c not in ("id", "shard_id", "match_found", "gt_x", "gt_y", "seed",
                                             "gt_theta", "gt_scale") and not c.endswith("_path")
             and not c.startswith("gt_box")]
     with open(os.path.join(split, "ground_truth.csv"), "w", newline="") as f:
@@ -86,24 +86,24 @@ def _init(weights: str, overrides: dict) -> None:
     R.cap_threads(1)
     import infer as I
     import phase3
-    from driftsense import gds
     model, device = I.load_model(weights) or (None, None)
     if model is None:
         raise SystemExit(f"weights failed to load: {weights}")
-    _W.update(model=model, device=device, I=I, phase3=phase3, gds=gds, overrides=overrides)
+    _W.update(model=model, device=device, phase3=phase3, overrides=overrides)
 
 
 def _one(item):
-    pid, sea_path, gds_path = item
+    pid, sea_path, gds_path, sgds_path = item
     t0 = time.perf_counter()
     try:
-        ref = _W["gds"].render_reference(gds_path)
-        sea = _W["I"].read_gray(sea_path)
-        res = _W["phase3"].decode(_W["model"], _W["device"], ref, sea, **_W["overrides"])
+        res = _W["phase3"].predict_pair(_W["model"], _W["device"], gds_path, sea_path, sgds_path,
+                                        **_W["overrides"])
         out = {"pair_id": pid, "error": ""}
         for k, v in res.items():
             if isinstance(v, (int, float, np.floating, np.integer, bool)):
                 out[k] = float(v)
+            elif isinstance(v, str):
+                out[k] = v
     except Exception as e:  # noqa: BLE001 -- one pair's failure is a row, not a crash
         out = {"pair_id": pid, "error": f"{type(e).__name__}: {e}"}
     out["secs"] = time.perf_counter() - t0
@@ -117,7 +117,9 @@ def run(split: str, out: str, weights: str, workers: int, limit: int, seed: int,
         rng = np.random.default_rng(seed)
         rows = [rows[i] for i in sorted(rng.choice(len(rows), size=min(limit, len(rows)), replace=False))]
     items = [(r["pair_id"], os.path.join(split, r["search_path"]),
-              os.path.join(split, r["reference_gds_path"])) for r in rows]
+              os.path.join(split, r["reference_gds_path"]),
+              os.path.join(split, r["search_gds_path"]) if r.get("search_gds_path") else "")
+             for r in rows]
     os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
     t0 = time.time()
     results = []
@@ -159,6 +161,9 @@ def load(split: str, run_csv: str, score_col: str = "confidence"):
     df = gt.rename(columns={"present": "gt_found", "x": "gt_x", "y": "gt_y",
                             "theta": "gt_theta", "scale": "gt_scale"}).merge(pr, on="pair_id")
     df["score"] = df[score_col].fillna(0.0) if score_col in df else 0.0
+    # The run's own found decision when it made one (the CAD path decides
+    # found separately from its confidence); a threshold otherwise.
+    df["found_raw"] = df["found"].fillna(0).astype(int) if "found" in df else -1
     for c in ("x", "y", "theta", "scale"):
         df[c] = df[c].fillna(0.0) if c in df else 0.0
     df["err"] = np.where(df.gt_found == 1, np.hypot(df.x - df.gt_x, df.y - df.gt_y), np.nan)
@@ -193,10 +198,11 @@ def f1(found, gt, positive="reject") -> float:
     return float(2 * tp / d) if d else 0.0
 
 
-def rubric(df, t: float) -> dict:
+def rubric(df, t: float | None) -> dict:
+    """t=None: use the run's own found column."""
     gt = df.gt_found.to_numpy()
     score = df.score.to_numpy()
-    found = (score >= t).astype(int)
+    found = df.found_raw.to_numpy() if t is None else (score >= t).astype(int)
     present = gt == 1
     err = df.err.to_numpy()
     loc = np.array([tier(e, LOC_TIERS) if p and f else 0.0 for e, p, f in zip(err, present, found)])
@@ -223,7 +229,9 @@ def report(df, t: float, label: str = "") -> dict:
     r = rubric(df, t)
     pres = df[df.gt_found == 1]
     e = pres.err
-    print(f"== {label}  threshold {t:g}  n={r['n']} present={r['n_present']}")
+    print(f"== {label}  found={'run decision' if t is None else f'score >= {t:g}'}  "
+          f"n={r['n']} present={r['n_present']}"
+          + (f"  methods={df.method.value_counts().to_dict()}" if "method" in df else ""))
     print(f"  localisation  {r['loc']:.4f} -> {40 * r['loc']:6.2f}/40   "
           f"err median {e.median():.2f}  <=1 {np.mean(e <= 1):.1%}  <=2 {np.mean(e <= 2):.1%}  "
           f"<=5 {np.mean(e <= 5):.1%}  >20 {np.mean(e > 20):.1%}")
@@ -252,7 +260,7 @@ def main():
     p = sub.add_parser("score")
     p.add_argument("--split", required=True); p.add_argument("runs", nargs="+")
     p.add_argument("--threshold", type=float, default=None)
-    p.add_argument("--score-col", default="confidence")
+    p.add_argument("--score-col", default="score")
     a = ap.parse_args()
 
     if a.cmd == "prepare":
@@ -267,9 +275,6 @@ def main():
                 overrides[k] = v
         run(a.split, a.out, a.weights, a.workers, a.limit, a.seed, overrides)
     else:
-        if a.threshold is None:
-            from driftsense.config import PHASE3_THRESHOLD
-            a.threshold = PHASE3_THRESHOLD
         for rc in a.runs:
             report(load(a.split, rc, a.score_col), a.threshold, os.path.basename(rc))
 
