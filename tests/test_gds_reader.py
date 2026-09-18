@@ -105,7 +105,7 @@ def test_read_rejects_a_file_with_no_polygons(tmp_path):
     lib.add(cell)
     path = str(tmp_path / "empty.gds")
     lib.write_gds(path)
-    with pytest.raises(gds.GdsError, match="no polygons"):
+    with pytest.raises(gds.GdsError, match="datatype-0 polygons"):
         gds.read_gds_layers(path)
 
 
