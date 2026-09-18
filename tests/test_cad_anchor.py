@@ -231,3 +231,23 @@ def test_a_search_cad_in_an_offset_frame_is_still_registered(generated):
     res = CA.register(str(d / r["reference_gds_path"]), str(d / r["search_gds_path"]), moved)
     assert res.found
     assert math.hypot(res.x - (float(r["gt_x"]) + dx), res.y - (float(r["gt_y"]) + dy)) < 1.5
+
+
+def test_paths_relative_to_the_dataset_root_resolve_when_run_from_it(generated, tmp_path):
+    """pairs.csv outside the dataset root, paths relative to the root, run
+    from the root: the CSV-relative reading misses, the root reading hits."""
+    (d, rows), _ = generated
+    r = rows[0]
+    pairs = tmp_path / "elsewhere" / "pairs.csv"
+    pairs.parent.mkdir()
+    with open(pairs, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["pair_id", "search_path", "reference_gds_path", "search_gds_path",
+                    "reference_sem_path", "params_json_path"])
+        w.writerow(["p0", r["search_path"], r["reference_gds_path"], r["search_gds_path"], "", ""])
+    out = tmp_path / "pred.csv"
+    subprocess.run([sys.executable, os.path.join(REPO, "phase3.py"), "--input", str(pairs),
+                    "--output", str(out), "--quiet"], check=True, capture_output=True, cwd=str(d))
+    p = next(csv.DictReader(open(out)))
+    assert p["found"] == "1"
+    assert math.hypot(float(p["x"]) - float(r["gt_x"]), float(p["y"]) - float(r["gt_y"])) < 0.25
