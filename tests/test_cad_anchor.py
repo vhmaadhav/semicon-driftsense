@@ -253,9 +253,47 @@ def test_paths_relative_to_the_dataset_root_resolve_when_run_from_it(generated, 
     assert math.hypot(float(p["x"]) - float(r["gt_x"]), float(p["y"]) - float(r["gt_y"])) < 0.25
 
 
+def test_a_reference_passed_as_the_search_cad_falls_back(generated):
+    """Datasets written without a real search CAD (the upstream CLI, the older
+    repo generator) point search_gds_path at the reference file. That must
+    raise so phase3.py falls back -- never answer from a 1000 nm 'frame'."""
+    (d, rows), _ = generated
+    r = rows[0]
+    img = cv2.imread(str(d / r["search_path"]), cv2.IMREAD_GRAYSCALE)
+    with pytest.raises(CA.CadAnchorUnavailable):
+        CA.register(str(d / r["reference_gds_path"]), str(d / r["reference_gds_path"]), img)
+
+
+def test_a_reference_with_no_interior_polygon_is_matched_by_clipping():
+    """Every polygon crosses the window edge (long fins and gates): the
+    interior matcher has nothing to compare, so the clipped matcher must
+    recover the exact origin -- and must not fire on an unrelated layout."""
+    lines = [_rect(0, y, 4000, 13) for y in np.arange(7, 4000, 41.0)]            # fins
+    lines += [_rect(x, 0, 9, 4000) for x in np.arange(3, 4000, 67.0)]             # gates
+    lines += [_rect(1450, 1320, 820, 470)]                                        # one block
+    search_polys = {0: lines}
+    search = CA.SearchCad(polys=search_polys, num_layers=1, bboxes=CA._bboxes(search_polys),
+                          masks=CA.layer_masks(search_polys, 1, (400, 400), 10.0))
+    x0, y0 = 1011.0, 1173.0
+    ref = []
+    for p in lines:
+        lo = np.maximum(p.min(0), (x0, y0)); hi = np.minimum(p.max(0), (x0 + 1000, y0 + 1000))
+        if np.all(hi > lo):
+            ref.append(_rect(lo[0] - x0, lo[1] - y0, *(hi - lo)))
+    ref = {0: ref}
+    b = CA._bboxes(ref)[0]
+    assert not ((b[:, 0] > 0.5) & (b[:, 1] > 0.5) & (b[:, 2] < 999.5) & (b[:, 3] < 999.5)).any()
+    origin, support, n, _ = CA.locate_reference(ref, 1, search)
+    assert n < 0 and origin == (x0, y0) and support > 0.95
+    shifted = {0: [p + (0.0, 17.0) for p in ref[0]]}                              # a different layout
+    _, support_other, _, _ = CA.locate_reference(shifted, 1, search)
+    assert support_other < CA.SUPPORT_FOUND_CLIPPED
+
+
 # ---------------------------------------------------------------------------
 # Degrading instead of discarding (harsh-capture path)
 # ---------------------------------------------------------------------------
+
 
 def test_tile_floor_admits_more_tiles_as_it_drops():
     """The floor is what decides whether a noisy frame yields any tiles at
@@ -298,7 +336,9 @@ def test_exact_anchor_survives_a_frame_fit_that_never_converges(generated, monke
     noise can move. When the design-to-image pose cannot be established the
     module must still report that location, flagged by a score in the
     unverified band -- not raise and hand the pair to a matcher with strictly
-    less to work with.
+    less to work with. Upstream has two such exits -- no candidate fitted, and
+    a winner agreeing on fewer than MIN_TILE_SHARE of the tiles -- and both
+    must land here.
     """
     (d, rows), _ = generated
     r0 = rows[0]

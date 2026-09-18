@@ -284,3 +284,17 @@ PHASE3_LABEL_CONVENTION = "edge"
 # found = confidence >= this. Starts at the Phase 2 value; recalibrated for
 # Phase 3 below once measured.
 PHASE3_THRESHOLD = SHIPPED_THRESHOLD
+# Image-only fallback (no usable search CAD). The CAD generator labels the
+# undrifted position, so for Phase 3:
+#   * the drift-row stage is off -- it re-places x on the centre row's jitter,
+#     which the Phase 2 label carried and the Phase 3 label does not;
+#   * the expected raster shear (search px) is added back to x: shear moves
+#     row y left by shear * y / (h - 1). 1.5 is the upstream CLI default
+#     (the GUI's Randomize band averages 1.25; any prior from 1.0 to 1.75
+#     scored within 0.05 of each other).
+# Measured (rubric /85; within-1-px of found present pairs):
+#   CLI 400, seed 5:  58.25 -> 60.69  (52% -> 85%)
+#   CLI 400, seed 9:  59.09 -> 61.74  (52% -> 87%)
+#   organizer's 20 curated samples, image-only: localisation 32.40 -> 35.20 /40
+PHASE3_FALLBACK_SHEAR_PX = 1.5
+PHASE3_SUBPIXEL_ROWS = False
