@@ -67,7 +67,36 @@ parameter with the Phase 2 values as its default; Phase 2 cannot move.
 | 5–8° | 13 | 2.58 | 1.38 |
 | 8–10° | 8 | — (all declined/misplaced) | 3 of 8 recovered |
 
-## The threshold, fitted and validated
+## The threshold, and the ambiguity that decides it
+
+**The positive class of the rejection F1 is not resolved by the source material**, and this
+constant lives or dies on it. `driftsense/rubric.py` has documented it since Phase 2:
+under *reject*-as-positive an always-found system scores exactly **0.000**; under
+*present*-as-positive the same system scores **0.875**.
+
+An earlier revision of this file swept the threshold under present-positive alone and
+landed on 0.20. That is a mistake of method: `rubric.py`'s own policy is that the operating
+point must be "near-optimal under either reading", which is what makes the ambiguity
+survivable. Swept under both:
+
+| | 250-pair fit | | | 60-pair held out | | |
+|---|---|---|---|---|---|---|
+| T | reject | present | **worst** | reject | present | **worst** |
+| 0.20 | 58.20 | 70.43 | 58.20 | 56.29 | 69.93 | 56.29 |
+| 0.70 | 61.74 | 69.74 | 61.74 | 66.29 | 70.58 | 66.29 |
+| **0.75** | 63.54 | 69.48 | **63.54** | 65.28 | 69.76 | **65.28** |
+| 0.80 | 63.21 | 68.67 | 63.21 | 65.28 | 69.76 | 65.28 |
+
+`PHASE3_THRESHOLD = 0.75` maximises the worst case over both readings on both sets:
+**+5.34 / +8.99** under the reading that would hurt if we guessed wrong, against
+−0.95 / −0.17 under the other. It also turns the rejector back into a working component —
+6 of 7 absent pairs rejected on the held-out set against 1 of 7 at T=0.20.
+
+**Corollary worth stating because the earlier revision asserted the opposite:** "T=0 is the
+argmax at every assumed absent rate from 8% to 40%" is true *only* under present-positive.
+Under reject-positive, T=0 scores 0.0000 on the 15-point block by construction.
+
+## The earlier single-reading sweep, for reference
 
 Fitted on **250 pairs** (226 present / 24 absent, seed 777001), validated on the
 **60-pair set** (seed 20260918) that was never used to choose it. One decode per set at

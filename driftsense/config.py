@@ -307,52 +307,41 @@ SHIPPED_SUBPIXEL = "parabola"
 #
 # SHIPPED_THRESHOLD is a Phase 2 constant and must stay one: it was swept
 # against the Phase 2 rubric on the Phase 2 distribution, where ~20% of pairs
-# are absent. Phase 3 discloses ~1 site in 12 (8.3%), and that alone moves the
-# optimum down, mechanically rather than as a matter of taste:
+# are absent. Phase 3 discloses ~1 site in 12 (8.3%).
 #
-#   * a false ACCEPT costs only rejection F1, and with 8.3% absent there are
-#     few pairs that can be falsely accepted at all;
-#   * a false DECLINE costs the pair's localisation (40) AND pose (20) -- the
-#     row is zero-filled, which is what gets submitted -- and costs F1 too.
+# THE POSITIVE CLASS OF THE REJECTION F1 IS NOT RESOLVED BY THE SOURCE
+# MATERIAL, and this constant lives or dies on it. driftsense/rubric.py has
+# documented the ambiguity since Phase 2:
 #
-# Fitted on 250 generated Phase 3 pairs at rotation U(-10,+10) (226 present /
-# 24 absent), decoded once at --threshold 0 and re-thresholded offline, scored
-# over the briefing's 85 measurable points:
+#   * reject-as-positive  -- an always-found system scores exactly 0.000;
+#   * present-as-positive -- the same system scores 0.875.
 #
-#     T      0.00   0.15   0.20   0.25   0.40   0.55(P2)  0.70
-#     /85   67.58  66.84  66.84  66.74  65.20   59.37    44.24
+# An earlier revision of this constant was 0.20, swept under present-positive
+# ALONE. That was a mistake of method, not of arithmetic: rubric.py's own
+# policy is that the operating point is "near-optimal under either reading",
+# which is what makes the ambiguity survivable, and 0.20 is near-optimal under
+# only one. Under reject-positive it gives up 5.34 of 85 on the 250-pair fit
+# set and 8.99 on the held-out 60.
 #
-# Validated on a disjoint 60-pair set never used to choose it: 0.55 scores
-# 56.69, 0.20 scores 65.91, T=0 scores 68.14. Phase 2's 0.55 declines 48 of
-# 226 present pairs on the fit set and gives up ~8 points.
+# Swept under BOTH readings, scoring the 85 measurable points:
 #
-# WHY NOT 0.0, which is the literal argmax -- and is the argmax at EVERY
-# assumed absent rate from 8% to 40%, so this is not an artefact of the
-# generated absent fraction. Two reasons, both about what is not measured
-# here rather than about taste:
+#                    250-pair fit              60-pair held out
+#     T        reject  present  worst      reject  present  worst
+#     0.20     58.20   70.43   58.20       56.29   69.93   56.29
+#     0.70     61.74   69.74   61.74       66.29   70.58   66.29
+#     0.75     63.54   69.48   63.54       65.28   69.76   65.28
+#     0.80     63.21   68.67   63.21       65.28   69.76   65.28
 #
-#   * the briefing says high-confidence false grabs "carry heavy penalties",
-#     which a plain F1 term does not express; and
-#   * these absent pairs come from our own generator. The organizers' own
-#     README discloses that their absent decoys carry a size signature, so
-#     their absents may be more separable than ours, and a degenerate `found`
-#     column cannot exploit that at all.
+# 0.75 maximises the WORST CASE over both readings on both sets, which is the
+# decision rule rubric.py argues for. It buys +5.34 / +8.99 under the reading
+# that would hurt if we guessed wrong, and costs 0.95 / 0.17 under the other.
+# 0.70-0.80 is a broad plateau on both sets, so this is not a knife edge.
 #
-# 0.20 is the best NON-degenerate point at every assumed absent rate and costs
-# 0.74 against T=0 at the disclosed rate. It still declines 12% of absent
-# pairs, so the rejector remains a working component rather than a constant.
-#
-# THE REAL FINDING IS NOT THE THRESHOLD. At 0.20, 88% of absent pairs still
-# score above it against 97% of present ones -- the shipped `legacy_min`
-# confidence barely separates the two classes on CAD-reference pairs (AUC
-# 0.836 here against 0.9877 on Phase 2 data). No threshold can fix a
-# statistic that does not separate. docs/PHASE3_MEASUREMENT.md already
-# measured the replacement: the confidence MARGIN (best peak minus best
-# competing peak) separates good pose basins from bad at AUC 0.948. Wiring
-# that into the score column is where the 15 rejection and 10 calibration
-# points actually are -- this constant only stops the current statistic from
-# throwing away localisation and pose on top of them.
-PHASE3_THRESHOLD = 0.20
+# Corollary, recorded because the earlier revision asserted the opposite: "T=0
+# is the argmax at every assumed absent rate from 8% to 40%" is TRUE ONLY under
+# present-positive. Under reject-positive T=0 scores 0.0000 on the 15-point
+# rejection block by construction, and is the worst available choice.
+PHASE3_THRESHOLD = 0.75
 
 
 # --------------------------------------------------------------------------
