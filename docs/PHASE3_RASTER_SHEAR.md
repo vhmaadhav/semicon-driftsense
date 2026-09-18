@@ -267,32 +267,52 @@ python phase3.py --input /tmp/p3/dev_A3/pairs.csv --output /tmp/pred.csv --shear
 python scripts/score_phase3.py /tmp/pred.csv /tmp/p3/dev_A3/ground_truth.csv run
 ```
 
-## 8. The inference contract, confirmed by the organizers
+## 8. `search_gds_path` IS the full search canvas -- correction
 
-The Phase 3 `pairs.csv` schema carries a **`search_gds_path`** column, but
-nothing in the organizer generator writes a Search-side GDS —
-`generate_cad_dataset.py` emits `reference_gds_path` only, and both our
-generators mirror the reference into that column. If that column were the
-**full Search-field design**, the shear would be directly recoverable by a
-global affine fit against the rendered field and none of section 4's pooling
-would be necessary.
+An earlier revision of this document claimed the opposite. It was wrong, and the
+error is worth recording because it came from checking one of the two export
+paths.
 
-It is not. The organizers' finals briefing states the inference contract
-directly: *"what we will give you in inference is only the big image, the
-search image, and the reference GDS"* — the per-layer intensity JSON and the
-reference SEM capture are training-side only. So the reference-only design here
-is the contract, not a conservative guess, and `drift_shear` touches only
-`search_path` and `reference_gds_path`.
+`generate_cad_dataset.py`, the organizer's batch CLI, writes only
+`reference_gds_path` -- which is what the first check looked at. But `app.py`,
+the bookmark/export path that produces the published curated sets, writes both:
 
-Two further points from the same briefing that this measurement depends on:
+```python
+# drift-sense-i4c/app.py:526-528
+zf.writestr(f"{prefix}/reference.gds", _gds_bytes(sample["reference_cell"]))
+full_cell = _full_canvas_cell(geom["mats"], geom["num_layers"])
+zf.writestr(f"{prefix}/search.gds", _gds_bytes(full_cell))
+```
+
+`_full_canvas_cell` is the **whole 10000x10000 nm design canvas**, not the
+reference site. `driftsense.pairs3.WITHHELD_FIELDS` already said as much --
+only `reference_sem_path` and `params_json_path` are withheld, never
+`search_gds_path`.
+
+**That makes the estimator in this document the fallback, not the main line.**
+With the full search canvas the registration is a direct geometric problem:
+PR #105 reports 85.00/85 on an 800-pair dev split through it, against the
+~70/85 the image matcher reaches. Nothing here is needed on that path.
+
+What this module is still for:
+
+* the image-matcher path PR #105 falls back to when `search.gds` is missing or
+  is not the whole canvas -- PR #105's own caveat records that fallback as
+  "much weaker on rotated pairs", and the shear bias measured in section 1 is
+  a large part of why;
+* the measurement in sections 1-3, which stands on its own: the 104% pass-through
+  of the label bias, and the demonstration that single-frame shear estimation is
+  degenerate without a frame-wide model of the design. Both remain true, and the
+  second is precisely *why* the search canvas is worth so much.
+
+Two further points from the organizers' finals briefing that this measurement
+depends on:
 
 * **The Search image rotates; the CAD reference does not** (*"in this phase CAD
-  is not rotated, but the other guy can rotate"*). Every number in this
-  document is measured at rotation U(-10, +10) for that reason, which is also
-  why the rotation-error cancellation in section 4 is load-bearing rather than
-  a refinement.
+  is not rotated, but the other guy can rotate"*). Every number here is measured
+  at rotation U(-10, +10) for that reason, which is also why the rotation-error
+  cancellation in section 4 is load-bearing rather than a refinement.
 * **Barrel distortion will not appear in the graded data** (*"we will not have
-  a data set which has a barrel distortion"*). That matters here: a radial
-  distortion would add a row-dependent x term this estimator would read as
-  shear. `barrel_distortion_k` is 0 throughout, and should stay 0 in any set
-  used to re-measure this.
+  a data set which has a barrel distortion"*). A radial distortion would add a
+  row-dependent x term this estimator would read as shear. `barrel_distortion_k`
+  is 0 throughout, and should stay 0 in any set used to re-measure this.
