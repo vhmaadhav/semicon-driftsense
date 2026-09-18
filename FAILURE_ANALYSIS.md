@@ -67,8 +67,8 @@ The extension re-runs the same SEM-to-SEM task on a harder generator: a severity
 ### 9. Drift-row re-placement was trusted too much (#89)
 - **Observed:** on the dev split the stage **declines on 35% of present pairs**, and the declining guard is always the same one — the label row's own correlation below the floor, never the row count and never the runaway clamp. Worse, where it did fire it was actively harmful at both ends of the severity ladder: mean |x error| at severity 0 went 0.233 px (no correction) → 0.251 px (corrected), and at severity 4 0.773 → 0.839.
 - **Cause:** the measured row offset is `s + e` — the row's own drift sample plus measurement noise. On a quiet frame there is almost no `s` to recover, and at severity 4 the row is measured badly, so in both regimes the correction is mostly `e`. Taking it whole is the wrong estimator. Bucketing by the row's correlation shows it directly: below 0.5 the correction helped only ~35% of the time and raised the mean error.
-- **Mitigation:** scale the correction by its own signal-to-noise, `1 − σ_m²/σ_resid²`, with `σ_resid` already measured per pair (the scatter of row offsets about their smooth trend) and `σ_m` modelled from the row's correlation peak. Both ends are repaired (0.207 and 0.754) while the middle keeps its gain: dev localisation 38.90 → **39.07**/40, holdout 38.86 → 38.98, and the severity-4 within-1 px rate 0.650 → **0.717**. A row-preserving 1×3 median, the obvious alternative, measured **negative** (38.92 → 38.61) and is retained only as a documented parameter.
-- **Remaining limitation:** worth +0.17 and +0.12 on the two 500-pair splits, i.e. below this repo's usual +0.35 promotion gate, with the holdout CI including zero — it is kept for the robustness it buys, not the points. One severity-4 mentor pair remains 1.85 px out: its label row correlates at 0.23, so there is no measurement to trust at any weight. That is the information floor of a single-row estimator, and beating it needs a different measurement, not a better guard.
+- **Mitigation, measured but NOT shipped:** scale the correction by its own signal-to-noise, `1 − σ_m²/σ_resid²`, with `σ_resid` already measured per pair (the scatter of row offsets about their smooth trend) and `σ_m` modelled from the row's correlation peak. Both ends are repaired (0.207 and 0.754) while the middle keeps its gain: dev localisation 38.90 → **39.07**/40, holdout 38.86 → 38.98, and the severity-4 within-1 px rate 0.650 → **0.717**. It is worth +0.17 and +0.12 on the two 500-pair splits — below this repo's +0.35 promotion gate, with the holdout CI including zero — so it sits in a **draft PR** pending a decision rather than on `main`. A row-preserving 1×3 median, the obvious alternative, measured **negative** (38.92 → 38.61).
+- **Remaining limitation:** until that decision is taken, the shipped stage still applies each row correction at full weight, so the two ends of the severity ladder keep the harm described above. One severity-4 mentor pair remains 1.85 px out: its label row correlates at 0.23, so there is no measurement to trust at any weight. That is the information floor of a single-row estimator, and beating it needs a different measurement, not a better guard.
 
 ### Where the extension stands
 | step | issue | mentor 25-pair | dev (500) | holdout (500) |
@@ -77,9 +77,9 @@ The extension re-runs the same SEM-to-SEM task on a harder generator: a severity
 | pixel-centre coordinates + drift row | #86 | 81.73 | | |
 | median-ZNCC confidence, gate 0.55 | #87 | 83.40 | 82.80 | 82.39 |
 | drift-immune rotation | #88 | 83.58 | 83.41 | 83.18 |
-| drift-row shrinkage | #89 | **84.07** | 83.57 | 83.31 |
+| drift-row shrinkage (measured, in draft — not on `main`) | #89 | *84.07* | *83.57* | *83.31* |
 
-Localisation is now near-saturated on nominal pairs and the remaining loss is concentrated in severity 3–4 horizontal residuals; rotation carries most of the rest.
+The shipped total is the #88 row; the #89 row is italicised because it is measured but not merged. Localisation is now near-saturated on nominal pairs and the remaining loss is concentrated in severity 3–4 horizontal residuals; rotation carries most of the rest.
 
 
 ## Release rule
