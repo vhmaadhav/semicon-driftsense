@@ -103,7 +103,7 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--max-rotation-deg", type=float, default=GUI_BANDS["search_rotation_deg"][1],
                    help="upper bound of the per-sample rotation magnitude (default: the GUI's "
-                        "Randomize band, %(default)s; upstream cap %s)" % MAX_SEARCH_ROTATION_DEG)
+                        f"Randomize band, %(default)s; upstream cap {MAX_SEARCH_ROTATION_DEG})")
     p.add_argument("--no-match-prob", type=float, default=CadGenerationParams.no_match_prob)
     a = p.parse_args()
     if not 0.0 <= a.max_rotation_deg <= MAX_SEARCH_ROTATION_DEG:

@@ -1,5 +1,10 @@
 """The varied-parameter wrapper: recorded rotation is the one applied."""
 
+import csv
+import os
+import subprocess
+import sys
+
 import cv2
 import numpy as np
 import pytest
@@ -44,3 +49,15 @@ def test_absent_sample_has_zero_pose():
     rng = np.random.default_rng(4)
     s = generate_sample("dram", rng, max_rotation_deg=8.0, no_match_prob=1.0)
     assert not s["match_found"] and s["gt_theta"] == 0.0
+
+
+def test_cli_writes_a_manifest_with_the_pose_columns(tmp_path):
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    subprocess.run([sys.executable, "generate_cad_varied.py", "--num-samples", "2", "--split", "s",
+                    "--output-dir", str(tmp_path), "--seed", "5"], cwd=here, check=True,
+                   capture_output=True)
+    rows = list(csv.DictReader(open(tmp_path / "s" / "manifest.csv")))
+    assert len(rows) == 2 and {"gt_theta", "gt_scale", "search_rotation_deg"} <= set(rows[0])
+    for r in rows:
+        assert (tmp_path / "s" / r["reference_gds_path"]).exists()
+        assert (tmp_path / "s" / r["search_path"]).exists()
