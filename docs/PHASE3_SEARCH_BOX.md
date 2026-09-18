@@ -106,6 +106,27 @@ it. `PHASE3_MEASUREMENT.md` already measured the replacement — the confidence 
 Phase 3 rubric; this constant only stops the current statistic from throwing away
 localisation and pose on top of the points it was already losing.
 
+## Measured nulls — recorded so they are not re-derived
+
+| tried | result |
+|---|---|
+| beam-PSF blur on the rendered reference (sigma 2/3/5) | **flat**: 70.39 / 69.73 / 70.28 / 70.50 of 85. ZNCC is normalised and the 10x INTER_AREA reduction already dominates. |
+| widening the hypothesis set 3 -> 8 and ranking perfectly | **+3 pairs only**. 6 of 9 failures never generate a correct candidate; oracle is 47/53, not 53/53. Same structure as the Phase 2 Set B selector ceiling. |
+| scale pinned at 10.0 | **-3.12 / 85** |
+| reference-free global theta estimator | 4.42 deg median vs the decode's own 0.104 deg |
+
+### What that leaves
+
+Every constant is now fixed and both search-space ceilings are hit. Localisation sits at
+29.74/40 against an oracle ceiling near 33-35 for anything that is not a better model. The
+network is worth **+34.5** over the naive ZNCC baseline on Phase 2 and only **+8.4** on
+Phase 3 (70.39 vs 61.95) — same weights, and the only change is that the reference became a
+rendered design. Its confidence is now the weaker of the two signals (score AUC 0.834
+against ZNCC's 0.865), the oracle-pose test caps localisation at 27.92/40, and 5 of 8
+wrong-basin failures have the pose right to 0.5 deg and still pick the wrong repeat. Those
+are three independent readings of one fact: **the remaining points are a training problem,
+not a decode problem.**
+
 ## Still open
 
 1. **8–10° is still where the points are.** 5 of 8 fail after the fix. `make_template`

@@ -57,6 +57,7 @@ from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
     PHASE3_CONFIDENCE,
+    PHASE3_REFERENCE_BLUR,
     PHASE3_LABEL_CONVENTION,
     PHASE3_SUBPIXEL_ROWS,
     PHASE3_THRESHOLD,
@@ -152,6 +153,17 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=("legacy_min", "zncc"),
                     help="statistic written to the score column "
                          "(default: %(default)s)")
+    # Beam-PSF match. The search frame is Gaussian-blurred by
+    # sigma = beam_spot_size_nm / 1 nm-per-px at REFERENCE resolution and only
+    # then area-downsampled 10x (i4c src/sem_imaging.py:19-33). Our template
+    # gets the area-average and not the Gaussian, so the two sides differ by
+    # exactly that blur. Applying it to the rendered reference is a forward-model
+    # match, not a filter: it is blur only, with none of the noise that made the
+    # full cad2sem chain a wash in docs/PHASE3_MEASUREMENT.md.
+    ap.add_argument("--reference-blur", type=float, default=PHASE3_REFERENCE_BLUR,
+                    metavar="SIGMA",
+                    help="Gaussian sigma in reference px applied to the rendered "
+                         "GDS before matching; 0 disables (default: %(default)s)")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -224,6 +236,9 @@ def main(argv=None) -> int:
                 ref = gds.render_reference(r.reference_gds_path,
                                            size=a.render_size,
                                            min_layer=a.min_layer)
+                if a.reference_blur > 0:
+                    import cv2  # noqa: PLC0415
+                    ref = cv2.GaussianBlur(ref, (0, 0), a.reference_blur)
                 sea = I.read_gray(r.search_path)
                 if model is None:
                     res = I.zncc_fallback(ref, sea)

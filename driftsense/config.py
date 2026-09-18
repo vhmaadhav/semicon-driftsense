@@ -448,3 +448,33 @@ PHASE3_SUBPIXEL_ROWS = True
 # calibration block, and on this question the margin is worthless -- AUC
 # 0.5222, indistinguishable from chance. Do not carry the 0.948 across.
 PHASE3_CONFIDENCE = "zncc"
+
+
+# Beam-PSF match for the rendered reference -- MEASURED NULL, kept off.
+#
+# The forward-model argument is sound and worth stating, because it looks like
+# it should work: the search frame is Gaussian-blurred by
+# sigma = beam_spot_size_nm / 1 nm-per-px at REFERENCE resolution and only then
+# area-downsampled 10x (i4c src/sem_imaging.py:19-33), while our template gets
+# the area-average alone. The two sides genuinely differ by that Gaussian, and
+# unlike the cad2sem arm in docs/PHASE3_MEASUREMENT.md this adds blur WITHOUT
+# the noise that made that arm a wash.
+#
+# It still does nothing. 60 pairs at rotation U(-10,+10), the generator default
+# spot being 5.0 nm and the curated cases using 2.0 and 3.0:
+#
+#     sigma   0.0     2.0     3.0     5.0
+#     loc/40  29.74   29.13   29.58   29.74
+#     /85     70.39   69.73   70.28   70.50
+#
+# A +-0.7 spread at n=53 present pairs is noise, and the localisation credit is
+# 0.7434 / 0.7283 / 0.7396 / 0.7434 -- flat. Two reasons it cannot help much:
+# ZNCC is normalised, so a blur applied uniformly to one side shifts contrast
+# rather than alignment; and make_template's 10x INTER_AREA reduction is itself
+# a box blur of width 10 reference px, which already dominates a sigma of 2-5.
+#
+# The flag stays so the null is re-checkable in one command, and so this is not
+# re-derived from the same plausible-sounding argument. Match the forward model
+# where it changes GEOMETRY (the raster shear, issue #101), not where it only
+# changes contrast.
+PHASE3_REFERENCE_BLUR = 0.0
