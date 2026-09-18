@@ -62,9 +62,8 @@ venv-hf/
 .dsh/
 # reference sample materials (confidential -- never commit; see docs/VERIFIED_GROUND_TRUTH.md section 9)
 .agents/ref_material/
-.agents/ref_0901/
-
 # Phase 2 extension dataset (both mentor zips combined). Marked "Applied
 # Materials Confidential" and includes the scoring key (ground_truth.csv,
 # manifest_jury.csv) -- never publish it from this public repo.
 phase2_v2/
+evaluation/figures/
