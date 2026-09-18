@@ -55,6 +55,12 @@ SEARCH_NM_PER_PX = 10.0
 # every one lost at K=5. The loop stops at the first exact match, so present
 # pairs rarely pay for the extra candidates.
 COARSE_CANDIDATES = 20
+# Both rasters are blurred before the coarse match. Without it, thin periodic
+# features (13 nm fins at 10 nm/px) sample differently at every nm of phase,
+# so aliases on the 10 nm grid outscore a true origin that sits off it: in a
+# fin-and-gate lattice the truth fell out of the top 40; at sigma 1.5 px it
+# ranks first (1.0 -> 2nd, 2.0 smears the peak past the refine window).
+COARSE_BLUR_PX = 1.5
 # Exact refinement: search window around a coarse peak, and the bounding-box
 # size tolerance for "the same polygon" (design coordinates are exact, so this
 # only absorbs float formatting).
@@ -282,6 +288,72 @@ def exact_offset(ref_bboxes: dict, search: SearchCad, guess: tuple, ref_size: fl
     return (float(keys[best, 0]), float(keys[best, 1])), float(counts[best] / n_int), n_int
 
 
+# Exact matching for a reference with (almost) no polygon fully inside its
+# window -- e.g. a FinFET crop where every fin and gate runs off the edge: try
+# every integer-nm offset this close to a coarse peak, clip the search
+# polygons to that window, and count reference boxes reproduced exactly.
+CLIPPED_RADIUS_NM = 12
+# Clipped matching counts every reference polygon, including the rounded ones
+# a clip reshapes, so it gets its own, stricter bar.
+SUPPORT_FOUND_CLIPPED = 0.8
+
+
+def _clipped_support(ref_keys: set, near: dict, ox: float, oy: float, ref_size: float) -> float:
+    keys = set()
+    for L, b in near.items():
+        c = np.clip(b - (ox, oy, ox, oy), 0.0, ref_size)
+        c = c[(c[:, 2] > c[:, 0]) & (c[:, 3] > c[:, 1])]
+        keys.update((L, *row) for row in np.round(c, 1))
+    return len(ref_keys & keys) / len(ref_keys)
+
+
+def clipped_offset(ref_bboxes: dict, search: SearchCad, guess: tuple, ref_size: float = REF_SIZE,
+                   radius: int = CLIPPED_RADIUS_NM, top: int = 3):
+    """(origin, support, n) comparing every reference box -- clipped ones
+    included -- against search boxes clipped to the candidate window.
+
+    Each box edge that lies inside the window fixes one offset component
+    exactly (a horizontal fin fixes y, a vertical gate fixes x); the edges
+    vote, and the best-voted combinations are verified in full."""
+    ref_keys = {(L, *np.round(b, 1)) for L, a in ref_bboxes.items() for b in a}
+    if not ref_keys:
+        return None, 0.0, 0
+    gx, gy = float(guess[0]), float(guess[1])
+    near, votes = {}, ([], [])
+    for L, a in ref_bboxes.items():
+        b = search.bboxes.get(L)
+        if b is None:
+            continue
+        m = ((b[:, 2] > gx - radius - 1) & (b[:, 0] < gx + ref_size + radius + 1)
+             & (b[:, 3] > gy - radius - 1) & (b[:, 1] < gy + ref_size + radius + 1))
+        b = near[L] = b[m]
+        if not len(b):
+            continue
+        for axis, g in ((0, gx), (1, gy)):
+            for col in (axis, axis + 2):                  # low edge, high edge
+                inner = (a[:, col] > 0.5) & (a[:, col] < ref_size - 0.5)
+                if not inner.any():
+                    continue
+                d = b[None, :, col] - a[inner][:, None, col]        # origin candidates
+                d = d[np.abs(d - g) <= radius]
+                votes[axis].append(np.round(d, 2))
+    cand = []
+    for axis, g in ((0, gx), (1, gy)):
+        v = np.concatenate(votes[axis]) if votes[axis] else np.zeros(0)
+        if len(v):
+            vals, cnt = np.unique(v, return_counts=True)
+            cand.append([float(x) for x in vals[np.argsort(-cnt)[:top]]])
+        else:
+            cand.append([float(round(g))])
+    best = (None, 0.0)
+    for ox in cand[0]:
+        for oy in cand[1]:
+            hit = _clipped_support(ref_keys, near, ox, oy, ref_size)
+            if hit > best[1]:
+                best = ((ox, oy), hit)
+    return best[0], best[1], len(ref_keys)
+
+
 def locate_reference(ref_polys: dict, ref_nl: int, search: SearchCad, ref_size: float = REF_SIZE):
     """(origin_nm or None, support, n_interior, coarse_peak)."""
     nl = max(ref_nl, search.num_layers)
@@ -290,17 +362,29 @@ def locate_reference(ref_polys: dict, ref_nl: int, search: SearchCad, ref_size: 
     sm = search.masks
     if sm.shape[0] < nl:
         sm = np.concatenate([sm, np.zeros((nl - sm.shape[0],) + sm.shape[1:], np.float32)])
-    peaks = coarse_cad_peaks(ref_m, sm)
+    blur = lambda a: np.stack([cv2.GaussianBlur(c, (0, 0), COARSE_BLUR_PX) for c in a])  # noqa: E731
+    peaks = coarse_cad_peaks(blur(ref_m), blur(sm))
     ref_bb = _bboxes(ref_polys)
-    best = (None, 0.0, 0, peaks[0][2])
+    n_interior = sum(int(((a[:, 0] > 0.5) & (a[:, 1] > 0.5) & (a[:, 2] < ref_size - 0.5)
+                          & (a[:, 3] < ref_size - 0.5)).sum()) for a in ref_bb.values())
+    best = (None, 0.0, n_interior, peaks[0][2])
+    if n_interior < MIN_INTERIOR_POLYGONS:
+        # Clipped matching. No early stop: with long periodic lines a lattice
+        # alias can reproduce all but the few non-periodic boxes, so every
+        # candidate is scored and the best one wins.
+        for gx, gy, pk in peaks:
+            origin, support, n = clipped_offset(ref_bb, search, (gx, gy), ref_size)
+            if support > best[1]:
+                best = (origin, support, -n, pk)       # negative n marks clipped matching
+        if best[2] >= 0:
+            best = (best[0], best[1], -sum(len(a) for a in ref_bb.values()), best[3])
+        return best
     for gx, gy, pk in peaks:
         origin, support, n_int = exact_offset(ref_bb, search, (gx, gy), ref_size)
         if support > best[1]:
             best = (origin, support, n_int, pk)
         if support > 0.9:
             break
-    if best[2] == 0:
-        best = (best[0], best[1], sum(len(a) for a in ref_bb.values()), best[3])
     return best
 
 
@@ -519,10 +603,16 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
         raise CadAnchorUnavailable(str(exc)) from exc
 
     origin, support, n_int, peak = locate_reference(ref_polys, ref_nl, search, ref_size)
-    if n_int < MIN_INTERIOR_POLYGONS:
-        raise CadAnchorUnavailable(f"reference has {n_int} interior polygons; support is not meaningful")
+    clipped = n_int < 0
+    if clipped:
+        n_int = -n_int
+        if n_int < MIN_INTERIOR_POLYGONS:
+            raise CadAnchorUnavailable(f"reference has only {n_int} polygons; support is not meaningful")
+        bar = SUPPORT_FOUND_CLIPPED
+    else:
+        bar = SUPPORT_FOUND_FEW if n_int < FEW_POLYGONS else SUPPORT_FOUND
     out = CadAnchorResult(found=False, support=support, origin_nm=origin, coarse_peak=peak, n_interior=n_int)
-    if origin is None or support < (SUPPORT_FOUND_FEW if n_int < FEW_POLYGONS else SUPPORT_FOUND):
+    if origin is None or support < bar:
         out.score = support * 0.5
         out.reason = "reference not in search CAD"
         return out
