@@ -1,4 +1,4 @@
-# Drift-Sense — Navigation-Error Recovery, Phase 2
+# Drift-Sense — Navigation-Error Recovery, Phases 2 & 3
 
 Locate a high-resolution **Reference** patch inside a low-resolution **Search**
 frame of a repeating semiconductor layout, and report where it is — position,
@@ -10,6 +10,19 @@ rotation, scale, and whether it's there at all. This is Applied Materials'
 | size       | 1000 × 1000 px   | 1000 × 1000 px     |
 | pixel size | 1 nm/px          | `z` nm/px, `z ∈ [8, 12]`, unknown per pair |
 | field      | 1 µm             | ~8–12 µm            |
+
+![How a pair is solved](docs/how-it-works.png)
+
+*Every panel above is an original image — the search frames are the
+generator's own captures, the CAD panels are drawn from the reference `.gds`
+the pairs file names, and the boxes are this repository's actual predictions.
+Regenerate with `python scripts/make_stitch_figure.py`.*
+
+**Phase 3** keeps that problem and changes what the reference *is*: a GDSII
+design file rather than an SEM image — polygons across up to 8 layers, with no
+brightness of their own. The pipeline infers the intermediate yield raster
+(one grey level per layer) and registers design geometry against the capture.
+See [Phase 3](#phase-3--cad-reference).
 
 Phase 1 fixed the zoom at exactly 10× and guaranteed the reference was always
 present. Phase 2 removes both assumptions — the zoom is unknown in `[8, 12]`,
@@ -34,6 +47,34 @@ row: **a missing row scores zero, so declining beats disappearing.**
 Runs CPU-only, no network access, weights load from `weights/driftsense.pt`
 automatically. Reference machine: 4-core x86, 8 GB RAM, no GPU, Python 3.11;
 median ≤5 s/pair, 20 s hard timeout.
+
+### Phase 3 — CAD reference
+
+```bash
+python phase3.py --input pairs.csv --output predictions.csv
+```
+
+Same command shape, same seven output columns, same conventions. What differs
+is the input schema: Phase 3's `pairs.csv` carries six columns —
+
+```
+pair_id, search_path, reference_gds_path, search_gds_path,
+reference_sem_path, params_json_path
+```
+
+— of which **the last two are withheld on the blind split**. This code parses
+them but exposes them only through a training-only accessor that returns empty
+strings regardless of file contents, so no inference path can depend on a
+value that will not be there when it is graded.
+
+`search_gds_path` is what decides the score. When it names the whole search
+canvas as a design, registration runs design-against-design and the answer is
+exact; when it is absent or reference-sized, the pipeline falls back to
+matching a rendered reference against the image, which is materially weaker on
+rotated pairs. A reference-sized "search CAD" is refused rather than silently
+misused.
+
+`register.py` is untouched by all of this and remains the Phase 2 command.
 
 ## Quick start
 
@@ -62,6 +103,29 @@ useful for a quick manual check, but it is **not** what's graded; `register.py`
 is the one entry point the reference machine runs.
 
 ## Results
+
+### Phase 3 — measured 2026-09-18
+
+600 pairs from the organizers' own CAD pipeline across three severity tiers,
+200 each, scored on the published rubric. Efficiency (5) and the written
+analysis (10) are not measurable locally, so the total is out of 85.
+
+| tier | loc /40 | scale /10 | rot /10 | reject /15 | calib /10 | **/85** | median err |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| nominal | 40.00 | 10.00 | 10.00 | 15.00 | 10.00 | **85.00** | 0.014 px |
+| medium | 40.00 | 10.00 | 10.00 | 15.00 | 10.00 | **85.00** | 0.016 px |
+| harsh | 40.00 | 10.00 | 10.00 | 15.00 | 10.00 | **85.00** | 0.029 px |
+
+Every present pair inside 1 px on all three tiers; every absent pair rejected;
+no real pair lost. Median rotation error 0.002–0.005°. Median **0.58 s/pair**
+(p90 0.70, max 0.84) at 4 threads.
+
+The primary path uses **no neural network** — `driftsense/cad_anchor.py`
+imports only OpenCV and NumPy. The checkpoint is reached only by the image
+fallback.
+
+### Phase 2
+
 
 **Current shipped model** (`weights/driftsense.pt`, the 1.02M "wide" checkpoint
 — see [Model & training](#model--training)) against the 0.456M model it

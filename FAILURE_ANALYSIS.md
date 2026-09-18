@@ -82,6 +82,84 @@ The extension re-runs the same SEM-to-SEM task on a harder generator: a severity
 The shipped total is the #88 row; the #89 row is italicised because it is measured but not merged. Localisation is now near-saturated on nominal pairs and the remaining loss is concentrated in severity 3–4 horizontal residuals; rotation carries most of the rest.
 
 
+## Phase 3 — CAD reference (measured 2026-09-18)
+
+Scored on 600 pairs from the organizers' own CAD pipeline, 200 per severity
+tier. On data that carries a real search-frame CAD the pipeline is saturated:
+**85.00 / 85 on all three tiers**, median error 0.014–0.029 px, every present
+pair inside 1 px, every absent pair rejected. The failure modes below are
+therefore about what happens when an *assumption* breaks, not about residual
+error on the measured sets.
+
+### 10. Everything rests on `search_gds_path` — the one number that matters
+
+The primary path registers the reference design against the **search frame's
+own design**, then fits the design-to-image pose. That is why it is exact, and
+it is only available when `pairs.csv` carries a whole-canvas search GDS. Where
+it is absent the pipeline falls back to matching a rendered reference against
+the image.
+
+Measured on the same harsh 200 pairs, with and without the column:
+
+| | /85 | loc /40 | median err | ≤1 px | F1 | s/pair |
+|---|---|---|---|---|---|---|
+| with search GDS | **85.00** | 40.00 | 0.029 px | 183/183 | 1.000 | 0.31 |
+| **without** (fallback) | **45.32** | 16.74 | 57.75 px | 30/183 | 0.692 | 2.11 |
+
+**A 39.7-point swing, and 7× slower.** The organizers' "Pairs.csv – New Format"
+slide shows the column filled on the blind split, and the three tier sets above
+were generated with it — but this is the assumption that carries the submission,
+so it is stated first and plainly. Mitigations for the fallback path are
+measured and held open deliberately (PRs #102, #107) rather than merged,
+because they buy nothing on the expected input and touch the graded path.
+
+### 11. Per-row jitter is an irreducible label-noise floor, and is unquantified
+
+`sem_imaging.image_search` applies raster drift *after* the generator fixes
+`gt_x`/`gt_y`. The deterministic part of that (shear, `A·y/(h-1)`) is
+recoverable; the per-row jitter is white noise and is not. It therefore bounds
+how close any matcher can get to the published label, and **that bound has never
+been measured for Phase 3** — so we cannot currently distinguish "our matcher is
+leaving points on the table" from "the label cannot be hit any closer". Phase 2
+has `scripts/label_noise_floor.py` for exactly this; Phase 3 has no equivalent.
+Tracked in #109.
+
+### 12. The label convention is correct by accident, not by construction
+
+Phase 3 labels are **uncorrected** — the organizers' writer passes
+`sample["gt_x"]` straight through (`generate_cad_dataset.py:108-118`), so the
+graded answer is the pre-drift geometry and the *prediction* is what must move.
+Our sets match that today. But Phase 2 documents the opposite rule three times
+(`generate_dataset.py:25-32`, `evaluate.py:16-20`, "use `gt_x_corr`"), and
+nothing fails if someone aligns Phase 3 to it. That single edit would
+invalidate every Phase 3 number in this document at once. Tracked in #109.
+
+### 13. A rotation-sign error cannot fail locally
+
+`scripts/score_phase3.py` defaults to taking the better of `θ` and `−θ`. The
+organizers score one fixed sign. Rotation is 10 points that our own harness is
+structurally unable to fail, so the convention needs pinning against the
+organizers' scorer rather than ours before the finale.
+
+### 14. The checkpoint is a hard dependency of a path that never uses it
+
+`phase3.py` fail-closed loads `weights/driftsense.pt` at startup (issue #36's
+guard, inherited from Phase 2) even though the CAD path imports no torch at
+all. A missing or truncated checkpoint therefore aborts a run that would
+otherwise have scored 85/85 without it, and costs several seconds of startup on
+every run. The guard is correct for the fallback and wrong for the primary
+path; deferring the load is the fix, and is not made here because it changes
+abort semantics.
+
+### 15. Barrel distortion is unhandled on both axes
+
+`apply_barrel_distortion` is still wired into `image_search` and is not
+compensated in the label or the prediction. It is low priority only because the
+organizers stated the evaluation sets carry none — which makes it a *stated
+dependency* rather than a safe assumption. Any locally generated set that
+enables it gets a silently wrong `y` as well as `x`.
+
+
 ## Release rule
 
 Only measured failures and validated mitigations belong here. Keep exact experiment/PR references when available; remove or revise a statement when newer evidence invalidates it. The final PDF should be compiled from this file, not maintained separately.
