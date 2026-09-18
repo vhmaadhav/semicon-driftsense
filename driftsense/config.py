@@ -36,6 +36,9 @@ SHIPPED_SUBPIXEL_ROWS = True: the native-ZNCC winner; consensus/majority
   the issue #19 promotion gate. Costs 1.9 ms median per pair. Pose,
   rejection and calibration are bit-identical -- the correction moves only x.
   Evidence: .agents/SUBPIXEL_DRIFT.md. Set to False to revert entirely.
+* SHIPPED_LABEL_CONVENTION = "center": the pixel convention the grader's
+  (x, y) labels are written in. It is a property of the dataset, not of the
+  model -- see the block above the constant (issue #86).
 """
 
 from __future__ import annotations
@@ -126,6 +129,39 @@ LEGACY_FALLBACK_THRESHOLD = 0.55
 SHIPPED_BAND = False
 SHIPPED_VERIFICATION = "zncc"
 SHIPPED_SUBPIXEL_ROWS = True
+
+# Pixel convention of the grader's (x, y) labels (issue #86). ONE definition;
+# register.py passes it to locate_phase2 (label_convention=...), and
+# tests/test_submission_parity.py pins that.
+#   "edge":   pixel i spans [i, i+1), so a template placed at top-left p has
+#             its centre at p + tw/2. Our own generator (driftsense.generate:
+#             area_convention_offset), our training labels and the original
+#             Phase 2 generator (generator/src/pipeline.py: gt_x0 + box_w/2)
+#             are written this way, so locate_phase2 keeps "edge" as its
+#             signature default and every internal evaluator on that data
+#             (engine.evaluate, scripts/eval_ext.py) stays correct as it is.
+#   "center": pixel i spans [i-0.5, i+0.5] -- OpenCV warpAffine coordinates.
+#             The mentor's Phase 2 v2 (extension) generator labels
+#             M @ (x0 + 499.5, y0 + 499.5) with the canvas centre (N-1)/2
+#             mapped to (1000-1)/2, and its bundled baseline reports
+#             loc + (tw-1)/2. Same point, reported 0.5 px up-left.
+# The convention also decides WHICH scan row a label's raster-drift sample is
+# read from: v2 reads row_shift[round(y_center)], our generator
+# row_shift[round(y_edge)] -- a different row on about half of all pairs.
+#
+# Measured (A/B/C, threshold 0.18; scale, rotation, rejection and AUC are
+# bit-identical between the two settings -- only x, y move):
+#   mentor 25-pair v2 set:   "edge" 76.71 -> "center" 81.73/85 (loc A 0.911 ->
+#                            1.000, B 0.822 -> 0.978); paired +5.02, 95% CI
+#                            [+2.67, +7.69].
+#   fresh 48-pair v2 set (the mentor's generate_phase2_dataset_v2.py,
+#                            --seed 777, seed-disjoint): 77.03 -> 79.34;
+#                            paired +2.31, 95% CI [+1.16, +3.57]; mean y
+#                            error +0.54 -> +0.04 px.
+#   generator/output (pixel-edge labels): "edge" 82.75, "center" 79.93 -- the
+#                            same half pixel costs points the other way, which
+#                            is why this is a flag and not a new default.
+SHIPPED_LABEL_CONVENTION = "center"
 
 # Sub-pixel placement rule for the final ZNCC snap (ONE definition; applied
 # at the refine_zncc site in matching.py).

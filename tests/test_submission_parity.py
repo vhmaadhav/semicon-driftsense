@@ -18,8 +18,10 @@ measuring the shipped system.
     classical fallback ignores band/verification entirely, so parity
     through it would be vacuous); the decode settings are identical by
     construction -- both sides call locate_phase2 with refine=True,
-    verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND and every other
-    parameter left at its default.
+    verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND,
+    subpixel_rows=SHIPPED_SUBPIXEL_ROWS (== its default),
+    label_convention=SHIPPED_LABEL_CONVENTION and every other parameter left
+    at its default.
 """
 
 import argparse
@@ -41,7 +43,8 @@ sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 
 from driftsense.config import (SHIPPED_BAND, SHIPPED_THRESHOLD,
-                               SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE)
+                               SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE,
+                               SHIPPED_LABEL_CONVENTION)
 
 
 def _load_eval_ext():
@@ -117,6 +120,20 @@ def test_register_effective_defaults_match_shared_config():
     reg_parser = _argparse_defaults(register.main)
     assert reg_parser.get_default("threshold") == SHIPPED_THRESHOLD
     assert reg_parser.get_default("verification") == SHIPPED_VERIFICATION
+    assert reg_parser.get_default("label_convention") == SHIPPED_LABEL_CONVENTION
+
+
+def test_register_forwards_the_label_convention_to_the_decoder():
+    """The pixel convention is a property of the grader's labels (issue #86):
+    the submission passes the shipped value explicitly, while locate_phase2
+    keeps "edge" as its default for the internal evaluators that score our own
+    pixel-edge data (engine.evaluate, scripts/eval_ext.py)."""
+    from driftsense.matching import LABEL_CONVENTIONS, locate_phase2
+    assert SHIPPED_LABEL_CONVENTION in LABEL_CONVENTIONS
+    assert inspect.signature(locate_phase2).parameters["label_convention"].default == "edge"
+    src = open(os.path.join(REPO_ROOT, "register.py")).read()
+    assert "label_convention=a.label_convention" in src, \
+        "register.py must forward --label-convention to locate_phase2"
 
 
 def test_locate_phase2_signature_band_default_is_shipped():
@@ -220,7 +237,8 @@ def _eval_decode(rp, sp):
     ref = cv2.imread(rp, cv2.IMREAD_GRAYSCALE)
     sea = cv2.imread(sp, cv2.IMREAD_GRAYSCALE)
     return locate_phase2(model, ref, sea, device, refine=True,
-                         verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND)
+                         verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND,
+                         label_convention=SHIPPED_LABEL_CONVENTION)
 
 
 def test_end_to_end_submission_parity(tmp_path):

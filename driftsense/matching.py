@@ -953,17 +953,48 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
     return off, peak
 
 
+LABEL_CONVENTIONS = ("edge", "center")
+
+
+def label_row(cy: float, label_convention: str = "edge") -> int:
+    """The search row whose raster-drift sample a label at `cy` carries.
+
+    `cy` is in the decoder's own pixel-edge convention (centre = top-left +
+    th/2). Both generators read `row_shift[round(y)]`, but each in its own
+    convention: ours with the pixel-edge y (`generate.correct_gt`), the Phase 2
+    v2 extension generator with the pixel-centre y, which is `cy - 0.5`
+    (`phase2_pipeline.drift_forward_pt`). The two pick different rows whenever
+    the pixel-centre y has a fractional part below one half -- about half of
+    all pairs -- and per-row jitter is white, so the wrong row carries no
+    information about the labelled one (issue #86).
+    """
+    if label_convention == "center":
+        return int(round(cy - 0.5))
+    if label_convention == "edge":
+        return int(round(cy))
+    raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                     f"got {label_convention!r}")
+
+
 def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
                      radius: int = 3, lag: int = DRIFT_ROW_LAG,
                      min_corr: float = DRIFT_ROW_MIN_CORR,
-                     max_shift: float = DRIFT_MAX_SHIFT) -> tuple[float, float] | None:
+                     max_shift: float = DRIFT_MAX_SHIFT,
+                     label_convention: str = "edge") -> tuple[float, float] | None:
     """Re-place a match at the drift row the label is defined on.
 
     Returns the corrected `(x, y)`, or None to decline -- the caller then keeps
     the rigid estimate. Declining is deliberate and common (~19% of pairs):
     loosening `min_corr` to correct more pairs was measured *worse* on the full
     set, because a badly measured row is worse than no correction at all.
+
+    `cx, cy` and the returned point are pixel-edge coordinates whatever
+    `label_convention` says; the convention only selects which row's drift
+    sample the label carries (see `label_row`).
     """
+    if label_convention not in LABEL_CONVENTIONS:
+        raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                         f"got {label_convention!r}")
     off, peak, corr = row_offsets(search, template, cx, cy, lag=lag, return_corr=True)
     if off is None:
         return None
@@ -995,7 +1026,7 @@ def drift_row_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: fl
 
     th, tw = template.shape
     y0 = int(round(cy - th / 2.0))
-    ci = int(round(cy)) - y0              # the search row `correct_gt` labels against
+    ci = label_row(cy, label_convention) - y0   # the search row the label is read against
     if not (0 <= ci < th) or not ok[ci]:
         return None                       # the row that decides the answer is unusable
 
@@ -1146,8 +1177,18 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   early_exit_zncc: float | None = None,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0,
-                  subpixel_rows: bool = True, **kw) -> dict:
+                  subpixel_rows: bool = True, label_convention: str = "edge",
+                  **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
+
+    label_convention names the pixel convention of the labels the answer will
+    be scored against (driftsense.config.SHIPPED_LABEL_CONVENTION, issue #86).
+    Every stage works in pixel-edge coordinates; "center" re-expresses only the
+    reported x, y (0.5 px up-left) and reads the raster-drift sample from the
+    row a pixel-centre label is defined on. The default "edge" is the
+    convention of our own generator and training data, and reproduces the
+    historical output exactly. Diagnostics under return_hypotheses stay in the
+    internal pixel-edge frame.
 
     band=False is the measured default (full 2,250-pair A/B, 2026-08-31):
     band-passing the coarse probe cost 0.45 rubric points (paired loc delta
@@ -1178,6 +1219,9 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     valid_verification = {"zncc", "majority", "consensus"}
     if verification not in valid_verification:
         raise ValueError(f"verification must be one of {sorted(valid_verification)}")
+    if label_convention not in LABEL_CONVENTIONS:
+        raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                         f"got {label_convention!r}")
 
     # The baseline path never enters this block. Research instrumentation and
     # optional selectors share one set of full-search feature maps per pair.
@@ -1409,12 +1453,23 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         # rigid answer, which is what the pipeline produced before this stage.
         try:
             tpl = make_template(reference, best["scale"], best["theta"])
-            moved = drift_row_refine(search, tpl, best["x"], best["y"])
+            moved = drift_row_refine(search, tpl, best["x"], best["y"],
+                                     label_convention=label_convention)
             if moved is not None:
                 best["x"] = moved[0]
         except Exception as e:  # noqa: BLE001
             warnings.warn(f"sub-pixel row refinement skipped: "
                           f"{type(e).__name__}: {e}", RuntimeWarning, stacklevel=2)
+
+    # Report the answer in the labels' pixel convention (issue #86). Last
+    # geometric step on purpose: every stage above keeps pixel-edge
+    # coordinates (top-left + tw/2), which is what the network was trained on
+    # and what the ZNCC snap and the drift-row reader assume. A pixel-centre
+    # label names the same point 0.5 px up-left, and the rotation-dependent
+    # part of that difference is under 0.005 px.
+    if label_convention == "center":
+        best["x"] = float(best["x"]) - 0.5
+        best["y"] = float(best["y"]) - 0.5
 
     # The statement guarantees the true pose lies in these boxes and the rules
     # explicitly permit hard-coding them, so clipping a reported value into the
