@@ -73,6 +73,13 @@ FEW_POLYGONS = 20
 TILE_PX = 100
 TILE_SEARCH_PX = 4
 TILE_MIN_NCC = 0.3
+# Tile agreement floors, tried in order. 0.3 is right for a clean capture and
+# keeps weak tiles out of the fit; on a starved-dose, high-noise frame it
+# admits NOTHING (measured: 0 tiles on 13 of 18 present pairs of the harsh
+# 20-pair set), the fit raises, and an exact CAD anchor is thrown away. The
+# lower rungs are only reached when the rung above found too few tiles, so a
+# clean pair's fit is bit-for-bit what it was.
+TILE_NCC_FLOORS = (0.3, 0.15, 0.05)
 FINE_ITERATIONS = 2
 # A fitted magnification this far from nominal is believed; smaller values are
 # not applied. The CAD generator never scales, and radial distortion (barrel,
@@ -84,6 +91,17 @@ SCALE_BELIEVE = 0.03
 # on true frames tx ran -1.94..-0.35 px, tracking -shear/2 (r = 0.92). A
 # 1.5 px bar applied it on 27% of pairs and cost them ~1.7 px each.
 TRANSLATION_BELIEVE_PX = 5.0
+# Confidence bands. A pair leaves this module in one of three states, and
+# they are not comparable on one continuous scale: the reference is absent
+# from the design; it is present at an exact offset but the design-to-image
+# pose never verified; or both are established. The bands are disjoint so the
+# ordering is structural rather than something that happens to hold on a
+# given draw -- within each band the quality terms rank the pairs. Measured:
+# overlapping bands cost 0.49 calibration points on the harsh 20-pair set,
+# because a correct pair with a weak tile fit scored under an unverified one.
+ABSENT_BAND = 0.05              # absent  -> [0.00, 0.05]
+UNVERIFIED_BAND = (0.05, 0.05)  # unverified pose -> [0.05, 0.10]
+VERIFIED_BAND = (0.10, 0.90)    # verified -> [0.10, 1.00]
 
 
 class CadAnchorUnavailable(RuntimeError):
@@ -377,7 +395,7 @@ def _parabolic(a, b, c):
 
 
 def tile_displacements(img: np.ndarray, model: np.ndarray, tile: int = TILE_PX,
-                       rad: int = TILE_SEARCH_PX) -> np.ndarray:
+                       rad: int = TILE_SEARCH_PX, min_ncc: float = TILE_MIN_NCC) -> np.ndarray:
     """(cx, cy, dx, dy, ncc) per tile: where each model tile sits in the image."""
     h, w = img.shape
     rows = []
@@ -393,7 +411,7 @@ def tile_displacements(img: np.ndarray, model: np.ndarray, tile: int = TILE_PX,
             if not (0 < y < r.shape[0] - 1 and 0 < x < r.shape[1] - 1):
                 continue
             ncc = float(r[y, x])
-            if ncc < TILE_MIN_NCC:
+            if ncc < min_ncc:
                 continue
             dy = y + _parabolic(r[y - 1, x], r[y, x], r[y + 1, x]) - rad
             dx = x + _parabolic(r[y, x - 1], r[y, x], r[y, x + 1]) - rad
@@ -402,7 +420,7 @@ def tile_displacements(img: np.ndarray, model: np.ndarray, tile: int = TILE_PX,
 
 
 def fine_rotation(img: np.ndarray, model: np.ndarray, theta0: float, iterations: int = FINE_ITERATIONS,
-                  shift=(0.0, 0.0)):
+                  shift=(0.0, 0.0), min_ncc: float = TILE_MIN_NCC):
     """Refine the angle from the vertical displacement field.
 
     Raster drift moves each scan row horizontally and nothing vertically, so
@@ -414,7 +432,7 @@ def fine_rotation(img: np.ndarray, model: np.ndarray, theta0: float, iterations:
     cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
     theta, ds, b, keep, pts, resid = theta0, 0.0, 0.0, np.zeros(0, bool), np.zeros((0, 5)), float("nan")
     for _ in range(iterations):
-        pts = tile_displacements(img, _rotate(model, theta, shift))
+        pts = tile_displacements(img, _rotate(model, theta, shift), min_ncc=min_ncc)
         if len(pts) < 6:
             raise CadAnchorUnavailable(f"only {len(pts)} tiles aligned")
         x, y, dy = pts[:, 0] - cx, pts[:, 1] - cy, pts[:, 3]
@@ -509,7 +527,7 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
         raise CadAnchorUnavailable(f"reference has {n_int} interior polygons; support is not meaningful")
     out = CadAnchorResult(found=False, support=support, origin_nm=origin, coarse_peak=peak, n_interior=n_int)
     if origin is None or support < (SUPPORT_FOUND_FEW if n_int < FEW_POLYGONS else SUPPORT_FOUND):
-        out.score = support * 0.5
+        out.score = float(ABSENT_BAND * min(support, 1.0))
         out.reason = "reference not in search CAD"
         return out
 
@@ -520,24 +538,48 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     # Candidate angles from the spectrum; each is refined and the one whose
     # tiles agree best wins (a wrong coarse angle leaves only the central
     # tiles inside their search window, so it cannot fake a consensus).
+    cands = coarse_rotations(img, model, max_deg)
     best = None
-    for th0 in coarse_rotations(img, model, max_deg):
-        # The organizer's export puts design and image in one frame (rotation
-        # about the centre, no offset). If a search CAD arrives in another
-        # frame, the offset is large and unambiguous over the whole field.
-        tx, ty, _ = frame_translation(img, _rotate(model, th0))
-        shift = (tx, ty) if math.hypot(tx, ty) > TRANSLATION_BELIEVE_PX else (0.0, 0.0)
-        try:
-            fit = fine_rotation(img, model, th0, shift=shift)
-        except CadAnchorUnavailable:
-            continue
-        quality = int(fit[4].sum()) * float(np.median(fit[3][fit[4], 4]))
-        if best is None or quality > best[0]:
-            best = (quality, th0, shift, fit)
-        if fit[4].sum() >= 0.8 * max(len(fit[3]), 1) and len(fit[3]) >= 30:
-            break                           # a clear consensus: stop early
+    for floor in TILE_NCC_FLOORS:
+        for th0 in cands:
+            # The organizer's export puts design and image in one frame (rotation
+            # about the centre, no offset). If a search CAD arrives in another
+            # frame, the offset is large and unambiguous over the whole field.
+            tx, ty, _ = frame_translation(img, _rotate(model, th0))
+            shift = (tx, ty) if math.hypot(tx, ty) > TRANSLATION_BELIEVE_PX else (0.0, 0.0)
+            try:
+                fit = fine_rotation(img, model, th0, shift=shift, min_ncc=floor)
+            except CadAnchorUnavailable:
+                continue
+            quality = int(fit[4].sum()) * float(np.median(fit[3][fit[4], 4]))
+            if best is None or quality > best[0]:
+                best = (quality, th0, shift, fit)
+            if fit[4].sum() >= 0.8 * max(len(fit[3]), 1) and len(fit[3]) >= 30:
+                break                       # a clear consensus: stop early
+        if best is not None:
+            break                           # this floor answered; do not go lower
     if best is None:
-        raise CadAnchorUnavailable("no rotation candidate aligned the frame")
+        # The design question is already answered exactly -- `origin` came from
+        # polygon bounding boxes, which no amount of beam noise can move. Only
+        # the design-to-image pose is missing. Report the anchor with the best
+        # coarse angle and a score that says the pose is unverified, rather
+        # than discarding an exact location and falling back to a matcher that
+        # has strictly less to work with.
+        if not cands:
+            raise CadAnchorUnavailable("no rotation candidate aligned the frame")
+        theta = float(cands[0])
+        px, py = origin[0] + ref_size / 2.0, origin[1] + ref_size / 2.0
+        x, y = design_to_search(px, py, theta, img.shape)
+        lo, hi = rotation_bounds
+        out.found = True
+        out.x, out.y = float(x), float(y)
+        out.theta = float(np.clip(theta, lo, hi))
+        out.scale = float(SEARCH_NM_PER_PX)
+        out.theta_coarse = theta
+        lo_b, span_b = UNVERIFIED_BAND
+        out.score = float(lo_b + span_b * min(support, 1.0))
+        out.reason = "cad-anchored (pose unverified)"
+        return out
     _, th0, shift, (theta, ds, b, pts, keep, resid) = best
     out.theta_coarse = th0
 
@@ -567,6 +609,13 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     out.tile_resid_px = resid
     out.yield_r2 = float(r2)
     out.greys = {("background" if i == 0 else i - 1): float(g) for i, g in enumerate(greys)}
-    out.score = float(support * np.clip(out.tile_ncc, 0.0, 1.0))
+    # Calibration: "AUC of your score column, and whether you knew your yield
+    # fit was wrong". support is the design evidence, tile_ncc the frame
+    # agreement, and r2 the yield fit itself -- half-weighted so a poor fit
+    # discounts a pair without ever dropping it into the unverified band.
+    fit_q = float(np.clip(r2, 0.0, 1.0)) if np.isfinite(r2) else 0.0
+    quality = min(support, 1.0) * np.clip(out.tile_ncc, 0.0, 1.0) * (0.5 + 0.5 * fit_q)
+    lo_b, span_b = VERIFIED_BAND
+    out.score = float(lo_b + span_b * quality)
     out.reason = "cad-anchored"
     return out

@@ -251,3 +251,71 @@ def test_paths_relative_to_the_dataset_root_resolve_when_run_from_it(generated, 
     p = next(csv.DictReader(open(out)))
     assert p["found"] == "1"
     assert math.hypot(float(p["x"]) - float(r["gt_x"]), float(p["y"]) - float(r["gt_y"])) < 0.25
+
+
+# ---------------------------------------------------------------------------
+# Degrading instead of discarding (harsh-capture path)
+# ---------------------------------------------------------------------------
+
+def test_tile_floor_admits_more_tiles_as_it_drops():
+    """The floor is what decides whether a noisy frame yields any tiles at
+    all. A lower rung must never admit fewer."""
+    rng = np.random.default_rng(7)
+    model = rng.random((400, 400)).astype(np.float32) * 255.0
+    model = cv2.GaussianBlur(model, (0, 0), 3.0)
+    img = model + rng.normal(0, 70, model.shape).astype(np.float32)
+    counts = [len(CA.tile_displacements(img, model, min_ncc=f)) for f in CA.TILE_NCC_FLOORS]
+    assert counts == sorted(counts), counts
+    assert counts[-1] > 0
+
+
+def test_tile_floors_start_at_the_strict_value():
+    """The ladder's top rung is the historical constant, so a frame that
+    already answered at 0.3 never reaches a lower rung."""
+    assert CA.TILE_NCC_FLOORS[0] == CA.TILE_MIN_NCC
+    assert list(CA.TILE_NCC_FLOORS) == sorted(CA.TILE_NCC_FLOORS, reverse=True)
+
+
+def test_confidence_bands_are_disjoint_and_ordered():
+    """absent < pose-unverified < verified, for every attainable quality.
+
+    The ordering has to be structural: calibration AUC is a ranking, and a
+    correct pair with a weak tile fit must never score under a pair whose
+    pose was never established.
+    """
+    absent_hi = CA.ABSENT_BAND * 1.0
+    unver_lo, unver_span = CA.UNVERIFIED_BAND
+    ver_lo, ver_span = CA.VERIFIED_BAND
+    assert absent_hi <= unver_lo
+    assert unver_lo + unver_span <= ver_lo
+    assert ver_lo + ver_span <= 1.0
+
+
+def test_exact_anchor_survives_a_frame_fit_that_never_converges(generated, monkeypatch):
+    """An unfittable frame must not throw away a CAD-to-CAD match.
+
+    `support` comes from polygon bounding boxes, which no amount of beam
+    noise can move. When the design-to-image pose cannot be established the
+    module must still report that location, flagged by a score in the
+    unverified band -- not raise and hand the pair to a matcher with strictly
+    less to work with.
+    """
+    (d, rows), _ = generated
+    r0 = rows[0]
+    ref = str(d / r0["reference_gds_path"])
+    search = str(d / r0["search_gds_path"])
+    img = cv2.imread(str(d / r0["search_path"]), cv2.IMREAD_GRAYSCALE)
+
+    def _never(*a, **kw):
+        raise CA.CadAnchorUnavailable("forced: no tiles")
+
+    monkeypatch.setattr(CA, "fine_rotation", _never)
+    r = CA.register(ref, search, img)
+
+    assert r.found, "an exact CAD anchor was discarded"
+    assert r.reason == "cad-anchored (pose unverified)"
+    lo, span = CA.UNVERIFIED_BAND
+    assert lo <= r.score <= lo + span
+    assert r.score >= CA.ABSENT_BAND * min(r.support, 1.0)
+    # and the location it kept is still the right one
+    assert math.hypot(r.x - float(r0["gt_x"]), r.y - float(r0["gt_y"])) < 25.0
