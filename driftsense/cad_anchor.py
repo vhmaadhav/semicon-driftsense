@@ -49,8 +49,12 @@ from driftsense.gds import (
 
 # Search pixels are 10 nm, reference design units are 1 nm (Phase 3 brief).
 SEARCH_NM_PER_PX = 10.0
-# Top-K coarse CAD-to-CAD peaks that get the exact refinement.
-COARSE_CANDIDATES = 5
+# Top-K coarse CAD-to-CAD peaks that get the exact refinement. At 10 nm/px
+# the sampling phase lets a lattice alias outscore the true site: on the dev
+# split the truth ranked as low as 10th (0-based 9th) in 6 of 723 present pairs,
+# every one lost at K=5. The loop stops at the first exact match, so present
+# pairs rarely pay for the extra candidates.
+COARSE_CANDIDATES = 20
 # Exact refinement: search window around a coarse peak, and the bounding-box
 # size tolerance for "the same polygon" (design coordinates are exact, so this
 # only absorbs float formatting).
@@ -58,7 +62,13 @@ REFINE_WINDOW_NM = 15.0
 REFINE_SIZE_TOL_NM = 0.3
 # Fewer interior reference polygons than this and the CAD-to-CAD support is
 # not a meaningful fraction.
-MIN_INTERIOR_POLYGONS = 8
+MIN_INTERIOR_POLYGONS = 4
+# Found needs this share of interior polygons at one exact offset -- more when
+# there are few of them. Dev split: present pairs 0.81-1.00 (1.00 at 6-7
+# polygons), absent at most 0.12 (0.29 at 7 polygons).
+SUPPORT_FOUND = 0.5
+SUPPORT_FOUND_FEW = 0.8
+FEW_POLYGONS = 20
 # Tile grid for the fine rotation fit.
 TILE_PX = 100
 TILE_SEARCH_PX = 4
@@ -70,9 +80,10 @@ FINE_ITERATIONS = 2
 # magnification in the vertical fit -- believing that moved answers by 4 px.
 SCALE_BELIEVE = 0.03
 # A whole-frame translation this large is believed. Below it, what phase
-# correlation sees is raster drift's mean (the shear moves rows by up to
-# ~1.25 px on average), which the label does not contain.
-TRANSLATION_BELIEVE_PX = 1.5
+# correlation sees is raster drift's mean, which the label does not contain:
+# on true frames tx ran -1.94..-0.35 px, tracking -shear/2 (r = 0.92). A
+# 1.5 px bar applied it on 27% of pairs and cost them ~1.7 px each.
+TRANSLATION_BELIEVE_PX = 5.0
 
 
 class CadAnchorUnavailable(RuntimeError):
@@ -299,6 +310,34 @@ def _polar_spectrum(img: np.ndarray) -> np.ndarray:
     return P - P.mean(axis=0, keepdims=True)
 
 
+def coarse_rotations(img: np.ndarray, model: np.ndarray, max_deg: float, k: int = 3) -> list:
+    """Up to k candidate angles (deg, cv2 sign), best spectral match first,
+    at least 0.5 deg apart. The spectral peak is usually right; when the
+    layout's spectrum is nearly symmetric a second peak can win, which is why
+    the caller settles between candidates on the tile evidence."""
+    a, b = _polar_spectrum(img), _polar_spectrum(model)
+    fa = cv2.dft(np.ascontiguousarray(a.T), flags=cv2.DFT_ROWS | cv2.DFT_COMPLEX_OUTPUT)
+    fb = cv2.dft(np.ascontiguousarray(b.T), flags=cv2.DFT_ROWS | cv2.DFT_COMPLEX_OUTPUT)
+    prod = cv2.mulSpectrums(fa, fb, cv2.DFT_ROWS, conjB=True)
+    xc = cv2.idft(prod, flags=cv2.DFT_ROWS | cv2.DFT_REAL_OUTPUT).sum(axis=0)
+    step = 360.0 / ANGLE_BINS
+    lags = np.fft.fftfreq(ANGLE_BINS, d=1.0 / ANGLE_BINS) * step
+    xc = np.where(np.abs(lags) <= max_deg + 0.5, xc, -np.inf)
+    out, work = [], xc.copy()
+    guard = int(round(0.5 / step))
+    for _ in range(k):
+        j = int(np.argmax(work))
+        if not np.isfinite(work[j]):
+            break
+        y0, y1, y2 = xc[j - 1], xc[j], xc[(j + 1) % ANGLE_BINS]
+        den = y0 - 2 * y1 + y2
+        d = 0.5 * (y0 - y2) / den if np.isfinite(den) and den != 0 else 0.0
+        out.append(-float(lags[j] + d * step))
+        for g in range(-guard, guard + 1):
+            work[(j + g) % ANGLE_BINS] = -np.inf
+    return out
+
+
 def coarse_rotation(img: np.ndarray, model: np.ndarray, max_deg: float) -> float:
     """Angle (deg, cv2 sign) that rotates `model` onto `img`, from the angular
     cross-correlation of their magnitude spectra (translation-invariant)."""
@@ -449,9 +488,6 @@ def design_to_search(px_nm: float, py_nm: float, theta_deg: float, image_shape: 
 # Entry point
 # ---------------------------------------------------------------------------
 
-SUPPORT_FOUND = 0.5
-
-
 def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
              rotation_bounds=(-10.0, 10.0), ref_size: float = REF_SIZE) -> CadAnchorResult:
     """Register the reference CAD against a search image through the search CAD.
@@ -472,7 +508,7 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     if n_int < MIN_INTERIOR_POLYGONS:
         raise CadAnchorUnavailable(f"reference has {n_int} interior polygons; support is not meaningful")
     out = CadAnchorResult(found=False, support=support, origin_nm=origin, coarse_peak=peak, n_interior=n_int)
-    if origin is None or support < SUPPORT_FOUND:
+    if origin is None or support < (SUPPORT_FOUND_FEW if n_int < FEW_POLYGONS else SUPPORT_FOUND):
         out.score = support * 0.5
         out.reason = "reference not in search CAD"
         return out
@@ -481,14 +517,29 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     vis = visible_fractions(search.masks)
     model = cv2.GaussianBlur(compose(vis, default_greys(search.num_layers)), (0, 0), 0.6)
     max_deg = max(abs(rotation_bounds[0]), abs(rotation_bounds[1]))
-    th0 = coarse_rotation(img, model, max_deg)
+    # Candidate angles from the spectrum; each is refined and the one whose
+    # tiles agree best wins (a wrong coarse angle leaves only the central
+    # tiles inside their search window, so it cannot fake a consensus).
+    best = None
+    for th0 in coarse_rotations(img, model, max_deg):
+        # The organizer's export puts design and image in one frame (rotation
+        # about the centre, no offset). If a search CAD arrives in another
+        # frame, the offset is large and unambiguous over the whole field.
+        tx, ty, _ = frame_translation(img, _rotate(model, th0))
+        shift = (tx, ty) if math.hypot(tx, ty) > TRANSLATION_BELIEVE_PX else (0.0, 0.0)
+        try:
+            fit = fine_rotation(img, model, th0, shift=shift)
+        except CadAnchorUnavailable:
+            continue
+        quality = int(fit[4].sum()) * float(np.median(fit[3][fit[4], 4]))
+        if best is None or quality > best[0]:
+            best = (quality, th0, shift, fit)
+        if fit[4].sum() >= 0.8 * max(len(fit[3]), 1) and len(fit[3]) >= 30:
+            break                           # a clear consensus: stop early
+    if best is None:
+        raise CadAnchorUnavailable("no rotation candidate aligned the frame")
+    _, th0, shift, (theta, ds, b, pts, keep, resid) = best
     out.theta_coarse = th0
-    # The organizer's export puts design and image in one frame (rotation
-    # about the centre, no offset). If a search CAD arrives in another frame,
-    # the offset is large and unambiguous over the whole field; take it.
-    tx, ty, _ = frame_translation(img, _rotate(model, th0))
-    shift = (tx, ty) if math.hypot(tx, ty) > TRANSLATION_BELIEVE_PX else (0.0, 0.0)
-    theta, ds, b, pts, keep, resid = fine_rotation(img, model, th0, shift=shift)
 
     # Yield fit on the aligned frame, then one more pass on the fitted render.
     vis_rot = np.stack([cv2.GaussianBlur(_rotate(v, theta, shift), (0, 0), 0.6) for v in vis])
