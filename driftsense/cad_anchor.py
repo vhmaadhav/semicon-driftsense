@@ -521,6 +521,7 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     # tiles agree best wins (a wrong coarse angle leaves only the central
     # tiles inside their search window, so it cannot fake a consensus).
     best = None
+    n_tiles = len(range(TILE_SEARCH_PX + 20, img.shape[0] - TILE_PX - TILE_SEARCH_PX - 20 + 1, TILE_PX)) *         len(range(TILE_SEARCH_PX + 20, img.shape[1] - TILE_PX - TILE_SEARCH_PX - 20 + 1, TILE_PX))
     for th0 in coarse_rotations(img, model, max_deg):
         # The organizer's export puts design and image in one frame (rotation
         # about the centre, no offset). If a search CAD arrives in another
@@ -531,10 +532,16 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
             fit = fine_rotation(img, model, th0, shift=shift)
         except CadAnchorUnavailable:
             continue
-        quality = int(fit[4].sum()) * float(np.median(fit[3][fit[4], 4]))
+        kept, resid = int(fit[4].sum()), float(fit[5])
+        # Many tiles agreeing tightly is the evidence. A wrong candidate can
+        # still get a small, internally consistent set of tiles (the
+        # organizer's curated sample 14 did: 32 tiles at 1.37 px residual
+        # against the right angle's 72 at 0.10 px), so both count and
+        # residual decide, and a loose fit ranks last.
+        quality = kept * float(np.median(fit[3][fit[4], 4])) * (1.0 if resid < 0.5 else 1e-3)
         if best is None or quality > best[0]:
             best = (quality, th0, shift, fit)
-        if fit[4].sum() >= 0.8 * max(len(fit[3]), 1) and len(fit[3]) >= 30:
+        if kept >= 0.6 * n_tiles and resid < 0.25:
             break                           # a clear consensus: stop early
     if best is None:
         raise CadAnchorUnavailable("no rotation candidate aligned the frame")
