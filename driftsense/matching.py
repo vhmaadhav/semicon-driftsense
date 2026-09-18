@@ -1385,8 +1385,17 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0,
                   subpixel_rows: bool = True, label_convention: str = "edge",
-                  strip_rot: bool = False, **kw) -> dict:
+                  strip_rot: bool = False,
+                  scale_bounds: tuple[float, float] = PHASE2_SCALE_BOUNDS,
+                  rotation_bounds: tuple[float, float] = PHASE2_ROTATION_BOUNDS,
+                  coarse_rotations: int = 11, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
+
+    scale_bounds / rotation_bounds are the feasible pose box: the coarse sweep
+    covers it and the reported pose is clipped into it. They default to the
+    Phase 2 statement's box; phase3.py widens rotation to the Phase 3 range
+    (driftsense.config.PHASE3_ROTATION_BOUNDS). coarse_rotations sets the coarse
+    rotation grid over that box.
 
     label_convention names the pixel convention of the labels the answer will
     be scored against (driftsense.config.SHIPPED_LABEL_CONVENTION, issue #86).
@@ -1545,7 +1554,9 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         best = choose(candidates)
     else:
         cands = pose_candidates(reference, search_corr, k=max(int(hypotheses), 1),
-                                coarse_scales=int(coarse_scales), band=band)
+                                coarse_scales=int(coarse_scales), band=band,
+                                scale_bounds=scale_bounds, rotation_bounds=rotation_bounds,
+                                coarse_rotations=int(coarse_rotations))
         candidates = []
         for m, rot, coarse_peak in cands:
             r = attempt(m, rot)
@@ -1596,8 +1607,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                          (top[0]["scale"] - 0.5 * ds, top[0]["theta"]),
                          (top[0]["scale"], top[0]["theta"] + 0.5 * dr),
                          (top[0]["scale"], top[0]["theta"] - 0.5 * dr)]
-                lo_s, hi_s = PHASE2_SCALE_BOUNDS
-                lo_r, hi_r = PHASE2_ROTATION_BOUNDS
+                lo_s, hi_s = scale_bounds
+                lo_r, hi_r = rotation_bounds
                 rescued = []
                 for mm, rr in extra:
                     if not (lo_s <= mm <= hi_s and lo_r <= rr <= hi_r):
@@ -1730,8 +1741,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     # magnification sits near 8 or 12 can be polished just outside it. Measured
     # on 400 external present pairs: 9 predictions fell outside [8, 12] and 4
     # outside +/-5 deg, and clipping them lifted scale credit 0.9000 -> 0.9057.
-    best["scale"] = float(np.clip(best["scale"], *PHASE2_SCALE_BOUNDS))
-    best["theta"] = float(np.clip(best["theta"], *PHASE2_ROTATION_BOUNDS))
+    best["scale"] = float(np.clip(best["scale"], *scale_bounds))
+    best["theta"] = float(np.clip(best["theta"], *rotation_bounds))
 
     # Reported confidence. TWO definitions exist, selected by
     # driftsense.config.SHIPPED_CONFIDENCE (the ONE definition; the parity

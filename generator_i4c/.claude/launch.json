@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "slides",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8123", "--directory", "slides"],
+      "port": 8123
+    },
+    {
+      "name": "streamlit-app",
+      "runtimeExecutable": "venv/bin/streamlit",
+      "runtimeArgs": ["run", "app.py", "--server.port", "8765", "--server.headless", "true"],
+      "port": 8765
+    }
+  ]
+}
