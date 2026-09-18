@@ -69,7 +69,7 @@ def _stub_phase2(monkeypatch, feature_counts=None):
                                                 "peak_ratio": .5, "coarse": (30., 30.)})
     scores = iter([.1, .9, .2])
     monkeypatch.setattr(matching, "refine_zncc",
-                        lambda search, template, cx, cy, radius: (cx + 0.25, cy - 0.25, next(scores)))
+                        lambda search, template, cx, cy, radius, variant=None: (cx + 0.25, cy - 0.25, next(scores)))
     monkeypatch.setattr(matching, "polish_pose",
                         lambda reference, search, x, y, m, r: (m, r, 1.0))
     if feature_counts is not None:

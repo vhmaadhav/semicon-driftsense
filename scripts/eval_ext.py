@@ -38,7 +38,7 @@ sys.path.insert(0, HERE)
 # (driftsense.config) so a default run here decodes and gates exactly what
 # register.py ships -- pinned by tests/test_submission_parity.py.
 from driftsense.config import SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
-from driftsense.config import SHIPPED_SUBPIXEL_ROWS
+from driftsense.config import SHIPPED_SUBPIXEL_ROWS, SHIPPED_SUBPIXEL
 
 # Published Phase 2 credit tiers.
 LOC_TIERS = ((1.0, 1.00), (2.0, 0.80), (3.0, 0.60), (5.0, 0.40))
@@ -59,7 +59,7 @@ def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
     (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
      coarse, band, verification, denoise, tie_tol, features,
-     early_exit, rescue_margin, rescue_delta, subpixel_rows) = job
+     early_exit, rescue_margin, rescue_delta, subpixel_rows, subpixel) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -87,6 +87,7 @@ def _worker(job):
                         tie_tol=tie_tol, early_exit_zncc=early_exit,
                         rescue_margin=rescue_margin, rescue_delta=rescue_delta,
                         subpixel_rows=subpixel_rows,
+                        subpixel=subpixel,
                         # --features: compute the rank/band feature maps and the
                         # winner margin WITHOUT changing the selector -- the
                         # hypothesis choice stays the shipped zncc winner, so the
@@ -154,7 +155,8 @@ def sample_pairs(df, n: int, seed: int = 0):
 def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         polish_scale, refit_xy, stride, coarse, band, verification, denoise,
         tie_tol, features=False, sample=0, seed=0, early_exit=None,
-        rescue_margin=None, rescue_delta=0.0, subpixel_rows=False):
+        rescue_margin=None, rescue_delta=0.0, subpixel_rows=False,
+        subpixel=None):
     import multiprocessing as mp
 
     tasks = []
@@ -169,7 +171,7 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
                           polish_scale, refit_xy, coarse, band, verification,
                           denoise, tie_tol, features,
                           early_exit, rescue_margin, rescue_delta,
-                          subpixel_rows))
+                          subpixel_rows, subpixel))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
     if sample:
         rng = np.random.RandomState(seed)
@@ -394,6 +396,14 @@ def main():
                          "stale and passing them aborted the run")
     ap.add_argument("--denoise", type=int, default=0,
                     help="median filter kernel applied to the search frame (0=off)")
+    ap.add_argument("--subpixel", default=SHIPPED_SUBPIXEL,
+                    choices=["parabola", "bicubic", "dft"],
+                    help="sub-pixel placement rule for the final ZNCC snap and "
+                         "the drift-row re-match (driftsense.config."
+                         "SHIPPED_SUBPIXEL, ONE definition): parabola = shipped "
+                         "1-D fit; bicubic = correlation-surface upsampling; "
+                         "dft = Guizar-Sicairos upsampled-DFT cross-correlation "
+                         "(no interpolation kernel)")
     ap.add_argument("--tie-tol", type=float, default=0.04,
                     help="peaks within this relative margin of the best are "
                          "treated as tied and resolved toward the frame centre")
@@ -423,7 +433,7 @@ def main():
                  a.refit_xy, a.stride, a.coarse_scales, a.band,
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed, a.early_exit,
-                 a.rescue_margin, a.rescue_delta, a.subpixel_rows)
+                 a.rescue_margin, a.rescue_delta, a.subpixel_rows, a.subpixel)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

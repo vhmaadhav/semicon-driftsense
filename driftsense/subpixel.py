@@ -185,7 +185,21 @@ def refine_upsampled_dft(search: np.ndarray, template: np.ndarray,
     # patch at the integer top-left (equal-size GS/NoRMCorre configuration --
     # on a larger window the raw correlation's argmax drifts off the
     # normalized optimum because the numerator grows with fragment energy).
-    a = window[m0:m0 + th, n0:n0 + tw].astype(np.float64)
+    #
+    # Degenerate case, and it is reachable from the decode: `_crop_window`
+    # clamps the window to the search frame but does NOT clamp the implied
+    # template top-left, so when the coarse centre sits close to the frame
+    # edge the rounded top-left can land one px above/left of the window
+    # origin. `window[-1:97]` is then EMPTY (a negative start with a positive
+    # stop wraps to the tail, and the stop is already past it) and np.fft
+    # raises "Invalid number of FFT data points (0)". The geometric guard is
+    # the patch actually being a full template footprint; declining when it is
+    # not is the same contract refine_zncc already uses, and the caller keeps
+    # its coarse answer rather than losing the pair.
+    a = window[m0:m0 + th, n0:n0 + tw]
+    if a.shape != (th, tw):
+        return cx, cy, 0.0
+    a = a.astype(np.float64)
     b = template.astype(np.float64)
     a -= a.mean()
     b -= b.mean()

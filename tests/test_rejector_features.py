@@ -76,7 +76,7 @@ def test_locate_phase2_records_winner_margin_on_default_path(monkeypatch):
                                                  "peak_ratio": .5, "coarse": (30., 30.)})
     scores = iter([.1, .9, .2])
     monkeypatch.setattr(matching, "refine_zncc",
-                        lambda search, template, cx, cy, radius: (cx + 0.25, cy - 0.25, next(scores)))
+                        lambda search, template, cx, cy, radius, variant=None: (cx + 0.25, cy - 0.25, next(scores)))
     monkeypatch.setattr(matching, "polish_pose",
                         lambda reference, search, x, y, m, r: (m, r, 1.0))
 
@@ -103,7 +103,7 @@ def test_locate_phase2_margin_reflects_selected_winner(monkeypatch):
                                                  "peak_ratio": .5, "coarse": (30., 30.)})
     scores = iter([.1, .9, .6])
     monkeypatch.setattr(matching, "refine_zncc",
-                        lambda search, template, cx, cy, radius: (cx + 0.25, cy - 0.25, next(scores)))
+                        lambda search, template, cx, cy, radius, variant=None: (cx + 0.25, cy - 0.25, next(scores)))
     monkeypatch.setattr(matching, "polish_pose",
                         lambda reference, search, x, y, m, r: (m, r, 1.0))
 
@@ -121,7 +121,7 @@ def test_locate_phase2_margin_nan_under_fixed_pose(monkeypatch):
                         lambda *args, **kwargs: {"x": 30., "y": 30., "score": .7,
                                                  "peak_ratio": .5, "coarse": (30., 30.)})
     monkeypatch.setattr(matching, "refine_zncc",
-                        lambda search, template, cx, cy, radius: (cx, cy, 0.8))
+                        lambda search, template, cx, cy, radius, variant=None: (cx, cy, 0.8))
     monkeypatch.setattr(matching, "polish_pose",
                         lambda reference, search, x, y, m, r: (m, r, 1.0))
     reference = np.zeros((100, 100), dtype=np.uint8)

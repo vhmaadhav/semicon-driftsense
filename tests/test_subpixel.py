@@ -170,3 +170,41 @@ def test_score_matches_peak_quality():
     cx, cy = _center(loc, template.shape)
     x, y, score = refine_bicubic(search, template, cx, cy)
     assert score == pytest.approx(peak, abs=1e-6)
+
+
+def test_upsampled_dft_declines_at_window_edge_instead_of_raising():
+    """Regression: the DFT variant must not raise when the coarse centre sits
+    near the frame edge.
+
+    `_crop_window` clamps the window to the search frame but does not clamp the
+    implied template top-left, so the rounded top-left can land one px above
+    the window origin -- `window[-1:th-1]` is then EMPTY and np.fft raises
+    "Invalid number of FFT data points (0)". Reachable from the decode
+    (wrong-basin candidates put the coarse centre near the frame edge), and it
+    cost a whole A/B run before this test existed: the fix is to decline,
+    returning the coarse centre, which is what refine_zncc already does when
+    its window degenerates.
+    """
+    rng = np.random.RandomState(1)
+    for _ in range(400):
+        W, H = int(rng.randint(10, 140)), int(rng.randint(10, 140))
+        th = int(rng.randint(1, max(2, H + 1)))
+        tw = int(rng.randint(1, max(2, W + 1)))
+        if th >= H or tw >= W:
+            continue
+        search = (rng.rand(H, W).astype(np.float32) * 255)
+        tpl = (rng.rand(th, tw).astype(np.float32) * 255)
+        cx = float(rng.uniform(-30, W + 30))
+        cy = float(rng.uniform(-30, H + 30))
+        x, y, score = refine_upsampled_dft(search, tpl, cx, cy, radius=4)
+        assert np.isfinite(x) and np.isfinite(y), (x, y)
+
+
+def test_upsampled_dft_declines_on_the_exact_empty_slice_repro():
+    """The minimal repro found by the randomized hunt: window 101x12,
+    template 98x4, centre (11.01, 48.37) -> m0 = -1 -> empty patch."""
+    search = np.random.RandomState(0).rand(101, 12).astype(np.float32) * 255
+    tpl = np.random.RandomState(2).rand(98, 4).astype(np.float32) * 255
+    x, y, score = refine_upsampled_dft(search, tpl, 11.01, 48.37, radius=4)
+    assert (x, y) == (11.01, 48.37)
+    assert score == 0.0
