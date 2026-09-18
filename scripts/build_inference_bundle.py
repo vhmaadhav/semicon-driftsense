@@ -116,17 +116,36 @@ def python_modules(phase: str) -> list:
                   if os.path.exists(os.path.join(REPO, PKG, m + ".py")))
 
 
+def _norm(name: str) -> str:
+    """PEP 503 normalisation -- 'Jinja2', 'jinja_2' and 'jinja-2' are one name."""
+    return name.lower().replace("_", "-")
+
+
 def installed_versions() -> dict:
-    """name -> pinned spec, from the build environment's own pip metadata."""
+    """name -> pinned spec.
+
+    The repository's own requirements.txt is the source of truth, because the
+    organizers' rule is to pin "within the same sandbox environment as Phase
+    2" -- so a line that already shipped for Phase 2 must ship here spelled
+    and pinned identically, not merely equivalently. The build environment's
+    pip metadata fills in anything that file does not carry.
+    """
+    out = {}
     try:
         from importlib.metadata import distributions
+        for d in distributions():
+            name = d.metadata["Name"]
+            if name:
+                out[_norm(name)] = f"{name}=={d.version}"
     except ImportError:                                   # pragma: no cover
-        return {}
-    out = {}
-    for d in distributions():
-        name = d.metadata["Name"]
-        if name:
-            out[name.lower().replace("_", "-")] = f"{name}=={d.version}"
+        pass
+
+    root_req = os.path.join(REPO, "requirements.txt")
+    if os.path.exists(root_req):
+        for line in open(root_req):
+            line = line.split("#")[0].strip()
+            if "==" in line:
+                out[_norm(line.split("==")[0])] = line
     return out
 
 
@@ -134,7 +153,7 @@ def requirements_for(phase: str, versions: dict) -> str:
     wanted = DIRECT[phase] + TRANSITIVE
     lines, missing = [], []
     for name in wanted:
-        key = name.lower().replace("_", "-")
+        key = _norm(name)
         if key in versions:
             lines.append(versions[key])
         else:
