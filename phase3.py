@@ -55,9 +55,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import register as R  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
-from driftsense.config import SHIPPED_BAND, SHIPPED_SUBPIXEL_ROWS  # noqa: E402
-from driftsense.matching import locate_phase2  # noqa: E402
-from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
+from driftsense.config import (  # noqa: E402
+    SHIPPED_BAND,
+    SHIPPED_LABEL_CONVENTION,
+    SHIPPED_STRIP_ROTATION,
+    SHIPPED_SUBPIXEL_ROWS,
+    SHIPPED_VERIFICATION,
+)
+from driftsense.matching import LABEL_CONVENTIONS, locate_phase2  # noqa: E402
 
 import infer as I  # noqa: E402
 
@@ -99,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--min-layer", type=int, default=0,
                     help="drop design layers below this index when rendering "
                          "the reference")
+    ap.add_argument("--label-convention", default=SHIPPED_LABEL_CONVENTION,
+                    choices=LABEL_CONVENTIONS,
+                    help="pixel convention the x, y columns are written in, "
+                         "matching the grader's labels (default: %(default)s). "
+                         "'center': pixel i spans [i-0.5, i+0.5]. 'edge': "
+                         "pixel i spans [i, i+1).")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -162,12 +173,17 @@ def main(argv=None) -> int:
                 if model is None:
                     res = I.zncc_fallback(ref, sea)
                     threshold = R.LEGACY_FALLBACK_THRESHOLD
+                    if a.label_convention == "center":
+                        res["x"] = float(res["x"]) - 0.5
+                        res["y"] = float(res["y"]) - 0.5
                 else:
                     threshold = a.threshold
                     res = locate_phase2(model, ref, sea, device, refine=True,
                                         verification=a.verification,
                                         band=SHIPPED_BAND,
-                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS)
+                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
+                                        strip_rot=SHIPPED_STRIP_ROTATION,
+                                        label_convention=a.label_convention)
                 score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= threshold)
                 out.update({

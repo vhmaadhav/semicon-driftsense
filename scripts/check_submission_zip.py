@@ -227,7 +227,8 @@ def torch_interpreter():
     Same probe the --help smoke tests use: prefer a repo venv, fall back to
     the auditing interpreter.
     """
-    for cand in (os.path.join(REPO, "venv313", "bin", "python"),
+    for cand in (os.path.join(REPO, ".venv", "bin", "python"),
+                 os.path.join(REPO, "venv313", "bin", "python"),
                  os.path.join(REPO, "venv", "bin", "python"),
                  sys.executable):
         if not os.path.isfile(cand) and not shutil.which(cand):
@@ -235,7 +236,8 @@ def torch_interpreter():
         probe = subprocess.run(
             [cand, "-c", "import torch, cv2"],
             capture_output=True, text=True, timeout=120)
-        return cand if probe.returncode == 0 else None
+        if probe.returncode == 0:
+            return cand
     return None
 
 
@@ -357,7 +359,8 @@ def audit_documentation(root):
     # actually import torch.
     interpreter = None
     torch_ok = False
-    for cand in (os.path.join(REPO, "venv313", "bin", "python"),
+    for cand in (os.path.join(REPO, ".venv", "bin", "python"),
+                 os.path.join(REPO, "venv313", "bin", "python"),
                  os.path.join(REPO, "venv", "bin", "python"),
                  sys.executable):
         if not os.path.isfile(cand) and not shutil.which(cand):
@@ -365,17 +368,21 @@ def audit_documentation(root):
         probe = subprocess.run(
             [cand, "-c", "import torch, cv2"],
             capture_output=True, text=True, timeout=120)
-        interpreter = cand
-        torch_ok = probe.returncode == 0
-        break
+        if probe.returncode == 0:
+            interpreter = cand
+            torch_ok = True
+            break
     if interpreter is None:
         interpreter = sys.executable
-    for script in ("register.py", "generate_dataset.py"):
+    smoke_scripts = ["register.py", "generate_dataset.py"]
+    if os.path.isfile(os.path.join(root, "phase3.py")):
+        smoke_scripts.append("phase3.py")
+    for script in smoke_scripts:
         name = script + " --help exits 0 from the extraction dir"
         if not torch_ok:
             check(name, None,
                   "SKIP: no interpreter with torch+cv2 available to run the "
-                  "smoke test (tried venv313/venv/" + sys.executable + ")",
+                  "smoke test (tried .venv/venv313/venv/" + sys.executable + ")",
                   skipped=True)
             continue
         proc = subprocess.run(
@@ -392,8 +399,11 @@ def audit_documentation(root):
 
 def audit_network(root):
     entry = os.path.join(root, "register.py")
-    files = transitive_local_modules(
-        root, [entry, os.path.join(root, "infer.py")])
+    seed_files = [entry, os.path.join(root, "infer.py")]
+    p3 = os.path.join(root, "phase3.py")
+    if os.path.isfile(p3):
+        seed_files.append(p3)
+    files = transitive_local_modules(root, seed_files)
     if not os.path.isfile(entry):
         check("no network calls in entry-point import closure",
               False, "register.py missing; cannot scan")
