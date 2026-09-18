@@ -219,3 +219,98 @@ def test_row_alignment_is_a_no_op_when_the_template_is_already_on_the_grid():
     aligned = row_offsets(search, tpl, cx, cy, align_rows=True)
     for a, b in zip(plain, aligned):
         np.testing.assert_array_equal(np.nan_to_num(a, nan=-9), np.nan_to_num(b, nan=-9))
+
+
+# ------------------------------------ lattice repeats across rows (issue #104)
+
+def _fin_pattern(seed=0, size=1000):
+    """A FinFET-like field: parallel vertical fins, and no zone envelope.
+
+    `_pattern` deliberately breaks the translational degeneracy with a
+    low-frequency envelope. This one does not, which is the point: a row cut
+    across parallel fins is near-periodic, so its 1-D correlation curve carries
+    several near-equal rivals one fin pitch apart and the argmax can land on
+    the wrong one.
+    """
+    rng = np.random.default_rng(seed)
+    yy, xx = np.mgrid[0:size, 0:size]
+    img = (120.0 + 60 * np.sin(2 * np.pi * xx / 100.0)
+           + 12 * np.sin(2 * np.pi * yy / 70.0)
+           + rng.normal(0, 2.0, (size, size)))
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def _fin_scene(seed=0, row_noise=45.0):
+    """A fin scene with enough per-pixel noise to make some rows mis-lock."""
+    ref = _fin_pattern(seed)
+    canvas = np.full((300, 300), 128, np.uint8)
+    canvas[100:200, 100:200] = cv2.resize(ref, (100, 100), interpolation=cv2.INTER_AREA)
+    rng = np.random.default_rng(seed + 5)
+    noisy = canvas.astype(np.float32) + rng.normal(0, row_noise, canvas.shape)
+    return ref, np.clip(noisy, 0, 255).astype(np.uint8), 150.0, 150.0
+
+
+@pytest.mark.parametrize("seed", [0, 2, 3])
+def test_band_resolves_rows_that_locked_onto_the_neighbouring_fin(seed):
+    """Neighbouring rows disagree about where the peak is only when one of them
+    is on the wrong repeat: drift is white, the layout's periodicity is not."""
+    ref, search, cx, cy = _fin_scene(seed)
+    tpl = make_template(ref, 10.0, 0.0)
+    alone, _ = row_offsets(search, tpl, cx, cy, band_sigma=0.0)
+    banded, _ = row_offsets(search, tpl, cx, cy, band_sigma=2.0)
+    # There is no drift in this scene, so any offset near a whole fin pitch is
+    # a repeat error rather than a sample.
+    assert np.nansum(np.abs(alone) > 5.0) >= 1, "scene did not produce a repeat error"
+    assert np.nansum(np.abs(banded) > 5.0) == 0
+
+
+def test_band_changes_which_peak_is_measured_never_the_row_s_own_value():
+    """The sub-pixel offset stays fitted to the row's own correlation curve, so
+    a row the band agrees with is bit-identical and a row it moves is moved by
+    a whole repeat -- never by a fraction borrowed from its neighbours."""
+    ref, search, cx, cy = _fin_scene(seed=3)
+    tpl = make_template(ref, 10.0, 0.0)
+    alone, _ = row_offsets(search, tpl, cx, cy, band_sigma=0.0)
+    banded, _ = row_offsets(search, tpl, cx, cy, band_sigma=2.0)
+    changed = np.isfinite(alone) & np.isfinite(banded) & (alone != banded)
+    assert changed.any(), "the band changed nothing; the test proves nothing"
+    assert np.abs(alone - banded)[changed].min() > 5.0
+    np.testing.assert_array_equal(alone[~changed & np.isfinite(alone)],
+                                  banded[~changed & np.isfinite(banded)])
+
+
+def test_band_off_is_the_default_and_a_true_no_op():
+    from driftsense.matching import DRIFT_BAND_SIGMA
+    ref, search, cx, cy, _ = _scene(jitter_sd=1.0, seed=19)
+    tpl = make_template(ref, 10.0, 0.0)
+    plain = row_offsets(search, tpl, cx, cy)
+    explicit = row_offsets(search, tpl, cx, cy, band_sigma=DRIFT_BAND_SIGMA)
+    for a, b in zip(plain, explicit):
+        np.testing.assert_array_equal(np.nan_to_num(a, nan=-9), np.nan_to_num(b, nan=-9))
+
+
+# ------------------------------------------- the quiet-frame cap (issue #104)
+
+def test_a_confident_frame_caps_the_correction():
+    """Past the gate the correction is capped, and the cap is on the correction
+    -- the rest of the re-match is left exactly where it was."""
+    ref, search, cx, cy, _ = _scene(jitter_sd=1.5, seed=3)
+    tpl = make_template(ref, 10.0, 0.0)
+    uncapped = drift_row_refine(search, tpl, cx, cy, quiet_gate=None)
+    capped = drift_row_refine(search, tpl, cx, cy, quiet_gate=0.5, frame_conf=0.9,
+                              quiet_max_shift=0.1)
+    assert uncapped is not None and capped is not None
+    assert abs(uncapped[0] - cx) > abs(capped[0] - cx)
+    assert capped[1] == uncapped[1], "the cap must not touch y"
+
+
+def test_the_gate_is_on_the_frame_and_nothing_else():
+    """Below the gate -- an ordinary or degraded frame -- the stage is untouched."""
+    ref, search, cx, cy, _ = _scene(jitter_sd=1.5, seed=3)
+    tpl = make_template(ref, 10.0, 0.0)
+    plain = drift_row_refine(search, tpl, cx, cy, quiet_gate=None)
+    below = drift_row_refine(search, tpl, cx, cy, quiet_gate=0.95, frame_conf=0.2,
+                             quiet_max_shift=0.1)
+    unknown = drift_row_refine(search, tpl, cx, cy, quiet_gate=0.5, frame_conf=None,
+                               quiet_max_shift=0.1)
+    assert plain == below == unknown
