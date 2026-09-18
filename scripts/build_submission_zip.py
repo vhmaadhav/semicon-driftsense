@@ -54,9 +54,11 @@ REPO = os.path.dirname(HERE)
 # ship one nothing needs.
 DRIFTSENSE_SHIP = [
     "__init__",
-    # reachable from register.py / infer.py / generate_dataset.py
+    # reachable from register.py / infer.py / generate_dataset.py / phase3.py
     "calibration", "config", "generate", "matching", "model",
     "policy", "presets", "subpixel", "verification", "vst",
+    # Phase 3 modules
+    "gds", "gds_layers", "pairs3", "params3",
     # vst ships even though SHIPPED_VST == "none": matching.py imports it at
     # module scope and calls vst.resolve_mode() on every coarse sweep, so an
     # extraction without it fails on import before the first pair decodes.
@@ -74,7 +76,7 @@ DRIFTSENSE_SHIP = [
 NL_BULLET = chr(10) + "  - "
 
 # The files whose imports define what driftsense/ must contain.
-ENTRY_POINTS = ["register.py", "infer.py", "generate_dataset.py"]
+ENTRY_POINTS = ["register.py", "infer.py", "generate_dataset.py", "phase3.py"]
 
 # Every entry is repo-relative. A file ships as itself; a directory ships as
 # its whole subtree minus the PRUNE_* rules below. Grouped by why it ships.
