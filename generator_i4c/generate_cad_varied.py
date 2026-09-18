@@ -44,10 +44,54 @@ import cv2
 import gdstk
 import numpy as np
 
+import src.cad_pipeline as _cad_pipeline
+from src.cad import cad_zones as _cad_zones
 from src.cad import yield_model
 from src.cad_pipeline import (
     MAX_SEARCH_ROTATION_DEG, SCALE_FACTOR, CadGenerationParams, build_cad_geometry, render_cad_sample,
 )
+
+
+def _safe_fab_distortion(design_cell, num_layers, rng, polygon_scale_prob=0.0, polygon_scale_range=0.0,
+                         linewidth_bias_nm=0.0, corner_rounding_px=0.0):
+    """src/cad/fab_distortion.py's apply_fab_distortion, with one guard.
+
+    gdstk's Polygon.fillet segfaults on some offset polygons (Windows access
+    violation; reproducible with --seed 30004, sample 21: DRAM, linewidth
+    bias -0.68 nm, corner rounding 2.79 px -- ordinary values inside the
+    GUI's Randomize bands). A segfault cannot be caught, so corner rounding
+    is done as a morphological opening instead. Scaling and linewidth bias
+    are exactly upstream's, with the same RNG draws in the same order.
+    """
+    out = gdstk.Cell(f"{design_cell.name}_FAB")
+    for layer in range(num_layers):
+        polygons = design_cell.get_polygons(layer=layer, datatype=0)
+        if not polygons:
+            continue
+        if polygon_scale_prob > 0 and polygon_scale_range > 0:
+            for poly in polygons:
+                if rng.random() < polygon_scale_prob:
+                    factor = 1.0 + rng.uniform(-polygon_scale_range, polygon_scale_range)
+                    (xmin, ymin), (xmax, ymax) = poly.bounding_box()
+                    poly.scale(factor, center=((xmin + xmax) / 2.0, (ymin + ymax) / 2.0))
+        if abs(linewidth_bias_nm) >= 1e-9 and polygons:
+            polygons = gdstk.offset(polygons, linewidth_bias_nm / 2.0, layer=layer, datatype=0)
+        if corner_rounding_px >= 0.5 and polygons:
+            # Morphological opening (shrink by r, grow back by r with round
+            # joins) instead of Polygon.fillet: same radius on convex corners,
+            # computed by Clipper, which does not crash.
+            r = float(corner_rounding_px)
+            shrunk = gdstk.offset(polygons, -r, layer=layer, datatype=0)
+            rounded = gdstk.offset(shrunk, r, join="round", layer=layer, datatype=0) if shrunk else []
+            polygons = rounded or polygons
+        for poly in polygons:
+            out.add(poly)
+    return out
+
+
+# Both upstream importers bound the name at import time; rebind both.
+_cad_zones.apply_fab_distortion = _safe_fab_distortion
+_cad_pipeline.apply_fab_distortion = _safe_fab_distortion
 
 ARCHITECTURE_KINDS = ["dram", "finfet"]
 
