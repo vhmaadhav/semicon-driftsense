@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Parallel front-end for generate_dataset.py / generate_cad_dataset.py.
+"""Parallel front-end for generate_dataset.py / generate_cad_dataset.py /
+generate_cad_varied.py.
 
 Both upstream CLIs are single-process: one sample at a time on one core. This
 splits the job into fixed-size chunks, runs N copies at once, each writing its
@@ -13,6 +14,7 @@ disk per pair -- so CPU cores, not RAM, set the limit.
 Examples:
     python generate_parallel.py --num-samples 5000 --split train --seed 100
     python generate_parallel.py --cad --num-samples 2000 --split cad_train --seed 200
+    python generate_parallel.py --cad-varied --num-samples 2000 --split cad_varied --seed 300
     # extra upstream flags go after --
     python generate_parallel.py --num-samples 1000 --split hard -- --no-match-prob 0.3
 
@@ -42,7 +44,10 @@ def parse_args():
                    help="parallel processes (default 16: throughput plateaus beyond this on the 14700HX -- ~9 samples/s measured at 16, 20 and 28)")
     p.add_argument("--chunk-size", type=int, default=25,
                    help="samples per resumable chunk (an interruption loses at most the chunks in flight)")
-    p.add_argument("--cad", action="store_true", help="use generate_cad_dataset.py (GDSII reference)")
+    kind = p.add_mutually_exclusive_group()
+    kind.add_argument("--cad", action="store_true", help="use generate_cad_dataset.py (GDSII reference)")
+    kind.add_argument("--cad-varied", action="store_true",
+                      help="use generate_cad_varied.py (GDSII reference, per-sample rotation and artefacts)")
     p.add_argument("extra", nargs=argparse.REMAINDER, help="flags passed through to the generator after --")
     return p.parse_args()
 
@@ -50,7 +55,8 @@ def parse_args():
 def main():
     args = parse_args()
     extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra
-    script = os.path.join(HERE, "generate_cad_dataset.py" if args.cad else "generate_dataset.py")
+    script = os.path.join(HERE, "generate_cad_varied.py" if args.cad_varied
+                          else "generate_cad_dataset.py" if args.cad else "generate_dataset.py")
     split_dir = os.path.join(args.output_dir, args.split)
     shard_root = os.path.join(split_dir, "shards")
     os.makedirs(shard_root, exist_ok=True)
@@ -70,7 +76,7 @@ def main():
                MKL_NUM_THREADS="1", OPENCV_FOR_THREADS_NUM="1")
 
     print(f"{args.num_samples} samples in {len(counts)} chunks, {workers} workers, "
-          f"{'CAD' if args.cad else 'image'} generator -> {split_dir}")
+          f"{os.path.basename(script)} -> {split_dir}")
     if skipped:
         print(f"  resuming: {skipped} samples already done, {len(todo)} chunks left")
     t0 = time.time()
