@@ -51,6 +51,8 @@ from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 from driftsense.config import SHIPPED_LABEL_CONVENTION  # noqa: E402
 from driftsense.config import SHIPPED_STRIP_ROTATION  # noqa: E402
+from driftsense.config import SHIPPED_GLOBAL_ROTATION  # noqa: E402
+from driftsense.config import SHIPPED_FULL_WIDTH_ROWS  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
@@ -574,6 +576,8 @@ def main():
                                         band=SHIPPED_BAND,
                                         subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
                                         strip_rot=SHIPPED_STRIP_ROTATION,
+                                        global_rot=SHIPPED_GLOBAL_ROTATION,
+                                        full_width_rows=SHIPPED_FULL_WIDTH_ROWS,
                                         label_convention=a.label_convention)
                 # The reported confidence (see locate_phase2): the shipped
                 # legacy min(network score, native ZNCC) on the model path,

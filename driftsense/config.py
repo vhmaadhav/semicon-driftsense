@@ -213,6 +213,47 @@ SHIPPED_SUBPIXEL_ROWS = True
 # 4 threads: 2.270 s -> 2.271 s median).
 SHIPPED_STRIP_ROTATION = True
 
+# Whole-frame estimators (driftsense.matching, "Whole-frame estimators" block).
+# ONE definition each; register.py passes them to locate_phase2
+# (global_rot=..., full_width_rows=...), and tests/test_submission_parity.py
+# pins that. Both default to False in locate_phase2's signature.
+#
+# SHIPPED_FULL_WIDTH_ROWS -- the label's x carries ONE scan row's drift sample.
+# An oracle that knows that sample exactly puts every present pair of the v2
+# dev split within 1 px (localisation 38.90 -> 40.00/40): the rigid match is
+# already ~0.1 px, and the whole localisation loss is the reading of that one
+# row. `drift_row_refine` reads it over the template's ~100 px; this reads it
+# over the full frame width (each row against its de-jittered neighbours,
+# solved jointly), re-measures y on a destreaked frame -- charging streaks had
+# sent 13% of severity-3 pairs to the neighbouring row -- and blends the two
+# candidate rows when y sits near a rounding boundary. Settings chosen on the
+# dev split alone.
+#
+# SHIPPED_GLOBAL_ROTATION -- theta from the angle at which the layout's
+# horizontal edges line up across the whole frame (drift cannot move a
+# horizontal edge), in the 2-5 px band where the peak is unambiguous. Chosen on
+# the dev split alone (rotation credit 0.958 -> 0.974; severities 0-2 all at
+# full credit).
+#
+# End to end (full decode with both stages against the #88 decode; scale,
+# rejection F1 and calibration AUC are unchanged on every set), rubric /85:
+#   v2 dev (500, seed 850001)       83.41 -> 83.97, paired +0.57
+#                                   95% CI [+0.22, +0.90]; localisation
+#                                   38.90 -> 39.32, rotation 9.58 -> 9.74.
+#   v2 holdout (500, seed 850002)   83.18 -> 84.09, paired +0.91
+#   (not used for any choice)       95% CI [+0.58, +1.27], P(delta >= +0.35)
+#                                   = 1.000; localisation 38.86 -> 39.51,
+#                                   rotation 9.54 -> 9.79.
+#   mentor 25-pair v2 set           83.58 -> 85.00 (register.py): every
+#   (not used for any choice)       present pair within 1 px (worst 0.78) and
+#                                   0.25 deg (worst 0.17 deg).
+# Cost: register.py median 2.35 s -> 2.54 s per pair (25 pairs, 4 threads).
+# Severity 4 remains the floor: its barrel distortion is resampled after the
+# drift, so every output row blends two drifted rows and no single-row
+# reading recovers the label's sample exactly.
+SHIPPED_FULL_WIDTH_ROWS = True
+SHIPPED_GLOBAL_ROTATION = True
+
 # Pixel convention of the grader's (x, y) labels (issue #86). ONE definition;
 # register.py passes it to locate_phase2 (label_convention=...), and
 # tests/test_submission_parity.py pins that.

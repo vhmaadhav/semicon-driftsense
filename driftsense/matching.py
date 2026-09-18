@@ -1275,6 +1275,263 @@ def strip_rotation(reference: np.ndarray, search: np.ndarray, cx: float, cy: flo
     return float(rotation_deg) + float(wgt * delta), float(sigma)
 
 
+# --- Whole-frame estimators: rotation and the label row's drift -------------
+#
+# Every stage above measures inside the posed template, ~100 px on a side. Two
+# of the quantities the rubric pays for are properties of the whole frame, and
+# the frame is 1000 px wide:
+#
+#   * rotation. The layout is Manhattan, so the angle at which its horizontal
+#     edges line up across the full width IS theta. Raster drift only moves
+#     content horizontally, so it cannot move a horizontal edge: the measurement
+#     is drift-immune, with a 1000 px lever arm instead of ~100 px.
+#   * the label row's drift sample. The label's x carries the horizontal shift
+#     of ONE scan row (`label_row`), and that row spans the whole frame. Each
+#     row is predicted from its de-jittered neighbours and the per-row residual
+#     shifts are solved jointly, so the label row is read over ~960 px of
+#     texture instead of the ~100 px `row_offsets` sees.
+#
+# Both were chosen on the v2 dev split and confirmed on data not used for the
+# choice; see driftsense.config (SHIPPED_GLOBAL_ROTATION,
+# SHIPPED_FULL_WIDTH_ROWS) for the measurements.
+
+# Global rotation. The column-sum of the frame, with column x shifted down by
+# x * tan(theta), has maximal vertical-derivative energy when every horizontal
+# edge lines up. Only the fine band carries an unambiguous peak: periods of
+# 5-20 px also align at angles 0.3-0.8 deg off (measured on dev FinFET frames),
+# while the 2-5 px band peaks at the truth on every one of them.
+GLOBAL_ROT_BAND = (2.0, 5.0)     # px, spatial periods kept in the energy
+GLOBAL_ROT_SPAN = 0.6            # deg searched either side of the input angle
+GLOBAL_ROT_COARSE = 0.05         # deg, coarse grid step
+GLOBAL_ROT_FINE = 0.005          # deg, fine grid step around the coarse peak
+GLOBAL_ROT_BLOCK = 10            # columns summed per block after exact shifting
+GLOBAL_ROT_TAPER = 64            # rows tapered at the top and bottom borders
+
+# Full-width drift rows. Band of rows solved around the label row, the lag
+# searched per row against its neighbours' prediction, the neighbour reach
+# (+-1 at weight 1, +-2 at weight 1/2), the ridge that pins the solution's null
+# space and shrinks poorly measured rows, and outer re-linearisations.
+FULL_WIDTH_HALF = 64
+FULL_WIDTH_LAG = 3
+FULL_WIDTH_MARGIN = 19           # px kept clear of the left/right frame edge
+FULL_WIDTH_NBR = 2
+FULL_WIDTH_LAM = 0.1
+FULL_WIDTH_OUTER = 3
+# The label row is round(y) of the label's own y, and a y within ~0.1 px of a
+# rounding boundary could belong to either row. The two candidates are blended
+# by the probability the label rounds to each, with this y uncertainty (px).
+FULL_WIDTH_ROW_SIGMA = 0.08
+FULL_WIDTH_MAX_DY = 1.5          # px; a destreaked y further than this from the
+                                 # rigid y is a mis-lock, and the rigid y is kept
+
+
+def global_rotation(search: np.ndarray, theta0: float,
+                    span: float = GLOBAL_ROT_SPAN,
+                    coarse: float = GLOBAL_ROT_COARSE,
+                    fine: float = GLOBAL_ROT_FINE,
+                    band: tuple[float, float] = GLOBAL_ROT_BAND,
+                    block: int = GLOBAL_ROT_BLOCK,
+                    taper: int = GLOBAL_ROT_TAPER) -> float:
+    """Rotation of the layout in the search frame, from the whole frame.
+
+    Searches `theta0 +/- span` degrees. Column shifts are applied as exact
+    Fourier phase ramps, because interpolated shifts smooth the profiles and
+    favour whichever angle needs the least interpolation.
+
+    Two raster-aligned artefacts would otherwise peak at the raster angle
+    whatever the layout does, and both are removed first: charging streaks (a
+    constant added along whole scan rows -- each row's median is subtracted)
+    and the frame's top and bottom borders (tapered to zero).
+    """
+    f = search.astype(np.float32)
+    f = f - np.median(f, axis=1, keepdims=True)
+    h, w = f.shape
+    f = f - f.mean(axis=0, keepdims=True)
+    if taper and 2 * taper < h:
+        ramp = (0.5 - 0.5 * np.cos(np.pi * np.arange(taper) / taper)).astype(np.float32)
+        tw = np.ones(h, np.float32)
+        tw[:taper], tw[-taper:] = ramp, ramp[::-1]
+        f = f * tw[:, None]
+    n = 2 * h                                            # zero-padded: no wrap
+    om = 2 * np.pi * np.fft.rfftfreq(n)
+    period = 2 * np.pi / np.maximum(om, 1e-12)
+    keep = (period >= band[0]) & (period <= band[1])
+    om = om[keep]
+    F = np.fft.rfft(f, n=n, axis=0)[keep]                # (n_freq, w)
+    xc = np.arange(w) - (w - 1) / 2.0
+    t0 = np.tan(np.radians(theta0))
+    F = F * np.exp(-1j * om[:, None] * (xc[None, :] * t0))
+    nb = w // int(block)
+    B = F[:, :nb * block].reshape(len(om), nb, block).sum(axis=2)
+    xb = xc[:nb * block].reshape(nb, block).mean(axis=1)
+
+    def energy(thetas):
+        out = np.empty(len(thetas))
+        for i, th in enumerate(thetas):
+            sh = xb * (np.tan(np.radians(th)) - t0)
+            P = (B * np.exp(-1j * om[:, None] * sh[None, :])).sum(axis=1)
+            out[i] = float((np.abs(P) ** 2).sum())
+        return out
+
+    grid = theta0 + np.arange(-span, span + 1e-9, coarse)
+    e = energy(grid)
+    fgrid = grid[int(np.argmax(e))] + np.arange(-coarse, coarse + 1e-9, fine)
+    ef = energy(fgrid)
+    j = int(np.argmax(ef))
+    off = parabolic(ef[j - 1], ef[j], ef[j + 1]) if 0 < j < len(ef) - 1 else 0.0
+    return float(fgrid[j] + off * fine)
+
+
+def _shift_rows(band: np.ndarray, s: np.ndarray) -> np.ndarray:
+    """out(x, y) = band(x - s[y], y): undo a per-row horizontal shift s."""
+    h, w = band.shape
+    mx = np.arange(w, dtype=np.float32)[None, :] - s.astype(np.float32)[:, None]
+    my = np.repeat(np.arange(h, dtype=np.float32)[:, None], w, axis=1)
+    return cv2.remap(band, mx, my, interpolation=cv2.INTER_LINEAR,
+                     borderMode=cv2.BORDER_REFLECT)
+
+
+def _neighbour_residuals(band: np.ndarray, s: np.ndarray, lag: int, xa: int, xb: int,
+                         nbr: int) -> tuple[np.ndarray, np.ndarray]:
+    """Per row: the residual shift that best aligns the row (de-jittered by s)
+    with its de-jittered neighbours' weighted average, and that peak's NCC."""
+    n = band.shape[0]
+    D = _shift_rows(band, s)
+    R = np.zeros_like(D)
+    wsum = np.zeros((n, 1), np.float32)
+    for k in range(1, int(nbr) + 1):
+        wk = 1.0 / k
+        R[k:] += wk * D[:-k]
+        wsum[k:] += wk
+        R[:-k] += wk * D[k:]
+        wsum[:-k] += wk
+    R /= np.maximum(wsum, 1e-6)
+    b = R[:, xa:xb]
+    b = b - b.mean(axis=1, keepdims=True)
+    bn = np.sqrt((b * b).sum(axis=1)) + 1e-6
+    cc = np.empty((n, 2 * lag + 1), np.float32)
+    for i, t in enumerate(range(-lag, lag + 1)):
+        a = _shift_rows(band, s + t)[:, xa:xb]
+        a = a - a.mean(axis=1, keepdims=True)
+        cc[:, i] = (a * b).sum(axis=1) / (np.sqrt((a * a).sum(axis=1)) * bn + 1e-6)
+    k = np.argmax(cc, axis=1)
+    t = np.zeros(n)
+    for j in range(n):
+        kj = int(k[j])
+        sub = parabolic(cc[j, kj - 1], cc[j, kj], cc[j, kj + 1]) if 0 < kj < 2 * lag else 0.0
+        t[j] = (kj - lag) + sub
+    return t, cc[np.arange(n), k].astype(np.float64)
+
+
+def _solve_second_difference(m: np.ndarray, w: np.ndarray, lam: float, nbr: int) -> np.ndarray:
+    """min_s sum_y w_y (m_y - (A s)_y)^2 + lam |s|^2, where (A s)_y is row y's
+    shift minus its neighbours' weighted mean -- what `_neighbour_residuals`
+    measures. A's null space (constant and linear trends) is pinned by lam."""
+    n = len(m)
+    A = np.eye(n)
+    for y in range(n):
+        idx, wts = [], []
+        for k in range(1, int(nbr) + 1):
+            for yy in (y - k, y + k):
+                if 0 <= yy < n:
+                    idx.append(yy)
+                    wts.append(1.0 / k)
+        wts = np.asarray(wts) / np.sum(wts)
+        for yy, wk in zip(idx, wts):
+            A[y, yy] -= wk
+    AtW = A.T * w[None, :]
+    return np.linalg.solve(AtW @ A + lam * np.eye(n), AtW @ m)
+
+
+def row_shift_band(search: np.ndarray, row: int, half: int = FULL_WIDTH_HALF,
+                   lag: int = FULL_WIDTH_LAG, margin: int = FULL_WIDTH_MARGIN,
+                   nbr: int = FULL_WIDTH_NBR, lam: float = FULL_WIDTH_LAM,
+                   outer: int = FULL_WIDTH_OUTER) -> tuple[np.ndarray, np.ndarray]:
+    """Horizontal drift of every scan row in `row +/- half`, over the full width.
+
+    Returns `(rows, s)`: search-row indices and their shifts in the imaging
+    model's sign (row y shows layout content at x + s[y]). Only the part of the
+    field that is not a linear trend is identifiable from vertical continuity,
+    and that is the part a label needs: the trend is shear, which the rigid
+    match already absorbs. `s` is returned with its linear trend removed.
+    """
+    f = search.astype(np.float32)
+    f = f - np.median(f, axis=1, keepdims=True)   # charging streaks are row constants
+    h, w = f.shape
+    y0, y1 = max(int(row) - half - 1, 0), min(int(row) + half + 2, h)
+    band = np.ascontiguousarray(f[y0:y1])
+    n = y1 - y0
+    xa, xb = margin, w - margin
+    s = np.zeros(n)
+    yy = np.arange(n)
+    for _ in range(max(int(outer), 1)):
+        t, pk = _neighbour_residuals(band, s, lag, xa, xb, nbr)
+        wts = np.clip(pk, 0.02, 1.0) ** 2         # a row's NCC height says how well it was read
+        s = s + _solve_second_difference(t, wts, lam, nbr)
+        s = s - np.polyval(np.polyfit(yy, s, 1), yy)
+    return np.arange(y0, y1), s
+
+
+def destreaked_y(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
+                 radius: int = 3) -> float | None:
+    """Vertical position of the posed template on a destreaked copy of the frame.
+
+    Charging streaks are horizontal structure the template does not contain,
+    so on the raw frame they pull the vertical fit; the label row is chosen by
+    rounding this y, so its error decides which row's drift the answer
+    carries. Pixel-edge convention, like `cy`. None if the window leaves the
+    frame or the peak lands on its edge.
+    """
+    frame = destreak(search)
+    h, w = frame.shape
+    th, tw = template.shape
+    x0 = int(round(cx - tw / 2.0)) - radius
+    y0 = int(round(cy - th / 2.0)) - radius
+    if x0 < 0 or y0 < 0 or x0 + tw + 2 * radius > w or y0 + th + 2 * radius > h:
+        return None
+    win = frame[y0:y0 + th + 2 * radius, x0:x0 + tw + 2 * radius].astype(np.float32)
+    res = cv2.matchTemplate(win, template.astype(np.float32), cv2.TM_CCOEFF_NORMED)
+    _, _, _, (pj, pi) = cv2.minMaxLoc(res)
+    if not (0 < pi < res.shape[0] - 1):
+        return None
+    return float(y0 + pi + parabolic(res[pi - 1, pj], res[pi, pj], res[pi + 1, pj]) + th / 2.0)
+
+
+def full_width_refine(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
+                      label_convention: str = "edge") -> tuple[float, float] | None:
+    """Re-place a rigid match on the label's scan row, reading that row's drift
+    over the full frame width (the whole-frame counterpart of `drift_row_refine`).
+
+    `cx, cy` are the rigid pixel-edge match of the posed `template`. Returns the
+    corrected pixel-edge `(x, y)`: x moved by the label row's drift relative to
+    the template rows' mean (which is what the rigid match recovered), y
+    re-measured on a destreaked frame. None to decline.
+    """
+    if label_convention not in LABEL_CONVENTIONS:
+        raise ValueError(f"label_convention must be one of {LABEL_CONVENTIONS}, "
+                         f"got {label_convention!r}")
+    y_new = destreaked_y(search, template, cx, cy)
+    if y_new is None or not np.isfinite(y_new) or abs(y_new - cy) > FULL_WIDTH_MAX_DY:
+        y_new = float(cy)
+    # The label's y in its own convention, whose round() names the label row.
+    y_lab = y_new - 0.5 if label_convention == "center" else y_new
+    lo = int(np.floor(y_lab))
+    rows, s = row_shift_band(search, int(round(y_lab)))
+    pos = {int(r): i for i, r in enumerate(rows)}
+    th = template.shape[0]
+    t0 = int(round(cy - th / 2.0))
+    trows = [pos[r] for r in range(t0, t0 + th) if r in pos]
+    if lo not in pos or lo + 1 not in pos or len(trows) < th // 2:
+        return None
+    # P(the true label y rounds up) under the y uncertainty, then the blend.
+    from math import erf, sqrt
+    p_hi = 0.5 * (1.0 + erf(((y_lab - lo) - 0.5) / (FULL_WIDTH_ROW_SIGMA * sqrt(2.0))))
+    jit = p_hi * s[pos[lo + 1]] + (1.0 - p_hi) * s[pos[lo]] - float(np.mean(s[trows]))
+    if not np.isfinite(jit):
+        return None
+    return float(cx - jit), float(y_new)
+
+
 def zncc_only(reference: np.ndarray, search: np.ndarray) -> dict:
     """Classical multi-scale ZNCC. Used as the fallback path when no trained
     weights are available, so the inference script always returns a result."""
@@ -1385,7 +1642,8 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                   rescue_margin: float | None = None, rescue_delta: float = 0.0,
                   verification: str = "zncc", denoise: int = 0,
                   subpixel_rows: bool = True, label_convention: str = "edge",
-                  strip_rot: bool = False, **kw) -> dict:
+                  strip_rot: bool = False, global_rot: bool = False,
+                  full_width_rows: bool = False, **kw) -> dict:
     """Phase 2 inference: unknown scale and rotation, with a rejection score.
 
     label_convention names the pixel convention of the labels the answer will
@@ -1403,6 +1661,16 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     then build their templates from that pose. Defaults to False here, like
     label_convention's "edge", so the signature default reproduces the
     historical output exactly; register.py passes the shipped value.
+
+    global_rot and full_width_rows are the whole-frame estimators
+    (driftsense.config.SHIPPED_GLOBAL_ROTATION / SHIPPED_FULL_WIDTH_ROWS): the
+    first replaces `theta` with the angle at which the layout's horizontal
+    edges line up across the full frame (`global_rotation`); the second
+    replaces the drift-row stage, reading the label row's drift over the full
+    frame width and re-measuring y on a destreaked frame (`full_width_refine`;
+    it needs subpixel_rows, and falls back to `drift_row_refine` on a decline).
+    Both default to False, like strip_rot, so the signature default reproduces
+    the historical output.
 
     band=False is the measured default (full 2,250-pair A/B, 2026-08-31):
     band-passing the coarse probe cost 0.45 rubric points (paired loc delta
@@ -1673,6 +1941,21 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
                 warnings.warn(f"strip rotation skipped: {type(e).__name__}: {e}",
                               RuntimeWarning, stacklevel=2)
 
+        # Rotation from the whole frame (see `global_rotation`), searched around
+        # the answer above. It replaces that answer rather than blending with
+        # it: on the v2 dev split it is the better estimator at every severity
+        # (driftsense.config.SHIPPED_GLOBAL_ROTATION). Never allowed to cost a
+        # pair, for the same reason as the strip stage.
+        if global_rot:
+            try:
+                g = global_rotation(search, best["theta"])
+                if np.isfinite(g):
+                    best["theta_local"] = float(best["theta"])
+                    best["theta"] = float(g)
+            except Exception as e:  # noqa: BLE001
+                warnings.warn(f"global rotation skipped: {type(e).__name__}: {e}",
+                              RuntimeWarning, stacklevel=2)
+
     # Re-place the match on the scan row the label is actually defined against.
     # Runs after every pose decision is final, so it can only move x -- it never
     # feeds back into scale, rotation or the confidence, and a decline leaves the
@@ -1683,8 +1966,12 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
     #   set A credit 0.9758 -> 0.9806, <=1px 92.7% -> 95.1%
     #   set B credit 0.8247 -> 0.8471, <=1px 57.6% -> 67.0%
     #
-    # y is deliberately left alone: it is already at 0.081 px median error on
-    # set B because raster drift has no vertical component.
+    # `drift_row_refine` leaves y alone: it is already at 0.081 px median error
+    # on set B because raster drift has no vertical component.
+    # `full_width_refine` (full_width_rows) re-measures y on a destreaked frame
+    # instead, because round(y) is what names the label row, and charging
+    # streaks -- horizontal structure the template does not contain -- pull the
+    # raw-frame fit by enough to name the wrong row (13% of severity-3 v2 pairs).
     #
     # The rigid answer -- where the posed template actually aligns -- is what
     # the confidence is measured at (issue #87); the row re-placement below
@@ -1704,10 +1991,19 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         # rigid answer, which is what the pipeline produced before this stage.
         try:
             tpl = make_template(reference, best["scale"], best["theta"])
-            moved = drift_row_refine(search, tpl, best["x"], best["y"],
-                                     label_convention=label_convention)
-            if moved is not None:
-                best["x"] = moved[0]
+            moved = None
+            if full_width_rows:
+                # Whole-frame reading of the label row; it also re-measures y,
+                # since that y is what picks the label row.
+                moved = full_width_refine(search, tpl, best["x"], best["y"],
+                                          label_convention=label_convention)
+                if moved is not None:
+                    best["x"], best["y"] = moved
+            if moved is None:
+                moved = drift_row_refine(search, tpl, best["x"], best["y"],
+                                         label_convention=label_convention)
+                if moved is not None:
+                    best["x"] = moved[0]
         except Exception as e:  # noqa: BLE001
             warnings.warn(f"sub-pixel row refinement skipped: "
                           f"{type(e).__name__}: {e}", RuntimeWarning, stacklevel=2)

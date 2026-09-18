@@ -39,6 +39,7 @@ sys.path.insert(0, HERE)
 # register.py ships -- pinned by tests/test_submission_parity.py.
 from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS, SHIPPED_STRIP_ROTATION
+from driftsense.config import SHIPPED_GLOBAL_ROTATION, SHIPPED_FULL_WIDTH_ROWS
 
 # Published Phase 2 credit tiers.
 LOC_TIERS = ((1.0, 1.00), (2.0, 0.80), (3.0, 0.60), (5.0, 0.40))
@@ -59,7 +60,8 @@ def _worker(job):
     """Run one pair. Imports happen inside so each process sets its own threads."""
     (shard_dir, row, weights, threads, hypotheses, polish, polish_scale, refit_xy,
      coarse, band, verification, denoise, tie_tol, features,
-     early_exit, rescue_margin, rescue_delta, subpixel_rows, strip_rot) = job
+     early_exit, rescue_margin, rescue_delta, subpixel_rows, strip_rot,
+     global_rot, full_width_rows) = job
     import torch
     torch.set_num_threads(threads)
     import cv2
@@ -87,6 +89,7 @@ def _worker(job):
                         tie_tol=tie_tol, early_exit_zncc=early_exit,
                         rescue_margin=rescue_margin, rescue_delta=rescue_delta,
                         subpixel_rows=subpixel_rows, strip_rot=strip_rot,
+                        global_rot=global_rot, full_width_rows=full_width_rows,
                         # --features: compute the rank/band feature maps and the
                         # winner margin WITHOUT changing the selector -- the
                         # hypothesis choice stays the shipped zncc winner, so the
@@ -155,7 +158,7 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
         polish_scale, refit_xy, stride, coarse, band, verification, denoise,
         tie_tol, features=False, sample=0, seed=0, early_exit=None,
         rescue_margin=None, rescue_delta=0.0, subpixel_rows=False,
-        strip_rot=False):
+        strip_rot=False, global_rot=False, full_width_rows=False):
     import multiprocessing as mp
 
     tasks = []
@@ -170,7 +173,7 @@ def run(shards, weights, jobs, threads, limit, hypotheses, polish,
                           polish_scale, refit_xy, coarse, band, verification,
                           denoise, tie_tol, features,
                           early_exit, rescue_margin, rescue_delta,
-                          subpixel_rows, strip_rot))
+                          subpixel_rows, strip_rot, global_rot, full_width_rows))
     print(f"{len(tasks)} pairs over {len(shards)} shard(s), {jobs} workers", flush=True)
     if sample:
         rng = np.random.RandomState(seed)
@@ -372,6 +375,18 @@ def main():
     ap.add_argument("--no-strip-rotation", dest="strip_rot", action="store_false",
                     help="force the rotation refinement off regardless of the "
                          "shipped default")
+    ap.add_argument("--global-rotation", dest="global_rot", action="store_true",
+                    default=SHIPPED_GLOBAL_ROTATION,
+                    help="take rotation from the whole frame's horizontal edges "
+                         "(see driftsense.matching.global_rotation)")
+    ap.add_argument("--no-global-rotation", dest="global_rot", action="store_false",
+                    help="force the whole-frame rotation off regardless of the shipped default")
+    ap.add_argument("--full-width-rows", dest="full_width_rows", action="store_true",
+                    default=SHIPPED_FULL_WIDTH_ROWS,
+                    help="read the label row's drift over the full frame width "
+                         "(see driftsense.matching.full_width_refine)")
+    ap.add_argument("--no-full-width-rows", dest="full_width_rows", action="store_false",
+                    help="force the full-width row reading off regardless of the shipped default")
     ap.add_argument("--no-subpixel-rows", dest="subpixel_rows",
                     action="store_false",
                     help="force the row correction off regardless of the shipped default")
@@ -433,7 +448,7 @@ def main():
                  a.verification, a.denoise, a.tie_tol, a.features,
                  a.sample, a.seed, a.early_exit,
                  a.rescue_margin, a.rescue_delta, a.subpixel_rows,
-                 a.strip_rot)
+                 a.strip_rot, a.global_rot, a.full_width_rows)
         if a.out:
             df.to_csv(a.out, index=False)
             print(f"wrote {a.out}")

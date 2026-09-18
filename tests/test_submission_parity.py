@@ -45,7 +45,9 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
 from driftsense.config import (SHIPPED_BAND, SHIPPED_THRESHOLD,
                                SHIPPED_VERIFICATION, SHIPPED_CONFIDENCE,
                                SHIPPED_LABEL_CONVENTION,
-                               SHIPPED_STRIP_ROTATION)
+                               SHIPPED_STRIP_ROTATION,
+                               SHIPPED_GLOBAL_ROTATION,
+                               SHIPPED_FULL_WIDTH_ROWS)
 
 
 def _load_eval_ext():
@@ -157,6 +159,29 @@ def test_register_forwards_the_strip_rotation_flag_to_the_decoder():
         "register.py must forward the shipped strip-rotation flag to locate_phase2")
 
 
+def test_register_forwards_the_whole_frame_flags_to_the_decoder():
+    """The whole-frame rotation and full-width row reading are shipped-decode
+    choices, so they live in driftsense.config and register.py forwards them.
+    locate_phase2's own defaults stay False (the historical behaviour), so
+    every caller that has not opted in -- Phase 3 among them -- is unchanged."""
+    from driftsense.matching import locate_phase2
+    params = inspect.signature(locate_phase2).parameters
+    for flag, name in ((SHIPPED_GLOBAL_ROTATION, "global_rot"),
+                       (SHIPPED_FULL_WIDTH_ROWS, "full_width_rows")):
+        assert isinstance(flag, bool)
+        assert params[name].default is False
+    src = open(os.path.join(REPO_ROOT, "register.py")).read()
+    assert "global_rot=SHIPPED_GLOBAL_ROTATION" in src
+    assert "full_width_rows=SHIPPED_FULL_WIDTH_ROWS" in src
+
+
+def test_eval_ext_defaults_follow_the_whole_frame_flags():
+    ev = _load_eval_ext()
+    parser = _argparse_defaults(ev.main)
+    assert parser.get_default("global_rot") == SHIPPED_GLOBAL_ROTATION
+    assert parser.get_default("full_width_rows") == SHIPPED_FULL_WIDTH_ROWS
+
+
 def test_locate_phase2_signature_band_default_is_shipped():
     from driftsense.matching import locate_phase2
     default = inspect.signature(locate_phase2).parameters["band"].default
@@ -260,6 +285,8 @@ def _eval_decode(rp, sp):
     return locate_phase2(model, ref, sea, device, refine=True,
                          verification=SHIPPED_VERIFICATION, band=SHIPPED_BAND,
                          strip_rot=SHIPPED_STRIP_ROTATION,
+                         global_rot=SHIPPED_GLOBAL_ROTATION,
+                         full_width_rows=SHIPPED_FULL_WIDTH_ROWS,
                          label_convention=SHIPPED_LABEL_CONVENTION)
 
 
