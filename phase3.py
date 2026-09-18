@@ -56,6 +56,7 @@ import register as R  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
+    PHASE3_COARSE_SCALES,
     PHASE3_CONFIDENCE,
     PHASE3_REFERENCE_BLUR,
     PHASE3_LABEL_CONVENTION,
@@ -164,6 +165,14 @@ def build_parser() -> argparse.ArgumentParser:
                     metavar="SIGMA",
                     help="Gaussian sigma in reference px applied to the rendered "
                          "GDS before matching; 0 disables (default: %(default)s)")
+    # Coarse scale-sweep density. Phase 2 samples 17 points across [8, 12] --
+    # a 0.25 step. The Phase 3 band is [9, 11], so 17 points is a 0.125 step:
+    # twice Phase 2's density over half the range, for a magnification that is
+    # nominally fixed. The coarse sweep is ~66.8% of pair time (issue #7), so
+    # this is the cheapest efficiency knob there is -- and efficiency is scored.
+    ap.add_argument("--coarse-scales", type=int, default=PHASE3_COARSE_SCALES,
+                    help="scale samples in the coarse sweep "
+                         "(default: %(default)s; Phase 2 uses 17 over [8,12])")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -254,6 +263,7 @@ def main(argv=None) -> int:
                                         subpixel_rows=subpixel_rows,
                                         strip_rot=SHIPPED_STRIP_ROTATION,
                                         label_convention=a.label_convention,
+                                        coarse_scales=a.coarse_scales,
                                         scale_bounds=scale_bounds,
                                         rotation_bounds=rotation_bounds)
                 if a.confidence == "zncc":

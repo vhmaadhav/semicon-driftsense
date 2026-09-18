@@ -467,3 +467,36 @@ PHASE3_CONFIDENCE = "zncc"
 # where it changes GEOMETRY (the raster shear, issue #101), not where it only
 # changes contrast.
 PHASE3_REFERENCE_BLUR = 0.0
+
+
+# Coarse scale-sweep density for Phase 3 -- MEASURED, keep at 17.
+#
+# The argument for cutting it is obvious and wrong: Phase 2 samples 17 points
+# across [8, 12] (a 0.25 step), the Phase 3 band is [9, 11], so 17 points is a
+# 0.125 step -- twice the density over half the range, for a magnification that
+# is nominally FIXED at 10. The coarse sweep is ~66.8% of pair time (issue #7),
+# so this looks like free speed against the 5-point efficiency block.
+#
+# It is not free. 60 pairs at rotation U(-10,+10), T=0.75:
+#
+#     coarse_scales      5       9      13      17
+#     s/pair         0.359   0.624   0.725   0.950
+#     loc/40         24.45   25.06   25.66   29.74
+#     /85            61.63   64.16   65.13   70.22
+#
+# Even 13 points costs 5.09. A 2.6x speedup at cs=5 costs 8.59 points, and
+# efficiency is worth 5 in total -- the trade is never available.
+#
+# WHY, and it matters beyond this constant: the magnification degree of freedom
+# is not idle. It is absorbing the generator's raster shear (see
+# PHASE3_SUBPIXEL_ROWS), so the matcher compensates for a geometric distortion
+# by settling on a slightly-off scale, and that needs fine sampling to find.
+# This is the same finding as the scale-pin experiment in
+# driftsense.matching.PHASE3_SCALE_BOUNDS, from the other direction: pinning
+# removes the freedom (-3.12) and coarsening removes the resolution to use it
+# (-5.09 at 13).
+#
+# Consequence for issue #101: correcting the shear per pair should make BOTH
+# recoverable -- the scale freedom becomes unnecessary, so the sweep can shrink
+# and the efficiency block opens up. Until then, 17 stays and so does [9, 11].
+PHASE3_COARSE_SCALES = 17

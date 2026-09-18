@@ -142,6 +142,9 @@ localisation and pose on top of the points it was already losing.
 | beam-PSF blur on the rendered reference (sigma 2/3/5) | **flat**: 70.39 / 69.73 / 70.28 / 70.50 of 85. ZNCC is normalised and the 10x INTER_AREA reduction already dominates. |
 | widening the hypothesis set 3 -> 8 and ranking perfectly | **+3 pairs only**. 6 of 9 failures never generate a correct candidate; oracle is 47/53, not 53/53. Same structure as the Phase 2 Set B selector ceiling. |
 | scale pinned at 10.0 | **-3.12 / 85** |
+| coarse scale sweep cut 17 -> 13 / 9 / 5 | **-5.09 / -6.06 / -8.59** at 0.73 / 0.62 / 0.36 s per pair. The density is load-bearing. |
+| Phase 2 threshold re-checked under both F1 readings | already optimal (F1 = 1.0000 either way, plateau 0.30-0.60) -- no lever, and Phase 2 is confirmed safe |
+| emitting real x, y on declined rows | closed -- `judging/score_rubric.py:59-64` masks localisation by our own `found` column |
 | reference-free global theta estimator | 4.42 deg median vs the decode's own 0.104 deg |
 
 ### What that leaves
