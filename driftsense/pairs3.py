@@ -61,6 +61,24 @@ PHASE3_FIELDS = (
 # literals.
 WITHHELD_FIELDS = ("reference_sem_path", "params_json_path")
 
+# Which roles an absent column is allowed to be, and which it is not.
+#
+# The strictness this module exists for is about never GUESSING which column
+# fills a role -- specifically never letting `reference_sem_path` be read as
+# `reference_gds_path`. It is not about demanding all six spellings be
+# present, and conflating the two costs the whole set: a role that cannot be
+# resolved raises, phase3.py aborts before writing anything, and a submission
+# with no predictions.csv scores zero on every pair rather than on one column.
+#
+# So the mandatory set is exactly the columns inference dereferences. The
+# three optional ones are never opened at run time -- `search_gds_path` is not
+# read by phase3.py at all, and the two withheld columns are unreadable by
+# construction on a blind split -- so an absent one is a file that simply does
+# not carry it, which is a different fact from an ambiguous one. Absent
+# resolves to "" and the row reads as blind; AMBIGUOUS still raises.
+MANDATORY_FIELDS = ("pair_id", "search_path", "reference_gds_path")
+OPTIONAL_FIELDS = tuple(f for f in PHASE3_FIELDS if f not in MANDATORY_FIELDS)
+
 # There is deliberately NO alias table here.
 #
 # A tempting one exists: Phase 1/2 manifests in this repo spell the key `id`
@@ -178,6 +196,13 @@ def resolve_schema(fieldnames, mapping: dict | None = None) -> dict:
     ``mapping`` overrides individual roles with caller-supplied column names;
     an override is still checked for existence, so a typo fails here rather
     than at the first row.
+
+    A role in :data:`MANDATORY_FIELDS` that cannot be resolved raises. A role
+    in :data:`OPTIONAL_FIELDS` that is simply absent maps to ``None`` -- see
+    the comment above those constants for why an absent optional column is not
+    the failure this module guards against. An explicit ``mapping`` entry is
+    always existence-checked, optional or not: naming a column that is not
+    there is a typo, not an absence.
     """
     names = [normalize(f) for f in fieldnames]
     resolved = {}
@@ -190,6 +215,8 @@ def resolve_schema(fieldnames, mapping: dict | None = None) -> dict:
                     f"{mapping[role]!r} is not a column; header is "
                     f"{list(fieldnames)}")
             resolved[role] = fieldnames[names.index(want)]
+        elif role in OPTIONAL_FIELDS and normalize(role) not in names:
+            resolved[role] = None
         else:
             resolved[role] = resolve_column(fieldnames, role)
     return resolved
@@ -229,7 +256,10 @@ def read_pairs(path: str, mapping: dict | None = None,
     base = os.path.dirname(os.path.abspath(path))
 
     def pathval(row, role):
-        v = (row.get(schema[role]) or "").strip()
+        col = schema[role]
+        if col is None:                   # optional column absent from header
+            return ""
+        v = (row.get(col) or "").strip()
         if not v:
             return ""
         if not absolute_paths:
@@ -250,7 +280,8 @@ def read_pairs(path: str, mapping: dict | None = None,
                 "contract requires each pair_id exactly once")
         seen.add(pid)
 
-        withheld = {name: (row.get(schema[name]) or "").strip()
+        withheld = {name: ((row.get(schema[name]) or "").strip()
+                           if schema[name] is not None else "")
                     for name in WITHHELD_FIELDS}
         # The split is *detected*, never declared: a row carries the training
         # fields or it does not. Trusting a caller flag here would let a blind

@@ -56,18 +56,27 @@ import register as R  # noqa: E402
 from driftsense import gds  # noqa: E402
 from driftsense import pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
+    PHASE3_CONFIDENCE,
+    PHASE3_LABEL_CONVENTION,
+    PHASE3_SUBPIXEL_ROWS,
+    PHASE3_THRESHOLD,
     SHIPPED_BAND,
     SHIPPED_LABEL_CONVENTION,
     SHIPPED_STRIP_ROTATION,
     SHIPPED_SUBPIXEL_ROWS,
     SHIPPED_VERIFICATION,
 )
-from driftsense.matching import LABEL_CONVENTIONS, locate_phase2  # noqa: E402
+from driftsense.matching import (  # noqa: E402
+    LABEL_CONVENTIONS,
+    PHASE3_ROTATION_BOUNDS,
+    PHASE3_SCALE_BOUNDS,
+    locate_phase2,
+)
 
 import infer as I  # noqa: E402
 
 OUT_FIELDS = R.OUT_FIELDS
-DEFAULT_FOUND_THRESHOLD = R.DEFAULT_FOUND_THRESHOLD
+DEFAULT_FOUND_THRESHOLD = PHASE3_THRESHOLD
 
 # Mass-failure thresholds. register.py grew these on the private development
 # trunk; this branch's base (origin/main) predates them, and the two trunks
@@ -104,12 +113,45 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--min-layer", type=int, default=0,
                     help="drop design layers below this index when rendering "
                          "the reference")
-    ap.add_argument("--label-convention", default=SHIPPED_LABEL_CONVENTION,
+    ap.add_argument("--label-convention", default=PHASE3_LABEL_CONVENTION,
                     choices=LABEL_CONVENTIONS,
                     help="pixel convention the x, y columns are written in, "
                          "matching the grader's labels (default: %(default)s). "
                          "'center': pixel i spans [i-0.5, i+0.5]. 'edge': "
                          "pixel i spans [i, i+1).")
+    # The pose search box is Phase 3's, not Phase 2's -- see
+    # driftsense.matching.PHASE3_*_BOUNDS for why each differs. Exposed as
+    # flags so a clarification from the organizers about the stage rotation
+    # cap or the magnification spread is a command line, not a code change.
+    ap.add_argument("--rotation-bounds", type=float, nargs=2,
+                    metavar=("LO", "HI"), default=list(PHASE3_ROTATION_BOUNDS),
+                    help="stage rotation search range in degrees "
+                         "(default: %(default)s; Phase 2 was -5 5)")
+    ap.add_argument("--scale-bounds", type=float, nargs=2,
+                    metavar=("LO", "HI"), default=list(PHASE3_SCALE_BOUNDS),
+                    help="magnification search range (default: %(default)s; "
+                         "Phase 2 was 8 12, nominal here is 10)")
+    # Phase 2's drift-row refinement moves ONLY x (driftsense.config:
+    # "the correction moves only x"). It models the SEM's slow-scan raster
+    # drift, which the Phase 2 search frames carry and a CAD reference does
+    # not, so on Phase 3 it is a correction applied to a distortion that is
+    # not there -- and it shows up as an x-only bias. Toggleable, and
+    # measured rather than assumed.
+    ap.add_argument("--subpixel-rows", dest="subpixel_rows",
+                    action="store_true", default=None,
+                    help="force the Phase 2 drift-row x refinement on")
+    ap.add_argument("--no-subpixel-rows", dest="subpixel_rows",
+                    action="store_false",
+                    help="disable the Phase 2 drift-row x refinement")
+    # Which statistic goes in the `score` column. Phase 2's "legacy_min" takes
+    # min(network score, native ZNCC); on Phase 3 the network is out of domain
+    # (it was trained SEM-against-SEM, and the reference here is a rendered
+    # design), so the min drags the stronger signal down. See
+    # driftsense.config.PHASE3_CONFIDENCE for the measured AUC table.
+    ap.add_argument("--confidence", default=PHASE3_CONFIDENCE,
+                    choices=("legacy_min", "zncc"),
+                    help="statistic written to the score column "
+                         "(default: %(default)s)")
     ap.add_argument("--quiet", action="store_true")
     return ap
 
@@ -118,6 +160,19 @@ def main(argv=None) -> int:
     ap = build_parser()
     a = ap.parse_args(argv)
     R.cap_threads(a.threads)
+
+    subpixel_rows = (PHASE3_SUBPIXEL_ROWS if a.subpixel_rows is None
+                     else bool(a.subpixel_rows))
+    scale_bounds = (float(a.scale_bounds[0]), float(a.scale_bounds[1]))
+    rotation_bounds = (float(a.rotation_bounds[0]), float(a.rotation_bounds[1]))
+    for name, (lo, hi) in (("--scale-bounds", scale_bounds),
+                           ("--rotation-bounds", rotation_bounds)):
+        if lo > hi:
+            raise SystemExit(f"phase3: {name} lower bound {lo} exceeds upper "
+                             f"bound {hi}")
+    if scale_bounds[0] <= 0:
+        raise SystemExit(f"phase3: --scale-bounds must be positive, got "
+                         f"{scale_bounds}")
 
     # ---- Read the Phase 3 schema, loudly ---------------------------------
     # Deliberately before anything else that can fail: a schema mistake must
@@ -181,10 +236,19 @@ def main(argv=None) -> int:
                     res = locate_phase2(model, ref, sea, device, refine=True,
                                         verification=a.verification,
                                         band=SHIPPED_BAND,
-                                        subpixel_rows=SHIPPED_SUBPIXEL_ROWS,
+                                        subpixel_rows=subpixel_rows,
                                         strip_rot=SHIPPED_STRIP_ROTATION,
-                                        label_convention=a.label_convention)
-                score = float(res.get("confidence", res.get("score", 0.0)))
+                                        label_convention=a.label_convention,
+                                        scale_bounds=scale_bounds,
+                                        rotation_bounds=rotation_bounds)
+                if a.confidence == "zncc":
+                    # Fall back to the shipped statistic if the verification
+                    # stage did not produce a native ZNCC for this pair, so a
+                    # missing feature is a weaker score, never a crash.
+                    score = float(res.get("zncc", res.get(
+                        "confidence", res.get("score", 0.0))))
+                else:
+                    score = float(res.get("confidence", res.get("score", 0.0)))
                 found = int(score >= threshold)
                 out.update({
                     "x": f'{float(res["x"]):.4f}' if found else 0,

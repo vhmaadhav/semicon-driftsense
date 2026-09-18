@@ -300,3 +300,151 @@ SHIPPED_LABEL_CONVENTION = "center"
 # mixed. Revisit only with the full 2,250-pair paired bootstrap
 # (.agents/C_LOCALIZATION_REPORT.md, .agents/integrator_ext60_tmp.py output).
 SHIPPED_SUBPIXEL = "parabola"
+
+
+# --------------------------------------------------------------------------
+# Phase 3 found-threshold.
+#
+# SHIPPED_THRESHOLD is a Phase 2 constant and must stay one: it was swept
+# against the Phase 2 rubric on the Phase 2 distribution, where ~20% of pairs
+# are absent. Phase 3 discloses ~1 site in 12 (8.3%), and that alone moves the
+# optimum down, mechanically rather than as a matter of taste:
+#
+#   * a false ACCEPT costs only rejection F1, and with 8.3% absent there are
+#     few pairs that can be falsely accepted at all;
+#   * a false DECLINE costs the pair's localisation (40) AND pose (20) -- the
+#     row is zero-filled, which is what gets submitted -- and costs F1 too.
+#
+# Fitted on 250 generated Phase 3 pairs at rotation U(-10,+10) (226 present /
+# 24 absent), decoded once at --threshold 0 and re-thresholded offline, scored
+# over the briefing's 85 measurable points:
+#
+#     T      0.00   0.15   0.20   0.25   0.40   0.55(P2)  0.70
+#     /85   67.58  66.84  66.84  66.74  65.20   59.37    44.24
+#
+# Validated on a disjoint 60-pair set never used to choose it: 0.55 scores
+# 56.69, 0.20 scores 65.91, T=0 scores 68.14. Phase 2's 0.55 declines 48 of
+# 226 present pairs on the fit set and gives up ~8 points.
+#
+# WHY NOT 0.0, which is the literal argmax -- and is the argmax at EVERY
+# assumed absent rate from 8% to 40%, so this is not an artefact of the
+# generated absent fraction. Two reasons, both about what is not measured
+# here rather than about taste:
+#
+#   * the briefing says high-confidence false grabs "carry heavy penalties",
+#     which a plain F1 term does not express; and
+#   * these absent pairs come from our own generator. The organizers' own
+#     README discloses that their absent decoys carry a size signature, so
+#     their absents may be more separable than ours, and a degenerate `found`
+#     column cannot exploit that at all.
+#
+# 0.20 is the best NON-degenerate point at every assumed absent rate and costs
+# 0.74 against T=0 at the disclosed rate. It still declines 12% of absent
+# pairs, so the rejector remains a working component rather than a constant.
+#
+# THE REAL FINDING IS NOT THE THRESHOLD. At 0.20, 88% of absent pairs still
+# score above it against 97% of present ones -- the shipped `legacy_min`
+# confidence barely separates the two classes on CAD-reference pairs (AUC
+# 0.836 here against 0.9877 on Phase 2 data). No threshold can fix a
+# statistic that does not separate. docs/PHASE3_MEASUREMENT.md already
+# measured the replacement: the confidence MARGIN (best peak minus best
+# competing peak) separates good pose basins from bad at AUC 0.948. Wiring
+# that into the score column is where the 15 rejection and 10 calibration
+# points actually are -- this constant only stops the current statistic from
+# throwing away localisation and pose on top of them.
+PHASE3_THRESHOLD = 0.20
+
+
+# --------------------------------------------------------------------------
+# Phase 3 label convention.
+#
+# Phase 2 ships "center" -- established empirically against the organizers'
+# Phase 2 ground truth (issue #86), and confirmed on their 25-pair set where it
+# drives the signed dy bias to -0.014 px.
+#
+# Phase 3 is "edge", and this is derived from the generator's source rather
+# than fitted. src/cad_pipeline.py:227-229 defines the answer as
+#
+#     gt_x0, gt_y0 = x0 / SCALE_FACTOR, y0 / SCALE_FACTOR   # crop top-left
+#     gt_cx, gt_cy = gt_x0 + box_w / 2.0, gt_y0 + box_h / 2.0
+#
+# i.e. "centre = top-left corner + width/2", which is exactly the pixel-edge
+# convention and exactly the rule the matcher uses internally. "center" then
+# subtracts a further 0.5 px from a coordinate that was already correct.
+#
+# Measured on 60 generated pairs at rotation U(-10,+10): signed dy median
+# -0.5145 under "center" against -0.0145 under "edge", localisation 26.42 ->
+# 30.94 of 40, pairs inside 1 px 9/53 -> 25/53, subtotal 66.43 -> 71.31 of 85.
+#
+# The two phases genuinely disagreeing is worth confirming with the organizers
+# -- it is one flag either way -- but the Phase 3 evaluation data is produced
+# by this same cad_pipeline, so its convention is the one that applies.
+PHASE3_LABEL_CONVENTION = "edge"
+
+# Phase 2's drift-row x refinement. Kept ON: the hypothesis that it was the
+# source of the residual x bias was tested and is WRONG -- disabling it moves
+# the signed dx median from -0.8271 to -0.9156, i.e. slightly worse. It is
+# recovering a little of the raster drift, just not much of it.
+#
+# The residual dx of about -0.83 px is NOT a defect in the matcher. It is the
+# generator's raster drift (src/sem_imaging.py:124-130): rows are sheared by
+# shear_amplitude_px * row/(h-1) and cv2.remap SAMPLES at x+s, so imaged
+# content sits -s from where the ground truth -- computed on the pre-drift
+# geometry -- says it is. Fitting dx against y/999 recovers slope -1.2258
+# against the model's -1.50, with the per-quartile medians tracking it.
+#
+# A correction is deliberately NOT shipped. It would have to be per-pair, and
+# it cannot be estimated per-pair: across a 100-row reference patch the shear
+# is a pure translation, so ZNCC is flat in it. A fixed constant is a coin
+# flip -- the 20 curated cases the mentors published use shear_amplitude_px in
+# {0.0, 2.5, 3.0, 3.5, 4.0}, not the 1.5 default, and correcting by 1.5 when
+# the truth is 0.0 costs 2.4 localisation points exactly as it gains 2.4 when
+# the truth is 1.5. Estimating it needs a GLOBAL measurement over the whole
+# frame (the near-horizontal edge family gives the stage rotation, the
+# near-vertical family gives rotation plus shear, and the difference is the
+# shear); that is the open lever, worth up to ~7 points at the high shear
+# amplitudes the curated cases actually use.
+PHASE3_SUBPIXEL_ROWS = True
+
+
+# --------------------------------------------------------------------------
+# Phase 3 confidence statistic.
+#
+# SHIPPED_CONFIDENCE is "legacy_min" -- min(network score, native ZNCC) -- and
+# stays that for Phase 2, where it is what the 0.9877 holdout AUC was measured
+# on. It is the wrong choice for Phase 3, and the reason is a domain shift, not
+# a tuning accident: the network was trained on SEM-against-SEM pairs, and a
+# Phase 3 reference is a RENDERED DESIGN. The network score is therefore the
+# weaker of the two signals here, and taking the min drags the stronger one
+# down to it.
+#
+# Measured on 60 generated pairs at rotation U(-10,+10), scoring the rubric's
+# calibration block (AUC of the score column, correct-and-within-5px against
+# everything else):
+#
+#     zncc          0.9200      pose_peak    0.8844      score       0.8504
+#     legacy_min    0.8370      peak_ratio   0.7630      psr         0.5748
+#     score*zncc    0.9052      apce         0.5615      hyp_margin  0.5222
+#
+# VALIDATED on a disjoint 250-pair set, and the gain shrinks -- this is what
+# the tuning set's optimism looks like when it is checked:
+#
+#                     60-pair (tuned)   250-pair (validation)
+#     legacy_min          0.8370              0.8358
+#     zncc                0.9200              0.8647
+#     gain                +0.83               +0.29
+#     pose_peak           0.8844              0.6719   <- genuinely overfit
+#
+# Adopted at +0.29 of 85, not the +0.83 the small set suggested. It is kept
+# because it is positive on both sets, costs nothing, and localisation, pose
+# and rejection come out bit-identical -- only the score column moves.
+# pose_peak is the cautionary tale: best-looking alternative on 60 pairs,
+# collapses to near-useless on 250.
+#
+# Recorded because it corrects a claim in docs/PHASE3_MEASUREMENT.md as it is
+# easy to misread: the confidence MARGIN measured AUC 0.948 there for
+# predicting CATASTROPHIC LOCALISATION FAILURE (>20 px against <=2 px) under
+# the classical matcher. That is a different question from the rubric's
+# calibration block, and on this question the margin is worthless -- AUC
+# 0.5222, indistinguishable from chance. Do not carry the 0.948 across.
+PHASE3_CONFIDENCE = "zncc"

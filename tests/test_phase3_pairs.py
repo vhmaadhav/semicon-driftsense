@@ -352,3 +352,78 @@ def test_register_pick_column_is_exact_match_first():
     reg = _load_register()
     fields = ["pair_id", "reference_path", "reference_sem_path", "search_path"]
     assert reg.pick_column(fields, reg.REF_KEYS, "reference") == "reference_path"
+
+
+# --------------------------------------------------------------------------
+# 4. Absent OPTIONAL columns are tolerated; absent MANDATORY ones are not
+# --------------------------------------------------------------------------
+#
+# The distinction the reader has to make is between an AMBIGUOUS header (two
+# columns could fill one role -- guess and you hand a .gds to cv2.imread) and
+# an INCOMPLETE one (a column the scored run never opens simply is not there).
+# The first must raise. The second must not: phase3.py aborts without writing
+# predictions.csv when read_pairs raises, so refusing a header that is merely
+# missing `search_gds_path` scores zero on every pair to protect a column
+# nothing reads.
+
+def test_absent_optional_columns_do_not_block_a_run(tmp_path):
+    for dropped in pairs3.OPTIONAL_FIELDS:
+        header = [c for c in PHASE3_FIELDS if c != dropped]
+        p = _write(tmp_path / f"drop_{dropped}.csv", header,
+                   [{k: v for k, v in TRAIN_ROW.items() if k != dropped}])
+        rows = read_pairs(p, absolute_paths=False)
+        assert len(rows) == 1, dropped
+        assert getattr(rows[0], dropped) == "", dropped
+        # The columns inference actually dereferences still resolve.
+        assert rows[0].search_path == TRAIN_ROW["search_path"]
+        assert rows[0].reference_gds_path == TRAIN_ROW["reference_gds_path"]
+
+
+def test_a_header_of_only_the_inference_columns_reads(tmp_path):
+    """The minimum a blind split could ship and still be scoreable."""
+    header = list(pairs3.MANDATORY_FIELDS)
+    p = _write(tmp_path / "pairs.csv", header,
+               [{k: TRAIN_ROW[k] for k in header}])
+    rows = read_pairs(p, absolute_paths=False)
+    assert len(rows) == 1
+    assert rows[0].is_blind is True
+    assert rows[0].training_only_fields == {f: "" for f in WITHHELD_FIELDS}
+
+
+def test_dropping_a_withheld_column_still_reads_as_blind(tmp_path):
+    """Absent is not 'present in training'. A row whose withheld columns are
+    missing must read blind, so no training-only path can consume them."""
+    header = [c for c in PHASE3_FIELDS if c != "params_json_path"]
+    p = _write(tmp_path / "pairs.csv", header,
+               [{k: v for k, v in TRAIN_ROW.items() if k != "params_json_path"}])
+    row = read_pairs(p, absolute_paths=False)[0]
+    assert row.is_blind is True
+    assert row.training_only_fields["reference_sem_path"] == ""
+
+
+@pytest.mark.parametrize("dropped", pairs3.MANDATORY_FIELDS)
+def test_absent_mandatory_column_still_raises(tmp_path, dropped):
+    header = [c for c in PHASE3_FIELDS if c != dropped]
+    p = _write(tmp_path / "pairs.csv", header,
+               [{k: v for k, v in TRAIN_ROW.items() if k != dropped}])
+    with pytest.raises(PairsSchemaError):
+        read_pairs(p)
+
+
+def test_optional_and_mandatory_partition_the_schema():
+    assert set(pairs3.MANDATORY_FIELDS) | set(pairs3.OPTIONAL_FIELDS) == set(PHASE3_FIELDS)
+    assert not set(pairs3.MANDATORY_FIELDS) & set(pairs3.OPTIONAL_FIELDS)
+    # Every withheld column is optional: the blind split is allowed to omit
+    # them outright, not only to blank them.
+    assert set(WITHHELD_FIELDS) <= set(pairs3.OPTIONAL_FIELDS)
+    # ...and nothing inference dereferences is optional.
+    assert set(pairs3.MANDATORY_FIELDS) <= set(inference_fields())
+
+
+def test_an_explicit_mapping_to_a_missing_optional_column_still_raises(tmp_path):
+    """Absence is tolerated; a typo in an explicit mapping is not."""
+    header = [c for c in PHASE3_FIELDS if c != "search_gds_path"]
+    p = _write(tmp_path / "pairs.csv", header,
+               [{k: v for k, v in TRAIN_ROW.items() if k != "search_gds_path"}])
+    with pytest.raises(PairsSchemaError, match="not a column"):
+        read_pairs(p, mapping={"search_gds_path": "search_gds_path"})
