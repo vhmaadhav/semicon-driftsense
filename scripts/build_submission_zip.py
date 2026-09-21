@@ -70,6 +70,14 @@ ALLOW = [
     # -- environment ------------------------------------------------------
     "requirements.txt",      # "requirements.txt from pip freeze" (slide 5)
 
+    # -- legal ------------------------------------------------------------
+    # The archive is redistributed, so it carries its own terms. NOTICE is
+    # not optional alongside LICENSE here: it is what scopes the Apache-2.0
+    # grant away from the vendored generator/ tree that ships below as the
+    # section 7 deliverable, and away from weights/driftsense.pt.
+    "LICENSE",
+    "NOTICE",
+
     # -- graded documents -------------------------------------------------
     "failure_analysis.pdf",  # "failure_analysis.pdf max 2 pages" (slide 5)
     "README.md",
