@@ -52,6 +52,7 @@ from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
 from driftsense.config import SHIPPED_LABEL_CONVENTION  # noqa: E402
 from driftsense.config import SHIPPED_STRIP_ROTATION  # noqa: E402
 from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
+from driftsense.paths import is_rooted  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
 
@@ -459,7 +460,11 @@ def main():
 
     def resolve(p):
         p = (p or "").strip()
-        return p if os.path.isabs(p) else os.path.join(base, p)
+        # is_rooted, not os.path.isabs: a POSIX-absolute path in pairs.csv
+        # stopped being isabs on Windows under Python 3.13, and join() would
+        # splice the current drive onto it. Graded inputs -- POSIX-absolute
+        # and relative -- classify exactly as before. See driftsense/paths.py.
+        return p if is_rooted(p) else os.path.join(base, p)
 
     model, device = I.load_model(a.weights) or (None, None)
     if model is None and not a.allow_fallback:

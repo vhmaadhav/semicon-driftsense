@@ -62,6 +62,7 @@ from driftsense.config import (  # noqa: E402
     SHIPPED_BAND, SHIPPED_STRIP_ROTATION, SHIPPED_VERIFICATION,
 )
 from driftsense.matching import PHASE2_SCALE_BOUNDS, locate_phase2  # noqa: E402
+from driftsense.paths import is_rooted  # noqa: E402
 
 import infer as I  # noqa: E402
 
@@ -171,7 +172,10 @@ def _existing(resolved: str, raw: str) -> str:
     if not resolved or os.path.exists(resolved):
         return resolved
     raw = (raw or "").strip()
-    if raw and not os.path.isabs(raw) and os.path.exists(raw):
+    # is_rooted, not os.path.isabs: a rooted-but-driveless value such as
+    # "/data/x.png" must never be reinterpreted as working-directory
+    # relative, which is what isabs permits on Windows under 3.13.
+    if raw and not is_rooted(raw) and os.path.exists(raw):
         return os.path.abspath(raw)
     return resolved
 
