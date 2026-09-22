@@ -5,6 +5,10 @@ on:
     branches: [main, phase2]
   pull_request:
 
+# Least privilege: this workflow only reads the repository.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
