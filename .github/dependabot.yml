@@ -4,11 +4,27 @@ updates:
   # from a CPU-only PyTorch 3.11 environment; treat every bump as needing a
   # rerun of the full suite plus the release gate before merge.
   - package-ecosystem: pip
-    directory: "/"
+    # `directories`, not `directory: "/"`. With the singular form Dependabot
+    # discovered phase1/requirements.txt as well and raised PRs against it:
+    # #120 and #122 touched nothing else, and #118, #119 and #121 each carried
+    # it alongside the root file. phase1/ is an archive -- one commit, dated
+    # 2026-09-03, DENY-listed out of the submission by
+    # scripts/build_submission_zip.py as an "archived Phase 1 duplicate", and
+    # never run by CI. Its requirements.txt is a record of the environment
+    # that WAS used, which phase1/README.md cites as such; bumping it does not
+    # make anything safer, it just edits history and costs a review.
+    directories:
+      - "/"
+      - "!/phase1"
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # These labels have to exist in the repository first. They did not, so
+    # every Dependabot PR opened so far arrived unlabelled and the routing
+    # below was silently doing nothing -- the commit-message prefixes and the
+    # groups worked, which made it look like the whole block was in effect.
+    # `dependencies`, `ci` and `generator` now exist.
     labels:
       - dependencies
     commit-message:
@@ -34,7 +50,8 @@ updates:
   # The image and GDSII decoders reached by untrusted input (see SECURITY.md).
   # Deliberately ungrouped so a CVE fix arrives as its own reviewable PR.
   - package-ecosystem: pip
-    directory: "/generator"
+    directories:
+      - "/generator"
     schedule:
       interval: weekly
       day: monday
@@ -46,6 +63,8 @@ updates:
       prefix: "deps(generator)"
 
   - package-ecosystem: github-actions
+    # Workflows only ever live in .github/workflows, so there is nothing for
+    # this one to over-discover. Kept singular deliberately.
     directory: "/"
     schedule:
       interval: monthly
