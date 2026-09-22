@@ -15,8 +15,9 @@ The Apache-2.0 license in LICENSE covers the work authored in this repository:
     register.py            Phase 2 entry point
     phase3.py              Phase 3 entry point
     train.py, infer.py, evaluate.py
-    scripts/, tests/, evaluation/, experiments/
+    scripts/, tests/, experiments/
     generate_dataset.py, generate_phase3_dataset.py
+    phase1/                the archived Phase 1 tree
     README.md, TRAINING.md, FAILURE_ANALYSIS.md, CITATIONS.md, docs/
 
 It does NOT cover the vendored third-party tree described below, nor the
@@ -24,26 +25,39 @@ trained model weights, which carry their own terms.
 
 
 ================================================================================
-VENDORED THIRD-PARTY CODE — generator/
+VENDORED THIRD-PARTY CODE — generator/ AND generator_i4c/
 ================================================================================
 
-The directory `generator/` is vendored UNMODIFIED from:
+Two directories in this repository are vendored from the same third party:
+
+    generator/       the Phase 2 deliverable tree, vendored unmodified
+    generator_i4c/   a second copy of the same upstream, carrying the i4C
+                     variant's slide deck and CAD-export additions
+
+Both descend from:
 
     Drift-Sense Synthetic Dataset Generator
     Author:  aayushraina21
     Source:  https://huggingface.co/spaces/aayushraina21/drift-sense-synthetic-data
 
-It supplies the DRAM/FinFET pattern synthesis, the mat/strip zone composition,
-the structural-defect model and the SEM acquisition model. See CITATIONS.md §1.
+The upstream supplies the DRAM/FinFET pattern synthesis, the mat/strip zone
+composition, the structural-defect model and the SEM acquisition model.
+CITATIONS.md §1 records the provenance of `generator/`; it does not yet mention
+`generator_i4c/`, which should be added there.
+
+Neither tree ships in the submission archive: ALLOW in
+scripts/build_submission_zip.py names `generator/` explicitly and, being a
+closed allowlist, excludes `generator_i4c/` by omission rather than by rule.
+Both are nonetheless published here, so both need their terms stated.
 
 *** UNRESOLVED: the upstream Space publishes no LICENSE file. Its terms are  ***
 *** therefore undetermined, and the Apache-2.0 grant in LICENSE does not and ***
-*** cannot extend to it. Redistributors should not assume rights over this   ***
-*** directory. Resolving this requires either (a) written terms from the     ***
-*** upstream author, (b) removing the vendored tree and depending on it      ***
-*** externally, or (c) reimplementing the pieces this project actually uses. ***
+*** cannot extend to either copy. Redistributors should not assume rights    ***
+*** over these directories. Resolving this requires either (a) written terms ***
+*** from the upstream author, (b) removing the vendored trees and depending  ***
+*** on them externally, or (c) reimplementing the pieces actually used.      ***
 
-Files under `generator/` authored by this project rather than vendored — the
+Files under either tree authored by this project rather than vendored — the
 Phase 2 audit harness and the Phase 2/3 composition wrappers — are Apache-2.0
 along with the rest of the repository.
 
