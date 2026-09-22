@@ -44,6 +44,8 @@ import csv
 import os
 from dataclasses import dataclass
 
+from driftsense.paths import is_rooted
+
 # --------------------------------------------------------------------------
 # The Phase 3 layout. Kept as one ordered tuple because the order is part of
 # what the organizer published, and a test pins the round-trip.
@@ -234,7 +236,7 @@ def read_pairs(path: str, mapping: dict | None = None,
             return ""
         if not absolute_paths:
             return v
-        return v if os.path.isabs(v) else os.path.join(base, v)
+        return v if is_rooted(v) else os.path.join(base, v)
 
     out = []
     seen = set()
