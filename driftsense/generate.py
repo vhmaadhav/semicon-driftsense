@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import os
+from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
@@ -771,6 +772,7 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
         writer = csv.DictWriter(f, fieldnames=BASE_FIELDS + PARAM_FIELDS, extrasaction="ignore")
         if not append:
             writer.writeheader()
+        results: Iterator[list[dict]]
         if workers == 0:
             results = map(build_one, jobs)
             ex = None

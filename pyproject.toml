@@ -119,3 +119,35 @@ packages = ["driftsense"]
 # One source of truth. driftsense/__init__.py carries __version__; this reads
 # it, so a release is a single-line edit rather than two that can disagree.
 version = { attr = "driftsense.__version__" }
+
+[tool.mypy]
+# Scoped to the library, matching the policy ruff.toml already applies:
+# scripts/, tests/ and experiments/ are research tooling and are not held to
+# production typing. driftsense/ is the product.
+files = ["driftsense"]
+python_version = "3.11"
+
+# cv2 and gdstk ship no type information. Without this every import of them is
+# an error before any real checking starts.
+ignore_missing_imports = true
+show_error_codes = true
+
+# The setting that keeps this honest. Eight `# type: ignore` comments exist in
+# driftsense/, every one of them for a numpy or cv2 stub that is stricter than
+# the library actually is -- each was confirmed by running the code, not by
+# reading the stub. When a future numpy or opencv release fixes one, this turns
+# the now-unnecessary ignore into an error instead of letting it sit there
+# forever pretending to be load-bearing.
+#
+# It also protects the gate itself: run mypy without numpy installed and every
+# import silently becomes Any, which would make the whole check pass while
+# verifying nothing. The ignores would go unused and this setting fails the run
+# instead. That is why the CI job installs requirements.txt rather than just
+# mypy.
+warn_unused_ignores = true
+
+# Not strict = true, deliberately. 78 of 187 functions in driftsense/ carry
+# return annotations; demanding the rest as one change would bury the real
+# findings under several hundred missing-annotation errors. Raising this
+# gradually -- disallow_untyped_defs per module as each is annotated -- is the
+# follow-up, and it is only possible because the baseline is clean now.

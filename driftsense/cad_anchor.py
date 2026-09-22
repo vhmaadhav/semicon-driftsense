@@ -265,7 +265,7 @@ def coarse_cad_peaks(ref_masks: np.ndarray, search_masks: np.ndarray, k: int = C
     for _ in range(k):
         y, x = np.unravel_index(int(np.argmax(a)), a.shape)
         peaks.append((x * SEARCH_NM_PER_PX, y * SEARCH_NM_PER_PX, float(acc[y, x])))
-        a[max(0, y - 3):y + 4, max(0, x - 3):x + 4] = -np.inf
+        a[max(0, y - 3):y + 4, max(0, x - 3):x + 4] = -np.inf  # type: ignore[call-overload]  # max(int, np.intp) -> np.intp
     return peaks
 
 
@@ -322,7 +322,7 @@ SUPPORT_FOUND_CLIPPED = 0.8
 
 
 def _clipped_support(ref_keys: set, near: dict, ox: float, oy: float, ref_size: float) -> float:
-    keys = set()
+    keys: set[tuple] = set()
     for L, b in near.items():
         c = np.clip(b - (ox, oy, ox, oy), 0.0, ref_size)
         c = c[(c[:, 2] > c[:, 0]) & (c[:, 3] > c[:, 1])]
@@ -342,7 +342,10 @@ def clipped_offset(ref_bboxes: dict, search: SearchCad, guess: tuple, ref_size: 
     if not ref_keys:
         return None, 0.0, 0
     gx, gy = float(guess[0]), float(guess[1])
-    near, votes = {}, ([], [])
+    near: dict = {}
+    # One list per axis; votes[axis] collects the offsets that axis's
+    # edges vote for, so the pair is indexed, never iterated as a whole.
+    votes: tuple[list, list] = ([], [])
     for L, a in ref_bboxes.items():
         b = search.bboxes.get(L)
         if b is None:
@@ -368,7 +371,7 @@ def clipped_offset(ref_bboxes: dict, search: SearchCad, guess: tuple, ref_size: 
             cand.append([float(x) for x in vals[np.argsort(-cnt)[:top]]])
         else:
             cand.append([float(round(g))])
-    best = (None, 0.0)
+    best: tuple[tuple[float, float] | None, float] = (None, 0.0)
     for ox in cand[0]:
         for oy in cand[1]:
             hit = _clipped_support(ref_keys, near, ox, oy, ref_size)

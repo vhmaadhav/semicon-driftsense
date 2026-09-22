@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       # Pinned, and pinned to the same version as .pre-commit-config.yaml.
@@ -34,3 +34,28 @@ jobs:
         run: pip install ruff==0.12.0
       - name: ruff check
         run: ruff check --output-format=github .
+
+  mypy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+      # The real dependencies, not just mypy. numpy ships inline types and
+      # torch ships stubs; without them every import resolves to Any under
+      # ignore_missing_imports and the check passes while verifying nothing.
+      # warn_unused_ignores would catch that -- the eight type: ignore
+      # comments in driftsense/ would go unused and fail the run -- but it is
+      # better to give the checker the types than to rely on the tripwire.
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+      - name: Install mypy
+        run: pip install mypy==1.17.1
+      # No arguments: files, python_version and the rest come from
+      # [tool.mypy] in pyproject.toml, so this command and a local `mypy` are
+      # the same check.
+      - name: mypy
+        run: mypy

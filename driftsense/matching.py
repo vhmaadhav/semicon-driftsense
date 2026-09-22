@@ -713,7 +713,7 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     # not assuming the numbers above transfer. Evidence:
     # .agents/PR51_CAMPAIGN.md.
     if os.environ.get("DRIFTSENSE_DEDUP", "0") != "0":
-        deduped = []
+        deduped: list[tuple[float, float, float]] = []
         for c in out:
             if not any(abs(c[0] - d[0]) < abs(d[0]) * POLISH_SCALE_BAND
                        and abs(c[1] - d[1]) < POLISH_ROT_BAND for d in deduped):
@@ -1103,7 +1103,7 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
         # template is resampled down the column by their difference.
         dy = (cy - th / 2.0) - y0
         if abs(dy) > 1e-3:
-            tpl = cv2.warpAffine(tpl, np.float32([[1, 0, 0], [0, 1, dy]]), (tw, th),
+            tpl = cv2.warpAffine(tpl, np.float32([[1, 0, 0], [0, 1, dy]]), (tw, th),  # type: ignore[call-overload,arg-type]  # np.float32(nested list) -> (2,3) array
                                  flags=cv2.INTER_LINEAR,
                                  borderMode=cv2.BORDER_REPLICATE)
     if hmedian and hmedian >= 3:
@@ -1701,7 +1701,7 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
         template = None
         if refine:
             template = make_template(reference, m, rot)
-            rx, ry, zn = refine_zncc(search_corr_std,
+            rx, ry, zn = refine_zncc(search_corr_std,  # type: ignore[arg-type]  # only None when refine is False; guarded above
                                      standardize(template / 255.0),
                                      cx, cy, radius=refine_radius)
             if np.hypot(rx - cx, ry - cy) <= 10.0:
@@ -2071,8 +2071,8 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
             result.update({"x": rx, "y": ry, "zncc": zn})
 
     h, w = search.shape
-    result["x"] = float(np.clip(result["x"], 0, w - 1))
-    result["y"] = float(np.clip(result["y"], 0, h - 1))
+    result["x"] = float(np.clip(result["x"], 0, w - 1))  # type: ignore[call-overload]  # dict value widens to object
+    result["y"] = float(np.clip(result["y"], 0, h - 1))  # type: ignore[call-overload]  # dict value widens to object
     if return_heatmap:
         result["heatmap"] = prob
     return result

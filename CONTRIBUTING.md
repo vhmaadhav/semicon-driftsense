@@ -18,10 +18,14 @@ environment. Do not hand-edit a version in it without regenerating.
 
 ## Before you open a PR
 
-All four must pass. CI runs all four.
+All five must pass. CI runs all five.
 
 ```bash
 ruff check .
+```
+
+```bash
+mypy
 ```
 
 ```bash
@@ -49,6 +53,24 @@ already states for `scripts/`. Install the local hook with `pip install
 pre-commit && pre-commit install` to get the answer before the commit exists
 rather than ten minutes after pushing. A suppression needs a reason next to
 it, not just a code.
+
+Run `mypy` in an environment built from `requirements.txt`. Its result
+depends on the installed stub versions, not only on the code: under cv2
+4.x the in-place add in `driftsense/cad_anchor.py` needs a
+`# type: ignore`, and under the pinned cv2 5.x it does not, so the same
+source disagrees with itself across environments. The pinned set is the
+contract and CI is the authority -- a stray `unused-ignore` locally
+usually means your cv2 or numpy is not the pinned one.
+
+`mypy` takes no arguments on purpose: scope, Python version and settings all
+come from `[tool.mypy]` in `pyproject.toml`, so your run and CI's are the same
+check. It covers `driftsense/` only, by the same policy as ruff. Eight
+`# type: ignore` comments exist there, every one for a numpy or cv2 stub that
+is stricter than the library actually is, and every one confirmed by running
+the code rather than by reading the stub. `warn_unused_ignores` is on, so when
+an upstream release fixes a stub the stale ignore becomes an error instead of
+sitting there pretending to be load-bearing. If you add one, say why beside
+it.
 
 `check_register_contract.py` proves `register.py` still satisfies the output
 contract end to end. `release_gate.py` proves the submission archive still
