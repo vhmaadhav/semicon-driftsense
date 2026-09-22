@@ -1,0 +1,56 @@
+version: 2
+updates:
+  # Runtime and test dependencies. requirements.txt is a frozen pip freeze
+  # from a CPU-only PyTorch 3.11 environment; treat every bump as needing a
+  # rerun of the full suite plus the release gate before merge.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps"
+    groups:
+      # torch and torchvision must move together or the import breaks.
+      torch:
+        patterns:
+          - torch
+          - torchvision
+      # Everything else that is not a decoder can batch into one PR.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - torch
+          - torchvision
+          - opencv-python-headless
+          - pillow
+          - gdstk
+
+  # The image and GDSII decoders reached by untrusted input (see SECURITY.md).
+  # Deliberately ungrouped so a CVE fix arrives as its own reviewable PR.
+  - package-ecosystem: pip
+    directory: "/generator"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - generator
+    commit-message:
+      prefix: "deps(generator)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "ci"

@@ -506,3 +506,16 @@ tests, an import-closure network scan, PDF page count, and requirements pins.
 - [`FAILURE_ANALYSIS.md`](FAILURE_ANALYSIS.md) — current failure modes, what was tried and measured, what's still open
 - [`TRAINING.md`](TRAINING.md) — full training methodology, checkpoint selection, reproduction
 - [`CITATIONS.md`](CITATIONS.md) — references behind the physics, noise, and design choices
+
+## License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE).
+
+The grant covers the work authored here. It does **not** cover the vendored
+`generator/` tree, which is third-party code with undetermined upstream terms,
+nor the trained checkpoints under `weights/`, which inherit those terms.
+[`NOTICE`](NOTICE) states the scope precisely and lists third-party
+attributions; read it before redistributing.
+
+Contributions: [`CONTRIBUTING.md`](CONTRIBUTING.md). Vulnerability reports:
+[`SECURITY.md`](SECURITY.md).

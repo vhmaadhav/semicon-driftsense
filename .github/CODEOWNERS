@@ -1,0 +1,19 @@
+# Default owner for everything in the repository.
+* @vhmaadhav
+
+# Correctness-critical: the graded entry points and the one definition of the
+# shipped configuration. A change here moves the submission's score.
+/register.py            @vhmaadhav
+/phase3.py              @vhmaadhav
+/driftsense/config.py   @vhmaadhav
+/scripts/eval_ext.py    @vhmaadhav
+
+# The gates that keep the build shippable.
+/scripts/release_gate.py            @vhmaadhav
+/scripts/check_register_contract.py @vhmaadhav
+/scripts/build_submission_zip.py    @vhmaadhav
+/.github/workflows/                 @vhmaadhav
+
+# Licensing and third-party scope.
+/LICENSE  @vhmaadhav
+/NOTICE   @vhmaadhav
