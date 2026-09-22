@@ -48,8 +48,17 @@ jobs:
       # drift onto different versions and test a different program.
       - name: Install pinned dependencies
         run: pip install -r requirements.txt
+      # tests/test_subpixel.py::test_speed is deselected here, and only here.
+      # It asserts a 5 ms wall-clock budget per call, which is a claim about
+      # the reference machine -- 4-core x86, no GPU -- and the ubuntu job in
+      # tests.yml is the one running that platform, so it keeps enforcing it.
+      # A shared Windows runner measures nothing about that machine: the two
+      # matrix cells land on the same host and contend, and this job's purpose
+      # is to prove the code WORKS on another platform, not how fast it runs
+      # there. Observed on the first run of this workflow: py3.13 passed the
+      # budget and py3.11 measured 15.1 ms on identical code.
       - name: Run test suite
-        run: python -m pytest -q
+        run: python -m pytest -q --deselect tests/test_subpixel.py::test_speed
       - name: Validate register.py end-to-end against the output contract
         run: python scripts/check_register_contract.py
 
