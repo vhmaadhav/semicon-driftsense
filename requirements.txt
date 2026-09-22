@@ -23,6 +23,6 @@ pytest==9.1.1
 python-dateutil==2.9.0.post0
 six==1.17.0
 sympy==1.14.0
-torch==2.13.0
-torchvision==0.28.0
+torch==2.14.0
+torchvision==0.29.0
 typing-extensions==4.16.0
