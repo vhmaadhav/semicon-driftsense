@@ -1,0 +1,88 @@
+# Platform coverage and dependency auditing.
+#
+# Deliberately a separate workflow from tests.yml. That one is the reference
+# gate: ubuntu, Python 3.11, the exact pinned environment the graded machine
+# runs, and it is the job whose verdict decides whether a change is shippable.
+# This one asks the two questions that gate cannot: does the code still work
+# somewhere other than Linux, and is anything we pin known-vulnerable.
+#
+# Why Windows is worth a job at all: it caught a real bug that ubuntu cannot
+# see. Python 3.13 narrowed ntpath.isabs, so a POSIX-absolute path in
+# pairs.csv stopped being absolute on Windows and was silently rewritten from
+# "/abs/search/p001.png" to "C:/abs/search/p001.png" -- on both graded paths.
+# The test that catches it had been in the suite the whole time and had never
+# once been run on Windows.
+
+name: platform
+
+on:
+  push:
+    branches: [main, phase2]
+  pull_request:
+
+# Least privilege: nothing here writes to the repository.
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: pytest (windows, py${{ matrix.python-version }})
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      # One red cell should not hide the other's result.
+      fail-fast: false
+      matrix:
+        # 3.11 is the reference machine's version; 3.13 is the one whose
+        # ntpath.isabs change exposed the path-portability bug, so it stays in
+        # the matrix as the forward-compatibility guard.
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      # The same pinned set as tests.yml, not a relaxed one. Every pin
+      # resolves to a win_amd64 wheel, so there is no reason to let this job
+      # drift onto different versions and test a different program.
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+      # tests/test_subpixel.py::test_speed is deselected here, and only here.
+      # It asserts a 5 ms wall-clock budget per call, which is a claim about
+      # the reference machine -- 4-core x86, no GPU -- and the ubuntu job in
+      # tests.yml is the one running that platform, so it keeps enforcing it.
+      # A shared Windows runner measures nothing about that machine: the two
+      # matrix cells land on the same host and contend, and this job's purpose
+      # is to prove the code WORKS on another platform, not how fast it runs
+      # there. Observed on the first run of this workflow: py3.13 passed the
+      # budget and py3.11 measured 15.1 ms on identical code.
+      - name: Run test suite
+        run: python -m pytest -q --deselect tests/test_subpixel.py::test_speed
+      - name: Validate register.py end-to-end against the output contract
+        run: python scripts/check_register_contract.py
+
+  audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Advisory, not blocking. A CVE published against a pinned dependency is
+    # real news, but it arrives on someone else's schedule and must not turn
+    # an unrelated PR red. Dependabot (.github/dependabot.yml) opens the
+    # upgrade; this job is what notices a vulnerability that has no fix
+    # available yet, which Dependabot by itself will never tell us.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install pip-audit
+        run: pip install pip-audit
+      # Audits the pinned file rather than an installed environment: the pins
+      # are what ship, and this way the job needs neither torch nor a build.
+      - name: Audit pinned dependencies
+        run: pip-audit --strict --requirement requirements.txt
+      - name: Audit the generator's pins
+        run: pip-audit --strict --requirement generator/requirements.txt
