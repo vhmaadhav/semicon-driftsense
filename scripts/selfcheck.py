@@ -158,8 +158,8 @@ def check_accuracy(scenes: list[dict]) -> None:
     hits = int((errs <= TOLERANCE_PX).sum())
     print(f"       median {np.median(errs):.2f} px   mean {errs.mean():.2f} px   "
           f"max {errs.max():.2f} px")
-    print(f"       scored against the upstream label gt_x/gt_y "
-          f"(the only one this generator emits)")
+    print("       scored against the upstream label gt_x/gt_y "
+          "(the only one this generator emits)")
     for arch, e in sorted(per_arch.items()):
         print(f"         {arch:<14} n={len(e):<3} median {np.median(e):6.2f} px")
 

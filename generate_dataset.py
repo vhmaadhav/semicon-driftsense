@@ -52,8 +52,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from driftsense.generate import (  # noqa: E402
-    NOISE_PRESETS, PoseSpec, write_split)
+from driftsense.generate import NOISE_PRESETS, PoseSpec, write_split  # noqa: E402
 from driftsense.presets import architecture_presets  # noqa: E402
 
 
@@ -67,7 +66,7 @@ def parse_args():
     p.add_argument("--output-dir", default="./output",
                    help="directory to write reference/, search/ and manifest.csv into")
     p.add_argument("--noise", default="randomized",
-                   choices=list(NOISE_PRESETS) + ["randomized"],
+                   choices=[*list(NOISE_PRESETS), "randomized"],
                    help="acquisition conditions: a fixed operating point, or "
                         "'randomized' to draw them per pair (default: randomized)")
     p.add_argument("--seed", type=int, default=42, help="reproducibility seed")

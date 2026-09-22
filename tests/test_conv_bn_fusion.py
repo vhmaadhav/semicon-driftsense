@@ -10,7 +10,6 @@ this is the unit-level guard that runs in CI.
 """
 import os
 
-import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")

@@ -46,8 +46,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from phase3_ab import edges, cad_to_sem, zncc_peak  # noqa: E402
 import vendor_rubric  # noqa: E402
+from phase3_ab import cad_to_sem, edges, zncc_peak  # noqa: E402
 
 ARMS = ("A_intensity", "B_edges", "C_cad2sem", "D_cad2sem_edges")
 GRID = np.round(np.arange(0.02, 0.98, 0.02), 4)
@@ -143,10 +143,10 @@ def main():
         print(f"{a:>16} {np.median(thrs):>9.2f} {vals.mean():>18.2f} "
               f"{vals.std():>7.2f} {delta:>8}")
 
-    print(f"\n(85-point measurable subtotal: loc 40 + pose 20 + rejection 15 + "
-          f"calibration 10)")
-    print(f"pose is a constant here -- rotation is pinned at 0 and scale at 10,")
-    print(f"so all four arms score the same 20 points and it cancels in 'vs A'.")
+    print("\n(85-point measurable subtotal: loc 40 + pose 20 + rejection 15 + "
+          "calibration 10)")
+    print("pose is a constant here -- rotation is pinned at 0 and scale at 10,")
+    print("so all four arms score the same 20 points and it cancels in 'vs A'.")
 
 
 if __name__ == "__main__":

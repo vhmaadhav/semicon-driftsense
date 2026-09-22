@@ -8,7 +8,6 @@ answer against that pipeline's ground truth.
 """
 
 import csv
-import json
 import math
 import os
 import subprocess

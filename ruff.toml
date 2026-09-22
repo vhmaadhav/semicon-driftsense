@@ -1,0 +1,122 @@
+# Ruff configuration.
+#
+# Standalone rather than a [tool.ruff] table in pyproject.toml so that lint
+# config and packaging metadata can be reviewed and changed independently.
+# Folding it in later is a one-line move if that is preferred.
+#
+# The selection below is deliberately not "everything ruff offers". A broad
+# default set reports ~570 findings here, almost all of them opinions about
+# dense numeric code rather than defects: capitalised matrix names, magic
+# numbers in geometry, os.path vs pathlib, argument counts in research
+# functions. Enforcing those would mean a rewrite that changes no behaviour
+# and loses the domain readability the current style buys. What is enabled is
+# the set that reports real problems.
+
+target-version = "py311"
+
+# The repository's own convention is roughly 79 columns -- the 90th percentile
+# line in driftsense/ plus the entry points is 78 characters -- with a
+# deliberate tail for dense expressions. 481 lines exceed 79 and 115 exceed
+# 88, so enforcing either would mean mechanically rewrapping arithmetic across
+# correctness-critical files for no functional gain. 120 is a real ceiling
+# instead of an aspirational one: exactly two lines exceed it today, one of
+# them 205 characters.
+line-length = 120
+
+exclude = [
+    # Vendored third-party trees. Their upstream terms are undetermined (see
+    # NOTICE) and they are not this project's code to restyle.
+    "generator",
+    "generator_i4c",
+    # The archived Phase 1 tree, kept for provenance and not developed.
+    "phase1",
+    "build",
+    "dist",
+]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes -- undefined names, unused imports, dead locals
+    "I",        # import sorting
+    "B",        # flake8-bugbear -- real bug patterns
+    "C4",       # comprehension misuse
+    "UP",       # pyupgrade, within target-version
+    "RUF",      # ruff's own rules
+    "SIM",      # obvious simplifications
+    "ARG",      # unused arguments
+    "ISC",      # implicit string concatenation
+    "A",        # shadowing a builtin
+    # Blind excepts. On by design: the graded path fails soft deliberately --
+    # "a missing row scores zero, so declining beats disappearing" -- and
+    # fifteen sites already carry an explanatory `# noqa: BLE001`. Enabling
+    # the rule turns that existing documentation into enforcement, so a NEW
+    # blind except has to be justified the same way rather than slipping in
+    # unremarked.
+    "BLE",
+]
+
+ignore = [
+    # False positive here. The flagged lambdas in driftsense/matching.py are
+    # passed to _golden_max, which invokes them synchronously before the loop
+    # variable is reassigned, so late binding cannot bite. B023 cannot see
+    # that and the alternative -- a default-argument dance -- would obscure
+    # working code.
+    "B023",
+    # int() around a numpy scalar is how this codebase states "this is an
+    # index now". Not redundant to a reader even where it is to the type
+    # checker.
+    "RUF046",
+    # Ternaries are not always clearer than the if/else they replace, and
+    # isinstance unions are a style preference, not a defect.
+    "SIM108",
+    "UP038",
+    # contextlib.suppress is not an improvement on this codebase's idiom. A
+    # try/except/pass here always carries a comment saying which failure is
+    # being tolerated and why, and that comment reads better attached to the
+    # except clause than to a suppress() argument. Both sites are on
+    # deliberately fail-soft paths.
+    "SIM105",
+    # dict(refine=True, ...) is deliberate where the keys are all valid
+    # identifiers: it reads as a call with named settings, which is what
+    # phase3.py's DECODE table is. Rewriting it as {"refine": True, ...}
+    # trades that for quoting noise.
+    "C408",
+    # RUF100 flags a `# noqa` naming any rule this config does not enable, and
+    # cannot distinguish that from a genuinely stale one. Of 29 it reports
+    # here, 15 name BLE001 and 4 name PLC0415 -- the deliberate fail-soft
+    # excepts and the lazy gdstk imports. Auto-fixing would delete the
+    # documentation rather than dead comments.
+    "RUF100",
+]
+
+[lint.per-file-ignores]
+# scripts/ are research tools, held to a lower bar by explicit policy -- see
+# .coderabbit.yaml, which says not to demand production hardening there. They
+# still get pyflakes, because an undefined name or a dead local is a defect
+# anywhere: that is how the NameError in scripts/tune_aggregation.py was
+# found. The style rules are off because 288 findings of "this geometry
+# constant is a magic number" is noise, not review.
+"scripts/**" = ["E", "W", "I", "B", "C4", "UP", "RUF", "SIM", "ARG", "ISC", "A", "BLE"]
+# Tests, same reasoning: pyflakes on, style off. Test code legitimately uses
+# long parametrise tables, repeated literals and unused fixture arguments.
+"tests/**" = ["E", "W", "I", "B", "C4", "UP", "RUF", "SIM", "ARG", "ISC", "A", "BLE"]
+# experiments/ holds one-off measurement runs -- the A/B harnesses whose
+# numbers end up in FAILURE_ANALYSIS.md. Same category as scripts/: pyflakes
+# catches the defects that matter, and nobody should be reformatting a
+# finished experiment to satisfy a style rule.
+"experiments/**" = ["E", "W", "I", "B", "C4", "UP", "RUF", "SIM", "ARG", "ISC", "A", "BLE"]
+# Imports here deliberately follow a sys.path insertion or a runtime guard and
+# cannot be hoisted; each already carries an explanatory noqa.
+"driftsense/generate.py" = ["E402"]
+"driftsense/presets.py" = ["E402"]
+
+[lint.isort]
+known-first-party = ["driftsense"]
+
+[format]
+# Not enabled as a gate. `ruff format` would reflow the whole codebase in one
+# commit, burying the history of files whose git log is used as evidence for
+# why a calibration is what it is. Recorded here so that anyone who does run
+# it produces the same output as everyone else.
+quote-style = "preserve"

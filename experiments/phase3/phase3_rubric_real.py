@@ -44,8 +44,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from phase3_ab import edges, cad_to_sem, zncc_peak  # noqa: E402
 import vendor_rubric  # noqa: E402
+from phase3_ab import cad_to_sem, edges, zncc_peak  # noqa: E402
 
 ARMS = ("A_intensity", "B_edges", "C_cad2sem", "D_cad2sem_edges")
 

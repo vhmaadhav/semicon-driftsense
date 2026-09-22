@@ -12,7 +12,7 @@ import numpy as np, pandas as pd, torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import infer as I
-from driftsense.matching import choose_pose_wide, locate_phase2
+from driftsense.matching import locate_phase2
 
 
 def loc_credit(e):        # euclidean px -> credit

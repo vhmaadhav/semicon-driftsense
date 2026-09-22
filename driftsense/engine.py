@@ -131,6 +131,7 @@ def evaluate(model, rows, device, tolerance=5.0, refine=True, limit=None, log_ev
              phase2=False):
     """Full-frame evaluation -- the real metric, run exactly like inference."""
     import os
+
     import cv2
 
     model.eval()

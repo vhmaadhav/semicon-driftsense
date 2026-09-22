@@ -52,19 +52,22 @@ import time
 # `python phase3.py` working from any cwd.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import infer as I  # noqa: E402
 import register as R  # noqa: E402
-from driftsense import cad_anchor  # noqa: E402
-from driftsense import gds  # noqa: E402
-from driftsense import pairs3  # noqa: E402
+from driftsense import cad_anchor, gds, pairs3  # noqa: E402
 from driftsense.config import (  # noqa: E402
-    PHASE3_COARSE_ROTATIONS, PHASE3_FALLBACK_SHEAR_PX, PHASE3_LABEL_CONVENTION, PHASE3_ROTATION_BOUNDS,
-    PHASE3_SUBPIXEL_ROWS, PHASE3_THRESHOLD,
-    SHIPPED_BAND, SHIPPED_STRIP_ROTATION, SHIPPED_VERIFICATION,
+    PHASE3_COARSE_ROTATIONS,
+    PHASE3_FALLBACK_SHEAR_PX,
+    PHASE3_LABEL_CONVENTION,
+    PHASE3_ROTATION_BOUNDS,
+    PHASE3_SUBPIXEL_ROWS,
+    PHASE3_THRESHOLD,
+    SHIPPED_BAND,
+    SHIPPED_STRIP_ROTATION,
+    SHIPPED_VERIFICATION,
 )
 from driftsense.matching import PHASE2_SCALE_BOUNDS, locate_phase2  # noqa: E402
 from driftsense.paths import is_rooted  # noqa: E402
-
-import infer as I  # noqa: E402
 
 OUT_FIELDS = R.OUT_FIELDS
 DEFAULT_FOUND_THRESHOLD = PHASE3_THRESHOLD
@@ -110,9 +113,11 @@ def decode(model, device, ref, sea, **overrides) -> dict:
 
 
 def predict_pair(model, device, ref_gds: str, search_png: str, search_gds: str, *,
-                 threshold: float = None, verification: str = SHIPPED_VERIFICATION,
+                 threshold: float | None = None,
+                 verification: str = SHIPPED_VERIFICATION,
                  render_size: int = gds.REF_SIZE, min_layer: int = 0,
-                 use_cad: bool = True, drift_prior_px: float = None, **overrides) -> dict:
+                 use_cad: bool = True, drift_prior_px: float | None = None,
+                 **overrides) -> dict:
     """One pair's raw answer: pose (always filled), found, score, and how.
 
     Primary path -- the search CAD is on the blind split, so register through
@@ -242,7 +247,6 @@ def main(argv=None) -> int:
     times = []
     found_count = 0
     error_count = 0
-    t_start = time.perf_counter()
     total = len(rows)
     mass_failure_warned = False
 

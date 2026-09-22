@@ -39,7 +39,6 @@ import argparse
 import os
 import sys
 
-import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

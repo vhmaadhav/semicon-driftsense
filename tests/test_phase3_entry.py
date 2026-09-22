@@ -286,7 +286,7 @@ def test_mass_failure_thresholds_are_present_even_when_register_lacks_them():
 
 def test_a_systematic_failure_raises_the_mass_failure_marker(tmp_path):
     """Every pair unreadable -> the alarm must fire, not just a scroll of warns."""
-    g = _write_gds(tmp_path / "r.gds")
+    _write_gds(tmp_path / "r.gds")
     good_p = _write_png(tmp_path / "s.png")
     rows = []
     for i in range(10):

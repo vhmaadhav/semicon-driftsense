@@ -135,7 +135,6 @@ def convergence_check(d, y):
     from driftsense.calibration import design
     D = design(Z)
     w = np.zeros(D.shape[1])
-    prev = None
     print("GD convergence (full 2250, iters=4000, lr=0.5, l2=1e-3):")
     print(f"{'iter':>6}{'grad-norm':>14}{'max |dw|/iter':>15}{'logloss':>12}")
     for it in range(1, 4001):
@@ -148,7 +147,6 @@ def convergence_check(d, y):
             ll = -np.mean(y * np.log(np.clip(p, 1e-12, 1))
                           + (1 - y) * np.log(1 - np.clip(p, 1e-12, 1)))
             print(f"{it:>6}{np.linalg.norm(g):>14.3e}{np.max(np.abs(step)):>15.3e}{ll:>12.5f}")
-        prev = w.copy()
     # IRLS cross-check — and an honest discrepancy note. IRLS (ridge 1e-6)
     # reaches a LOWER unregularised logloss than GD: the 9 features nearly
     # separate the 2,250 pairs, so the unregularised MLE diverges (norm grows,
@@ -238,7 +236,7 @@ def retune(d, feats=None):
         return b
 
     b0 = report(0.18, "shipped threshold 0.18 on min(score,zncc), applied to fused score")
-    bo = report(t_opt, f"total-rubric optimum")
+    bo = report(t_opt, "total-rubric optimum")
     b1 = report(t_ship, f"shipped-choice (downward-biased, >= opt - {margin})")
     art = {"features": feats,
            "threshold_minus_preject_scale": t_ship,
@@ -335,7 +333,7 @@ def main():
         r = cv(d, make_logistic(X_all, feats, y), a.folds)
         print(f"4-fold CV (held-out, threshold train-fold-only): "
               f"total {r[0]:.2f}  F1 {r[1]:.4f}  AUC {r[2]:.4f}\n")
-        orc = oracle(d, y, feats)
+        oracle(d, y, feats)
         print()
         retune(d, feats)
         print()

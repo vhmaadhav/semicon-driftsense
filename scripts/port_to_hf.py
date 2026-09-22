@@ -41,7 +41,6 @@ import glob
 import hashlib
 import os
 import re
-import subprocess
 import sys
 import tarfile
 import threading
@@ -200,7 +199,6 @@ def local_jobs(done):
 
 
 def remote_jobs(done, budget):
-    held = {j[0] for j in []}
     out, seen = [], set()
     for line in open(INDEX):
         p = line.rstrip("\n").split("\t")

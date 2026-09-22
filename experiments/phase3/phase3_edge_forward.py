@@ -39,24 +39,25 @@ for every edge strength. Peak memory stays ~1 canvas at a time.
 from __future__ import annotations
 
 import argparse
-import csv
 import os
 import sys
 import time
 
 import cv2
 import numpy as np
-import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src import sem_imaging
-from src.cad.cad_zones import build_cad_mats, rasterize_zone_canvas
-from src.cad_pipeline import (CadGenerationParams, FINE_CANVAS_SIZE_PX,
-                              build_cad_geometry, PIXEL_SIZE_REF_NM,
-                              PIXEL_SIZE_SEARCH_NM)
 from phase3_ab import edges, zncc_peak  # noqa: E402
-import vendor_rubric  # noqa: E402
+from src import sem_imaging
+from src.cad.cad_zones import rasterize_zone_canvas
+from src.cad_pipeline import (
+    FINE_CANVAS_SIZE_PX,
+    PIXEL_SIZE_REF_NM,
+    PIXEL_SIZE_SEARCH_NM,
+    CadGenerationParams,
+    build_cad_geometry,
+)
 
 ARMS = ("A_intensity", "B_edges")
 STRENGTHS = (0.0, 0.20, 0.35)

@@ -182,7 +182,10 @@ class DriftSenseNet(nn.Module):
         # model instance); optimizer steps mutate in training mode, where the
         # cache is never populated anyway.
         self.register_load_state_dict_post_hook(
-            lambda module, incompatible_keys: setattr(module, "_tf_cache", None))
+            # Both parameters are fixed by the post-hook contract; only the
+            # module is needed here.
+            lambda module, incompatible_keys: setattr(  # noqa: ARG005
+                module, "_tf_cache", None))
         self.corr_mix = nn.Sequential(
             nn.Conv2d(CORR_GROUPS, head, 1, bias=False),
             nn.BatchNorm2d(head),
@@ -215,7 +218,7 @@ class DriftSenseNet(nn.Module):
         nn.init.constant_(self.offset.bias, 0.0)
 
     def forward(self, reference: torch.Tensor, search: torch.Tensor,
-                ref_feat: "torch.Tensor | None" = None) -> dict:
+                ref_feat: torch.Tensor | None = None) -> dict:
         """reference: (B,1,1000,1000) or a pre-downsampled (B,1,100,100)
         template. search: (B,1,H,W) with H,W multiples of the stride.
 

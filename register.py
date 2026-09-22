@@ -39,19 +39,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import infer as I  # noqa: E402
-from driftsense.matching import LABEL_CONVENTIONS, locate_phase2  # noqa: E402
 
 # The shipped Phase 2 operating point lives in driftsense.config (the ONE
 # definition of the shipped decode config, so eval_ext.py and the parity tests
 # consume the same value register.py does). Re-exported under the historical
 # name for backwards compatibility -- every caller in this repo imports it
 # from here.
-from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD  # noqa: E402
-from driftsense.config import SHIPPED_VERIFICATION  # noqa: E402
-from driftsense.config import SHIPPED_SUBPIXEL_ROWS  # noqa: E402
-from driftsense.config import SHIPPED_LABEL_CONVENTION  # noqa: E402
-from driftsense.config import SHIPPED_STRIP_ROTATION  # noqa: E402
-from driftsense.config import LEGACY_FALLBACK_THRESHOLD  # noqa: E402
+from driftsense.config import (  # noqa: E402
+    LEGACY_FALLBACK_THRESHOLD,
+    SHIPPED_BAND,
+    SHIPPED_LABEL_CONVENTION,
+    SHIPPED_STRIP_ROTATION,
+    SHIPPED_SUBPIXEL_ROWS,
+    SHIPPED_THRESHOLD,
+    SHIPPED_VERIFICATION,
+)
+from driftsense.matching import LABEL_CONVENTIONS, locate_phase2  # noqa: E402
 from driftsense.paths import is_rooted  # noqa: E402
 
 DEFAULT_FOUND_THRESHOLD = SHIPPED_THRESHOLD
@@ -329,7 +332,7 @@ class _LiveDisplay:
         scene = self._scene()
         lines = list(scene) if scene else ["", ""]
         lines.append(self._bar())
-        buf = "\033[%dA" % self.LINES if self.drawn else ""
+        buf = f"\033[{self.LINES}A" if self.drawn else ""
         buf += "".join(f"\r\033[K{ln}\n" for ln in lines)
         self._write(buf)
         self.drawn = True
@@ -350,8 +353,8 @@ class _LiveDisplay:
         """Clear the block so a log line can scroll above it."""
         with self._lock:
             if self.tty and self.drawn:
-                self._write("\033[%dA" % self.LINES + "\r\033[K\n" * self.LINES
-                            + "\033[%dA" % self.LINES)
+                self._write(f"\033[{self.LINES}A" + "\r\033[K\n" * self.LINES
+                            + f"\033[{self.LINES}A")
                 self.drawn = False
 
     def start(self):
@@ -527,7 +530,7 @@ def main():
     timing_fh = None
     if timing_path:
         try:
-            timing_fh = open(timing_path, "w")
+            timing_fh = open(timing_path, "w")  # noqa: SIM115
         except OSError:                          # noqa: BLE001
             timing_path = None                   # unwritable: fall back below
     trace = timing_fh if timing_fh is not None else sys.stderr

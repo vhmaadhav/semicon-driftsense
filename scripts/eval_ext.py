@@ -37,7 +37,7 @@ sys.path.insert(0, HERE)
 # The shipped Phase 2 operating point, read from the ONE shared definition
 # (driftsense.config) so a default run here decodes and gates exactly what
 # register.py ships -- pinned by tests/test_submission_parity.py.
-from driftsense.config import SHIPPED_BAND, SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
+from driftsense.config import SHIPPED_THRESHOLD, SHIPPED_VERIFICATION
 from driftsense.config import SHIPPED_SUBPIXEL_ROWS, SHIPPED_STRIP_ROTATION
 
 # Published Phase 2 credit tiers.
@@ -342,7 +342,7 @@ def score(df, threshold, quiet=False):
         dp = d[d.gt_found == 1]
         dc = dp.loc_credit.mean()
         print(f"\n{'BONUS set D (optical)':<28}{f'credit {dc:.4f}  <=5px {100*(dp.err<=5).mean():.1f}%':>26}")
-        print(f"{'':<28}{f'+6 needs D>=0.40 and A-C>=0.50':>26}")
+        print(f"{'':<28}{'+6 needs D>=0.40 and A-C>=0.50':>26}")
     return res, df
 
 

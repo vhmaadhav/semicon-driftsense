@@ -214,8 +214,8 @@ def test_decode_scale_is_z_semantics():
     against 9.0 fail. The range assertion is the hard gate (1/z cannot
     satisfy it); the tolerance pins accuracy on top.
     """
-    torch = pytest.importorskip("torch")
-    cv2 = pytest.importorskip("cv2")
+    pytest.importorskip("torch")
+    pytest.importorskip("cv2")
 
     import infer as I
     from driftsense.matching import locate_phase2

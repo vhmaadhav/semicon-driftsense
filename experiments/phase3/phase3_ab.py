@@ -41,9 +41,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.cad import yield_model as ym
-from src.cad.render import rasterize_cell
 from src import sem_imaging
+from src.cad.render import rasterize_cell
 
 ROOT_DEFAULT = "output/phase3_200"
 SCALES = (9.0, 9.5, 10.0, 10.5, 11.0)

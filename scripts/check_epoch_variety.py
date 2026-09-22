@@ -26,7 +26,6 @@ import os
 import sys
 
 import cv2
-import torch
 from torch.utils.data import DataLoader
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -106,7 +105,7 @@ def main():
                              worker_init_fn=_init, persistent_workers=True)
         digs = epoch_digests(ds2, loader2, args.epochs, args.batches)
         frozen = all(d == digs[0] for d in digs)
-        print(f"\nDriftSenseDataset -- persistent_workers=True (the trap)")
+        print("\nDriftSenseDataset -- persistent_workers=True (the trap)")
         print(f"  epochs identical: {frozen}  "
               f"-> {'as expected; train.py avoids this' if frozen else 'unexpected'}")
         del loader2

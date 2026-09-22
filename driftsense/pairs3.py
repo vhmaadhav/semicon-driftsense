@@ -123,7 +123,7 @@ class PairsRow:
         value the scored run will not have.
         """
         if not self.present_in_training:
-            return {name: "" for name in WITHHELD_FIELDS}
+            return dict.fromkeys(WITHHELD_FIELDS, "")
         return {
             "reference_sem_path": self.reference_sem_path,
             "params_json_path": self.params_json_path,

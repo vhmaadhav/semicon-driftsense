@@ -26,11 +26,23 @@ ensure_generator_on_path()
 
 from src import sem_imaging  # noqa: E402
 from src.pipeline import (  # noqa: E402
-    FINE_CANVAS_SIZE_PX, PIXEL_SIZE_REF_NM, PIXEL_SIZE_SEARCH_NM,
-    REFERENCE_SIZE_PX, SCALE_FACTOR, GenerationParams,
-    generate_fine_canvas_zoned, _pick_crop_origin,
+    FINE_CANVAS_SIZE_PX,
+    PIXEL_SIZE_REF_NM,
+    PIXEL_SIZE_SEARCH_NM,
+    REFERENCE_SIZE_PX,
+    SCALE_FACTOR,
+    GenerationParams,
+    _pick_crop_origin,
+    generate_fine_canvas_zoned,
 )
-from src.presets import PRESETS  # noqa: E402
+
+# Re-exported, not used in this module: driftsense/stream_dataset.py,
+# train.py and tests/test_decoy_pitch.py all import PRESETS from here.
+# Dropping it as "unused" breaks them with ImportError, which is precisely
+# what a linter autofix did while this gate was being added -- and the test
+# that covers it calls pytest.importorskip, so it skipped in silence rather
+# than failing. Hence both the noqa and this comment.
+from src.presets import PRESETS  # noqa: E402,F401
 
 SEARCH_SIZE_PX = REFERENCE_SIZE_PX  # 1000; search frame is also 1000x1000
 BOX_PX = REFERENCE_SIZE_PX // SCALE_FACTOR  # 100
@@ -248,7 +260,7 @@ class PoseSpec:
         return max(need, FINE_CANVAS_SIZE_PX)
 
     @staticmethod
-    def fixed(pose: PoseParams) -> "PoseSpec":
+    def fixed(pose: PoseParams) -> PoseSpec:
         """Wrap a single PoseParams as a degenerate (pinned) spec."""
         return PoseSpec(rotation_deg=(pose.rotation_deg, pose.rotation_deg),
                         magnification=(pose.magnification, pose.magnification),
@@ -379,7 +391,7 @@ def _pick_visible_crop_origin(zone_result: dict, params, rng, canvas_px: int,
 
 def image_search_traced(full_canvas: np.ndarray, p: GenerationParams,
                         rng: np.random.Generator,
-                        pose: "PoseParams | None" = None) -> tuple[np.ndarray, np.ndarray, float]:
+                        pose: PoseParams | None = None) -> tuple[np.ndarray, np.ndarray, float]:
     pose = pose or PoseParams()
     factor = int(round(PIXEL_SIZE_SEARCH_NM / PIXEL_SIZE_REF_NM))
     img = sem_imaging.gaussian_psf_blur(
@@ -692,8 +704,8 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
                 architectures: list[str], workers: int = 5,
                 crops_per_canvas: int = 1, progress_every: int = 25,
                 store_templates: bool = False, start_index: int = 0,
-                pose: "PoseParams | None" = None,
-                max_pairs: "int | None" = None) -> int:
+                pose: PoseParams | None = None,
+                max_pairs: int | None = None) -> int:
     """Generate one split. Returns the number of (reference, search) pairs.
 
     Sample i is seeded from its own SeedSequence child, so a given (seed, i)
@@ -780,7 +792,7 @@ def write_split(split_dir: str, num_canvases: int, seed: int, noise: str,
 
 
 def make_pairs(entropy: int, architectures: list[str], noise: str,
-               crops: int = 8, pose: "PoseSpec | PoseParams | None" = None,
+               crops: int = 8, pose: PoseSpec | PoseParams | None = None,
                preset_name: str | None = None) -> list[dict]:
     """In-memory version of build_one: one canvas -> one search frame and
     `crops` (reference, ground-truth) pairs, returned as arrays.

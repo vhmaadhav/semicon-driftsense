@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from driftsense.generate import (
-    BOX_PX, PoseParams, SEARCH_SIZE_PX, apply_affine_point,
+    PoseParams, SEARCH_SIZE_PX, apply_affine_point,
     apply_edge_brightening, image_search_traced, search_affine,
 )
 from src.pipeline import GenerationParams

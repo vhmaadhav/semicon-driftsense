@@ -27,9 +27,9 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 
 from driftsense.dataset import DriftSenseDataset, load_manifest
-from driftsense.stream_dataset import StreamingDriftSense
 from driftsense.engine import compute_loss, decode_batch, evaluate
 from driftsense.model import DriftSenseNet
+from driftsense.stream_dataset import StreamingDriftSense
 
 
 def pick_device(name: str) -> torch.device:
@@ -213,9 +213,9 @@ class WeightEMA:
     @torch.no_grad()
     def update(self, model):
         d = self.decay
-        for s, p in zip(self.shadow.parameters(), model.parameters()):
+        for s, p in zip(self.shadow.parameters(), model.parameters(), strict=False):
             s.mul_(d).add_(p.detach(), alpha=1.0 - d)
-        for s, b in zip(self.shadow.buffers(), model.buffers()):
+        for s, b in zip(self.shadow.buffers(), model.buffers(), strict=False):
             s.copy_(b)
 
 

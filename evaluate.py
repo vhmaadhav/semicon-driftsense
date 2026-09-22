@@ -49,10 +49,10 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense import policy as policy_mod  # noqa: E402
+from driftsense.dataset import load_manifest  # noqa: E402
 from driftsense.matching import zncc_only  # noqa: E402
-from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
+from driftsense.model import net_from_checkpoint  # noqa: E402
 
 TOLERANCES = (1.0, 2.0, 5.0, 10.0)
 
@@ -181,7 +181,9 @@ def main():
     print(f"weights: {args.weights}  (trained epochs: {ckpt.get('epoch', '?')})")
     print(f"sha256 : {digest}")
     print(f"device : {device}")
-    print(f"decode : {'shipped adaptive policy (pose search + routed TTA)' if not args.no_tta else 'single view'} + ZNCC refine")
+    decode_desc = ("single view" if args.no_tta else
+                   "shipped adaptive policy (pose search + routed TTA)")
+    print(f"decode : {decode_desc} + ZNCC refine")
     print(f"gt     : {', '.join(frames)}\n")
 
     os.makedirs(args.out, exist_ok=True)
@@ -212,7 +214,7 @@ def main():
             "device": str(device),
             "splits": list(args.splits),
             "limit": args.limit or None,
-            "generated_utc": datetime.datetime.now(datetime.timezone.utc)
+            "generated_utc": datetime.datetime.now(datetime.UTC)
                              .strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
         "splits": all_results,

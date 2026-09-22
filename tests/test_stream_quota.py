@@ -3,8 +3,6 @@
 kept reporting the full length. Quotas must sum back to exactly ``length``.
 """
 
-import sys
-import types
 from types import SimpleNamespace
 
 import pytest

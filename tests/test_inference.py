@@ -16,7 +16,7 @@ import pytest
 import torch
 
 from driftsense.matching import locate, locate_phase2, locate_tta, zncc_only
-from driftsense.model import DriftSenseNet, net_from_checkpoint
+from driftsense.model import net_from_checkpoint
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEIGHTS = os.path.join(REPO_ROOT, "weights", "driftsense.pt")
