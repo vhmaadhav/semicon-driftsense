@@ -37,8 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np  # noqa: E402
 
 from driftsense import gds as gds_read  # noqa: E402
-from driftsense import gds_layers  # noqa: E402
-from driftsense import params3  # noqa: E402
+from driftsense import gds_layers, params3  # noqa: E402
 from driftsense.presets import architecture_presets  # noqa: E402
 
 REFERENCE_SIZE_PX = 1000
@@ -140,7 +139,7 @@ def build_site(architecture: str, preset_name: str, rng,
     generator does the same thing for the same reason
     (``_pick_visible_crop_origin`` / ``boundary_bias``).
     """
-    preset = _preset(preset_name)
+    _preset(preset_name)  # validates the name: raises on an unknown preset
     rows = _zone_grid(FINE_CANVAS_SIZE_PX, rng)
     cols = _zone_grid(FINE_CANVAS_SIZE_PX, rng)
 
@@ -228,7 +227,10 @@ def build_site(architecture: str, preset_name: str, rng,
     return mat["cell"], mats, strips, ref_cell, x0, y0
 
 
-def _layer_intensities(architecture: str, rng, num_layers=8) -> dict:
+def _layer_intensities(architecture: str, rng, num_layers=8) -> dict:  # noqa: ARG001
+    # `architecture` is unused: brightness has to vary per LAYER, which is
+    # what makes it learnable, and nothing about that varies per
+    # architecture. Kept for call-site symmetry with its siblings.
     """Sample a per-layer brightness vector.
 
     Brightness must VARY per layer for "infer it per layer" to be a learnable
@@ -433,8 +435,8 @@ def main(argv=None) -> int:
     print(f"  blind split: {bool(args.blind)}"
           + (f" ({n_absent} without params -- absent by construction)"
              if args.blind else ""))
-    print(f"  pairs.csv, ground_truth.csv, reference/, search/, "
-          f"reference_sem/, params/")
+    print("  pairs.csv, ground_truth.csv, reference/, search/, "
+          "reference_sem/, params/")
     return 0
 
 

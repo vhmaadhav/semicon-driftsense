@@ -10,7 +10,6 @@ route and method out.
 """
 
 import csv
-import importlib.util
 import os
 import sys
 
@@ -23,7 +22,7 @@ sys.path.insert(0, REPO_ROOT)
 torch = pytest.importorskip("torch")
 cv2 = pytest.importorskip("cv2")
 
-from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
+from driftsense.model import net_from_checkpoint  # noqa: E402
 
 WEIGHTS = os.path.join(REPO_ROOT, "weights", "driftsense.pt")
 
@@ -91,8 +90,8 @@ def test_run_split_goes_through_the_shipped_policy(tmp_path, model, monkeypatch)
         w = csv.DictWriter(fh, fieldnames=["id", "reference_path", "search_path",
                                            "gt_x_corr", "gt_y_corr", "gt_x", "gt_y"])
         w.writeheader()
-        w.writerow({"id": "a", "reference_path": f"ref_7.png",
-                    "search_path": f"sea_7.png", "gt_x_corr": 145.0,
+        w.writerow({"id": "a", "reference_path": "ref_7.png",
+                    "search_path": "sea_7.png", "gt_x_corr": 145.0,
                     "gt_y_corr": 65.0, "gt_x": 145.0, "gt_y": 65.0})
         w.writerow({"id": "b", "reference_path": "ref_b.png",
                     "search_path": "sea_b.png", "gt_x_corr": 145.0,

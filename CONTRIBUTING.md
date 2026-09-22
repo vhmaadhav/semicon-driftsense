@@ -21,6 +21,10 @@ environment. Do not hand-edit a version in it without regenerating.
 All four must pass. CI runs all four.
 
 ```bash
+ruff check .
+```
+
+```bash
 python -m pytest -q
 ```
 
@@ -36,6 +40,15 @@ python scripts/release_gate.py
 contract tests under `generator/tests/`. Do not narrow `testpaths`; excluding
 `generator/tests` once let wrong-label generator regressions escape routine
 runs (audit H-13).
+
+`ruff check` enforces `ruff.toml`, which documents why each rule is on or
+off. The short version: rules that find defects are enabled, rules with
+opinions about dense numeric code are not, and `scripts/`, `tests/` and
+`experiments/` get pyflakes only -- the same policy `.coderabbit.yaml`
+already states for `scripts/`. Install the local hook with `pip install
+pre-commit && pre-commit install` to get the answer before the commit exists
+rather than ten minutes after pushing. A suppression needs a reason next to
+it, not just a code.
 
 `check_register_contract.py` proves `register.py` still satisfies the output
 contract end to end. `release_gate.py` proves the submission archive still

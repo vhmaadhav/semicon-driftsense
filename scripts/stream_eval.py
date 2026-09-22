@@ -34,7 +34,6 @@ import os
 import sys
 import time
 
-import cv2
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
@@ -44,7 +43,7 @@ sys.path.insert(0, HERE)
 
 from driftsense.generate import PRESETS, make_pairs  # noqa: E402
 from driftsense.matching import locate, locate_tta  # noqa: E402
-from driftsense.model import DriftSenseNet, net_from_checkpoint  # noqa: E402
+from driftsense.model import net_from_checkpoint  # noqa: E402
 
 VAL_NAMESPACE = 999983  # disjoint from the training stream and every split seed
 

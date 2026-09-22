@@ -35,7 +35,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 from driftsense import gds, gds_layers, params3  # noqa: E402
-from driftsense.presets import architecture_presets  # noqa: E402
 
 
 def _preset(name):

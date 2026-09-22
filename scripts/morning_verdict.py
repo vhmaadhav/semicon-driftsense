@@ -7,7 +7,7 @@ folds, score the held-out fold), because whatever ships gets its own threshold.
 Gate probability uses the mandated stratified 200-pair draw (A=70/B=70/C=40,
 F1 over the 180 grayscale pairs) on fully out-of-fold decisions.
 """
-import os, sys, glob
+import os, sys
 import numpy as np, pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from optimize_threshold import points, prep
@@ -79,6 +79,6 @@ if base and b["name"] != base["name"]:
     print(f"  ship with threshold {b['thr']:.3f} (fitted to THIS checkpoint, not inherited)")
     if b["total"] - base["total"] < 0.35:
         print(f"  NOTE: direct delta {b['total']-base['total']:+.2f} is under the +0.35 gate (issue #19);")
-        print(f"        the bonus term is what carries it. Human call.")
+        print("        the bonus term is what carries it. Human call.")
 elif base:
     print("  shipped weights still win -- promote nothing.")

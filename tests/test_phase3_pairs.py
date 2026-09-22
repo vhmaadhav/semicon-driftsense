@@ -27,7 +27,6 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from driftsense import pairs3  # noqa: E402
 from driftsense.pairs3 import (  # noqa: E402
     PHASE3_FIELDS,
     WITHHELD_FIELDS,

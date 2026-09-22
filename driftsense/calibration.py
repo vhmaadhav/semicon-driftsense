@@ -125,7 +125,11 @@ def design(Z):
     return np.hstack([Z, np.ones((len(Z), 1))])
 
 
-def fit(X, y, iters=4000, lr=0.5, l2=1e-3, seed=0):
+def fit(X, y, iters=4000, lr=0.5, l2=1e-3, seed=0):  # noqa: ARG001
+    # `seed` is signature parity with scripts/fit_rejector.py, which the
+    # docstring below pins this against. There is nothing to seed: w starts
+    # at zeros and the descent is deterministic, so the parameter is
+    # accepted and never read rather than silently ignored.
     """Plain fixed-seed gradient-descent logistic regression.
 
     Identical optimiser and hyperparameters to scripts/fit_rejector.py

@@ -148,8 +148,9 @@ def load_model(weights_path: str):
     """Return (model, device) or None if the learned path is unavailable."""
     try:
         import torch
+
         from driftsense.model import DriftSenseNet
-    except Exception as e:  # torch missing / broken install
+    except Exception as e:  # noqa: BLE001 -- torch missing / broken install
         print(f"[warn] PyTorch unavailable ({e}); using ZNCC fallback", file=sys.stderr)
         return None
 
@@ -168,7 +169,7 @@ def load_model(weights_path: str):
         model = DriftSenseNet(**kw)
         model.load_state_dict(state)
         model.eval()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- any load failure degrades, never raises
         print(f"[warn] could not load weights ({e}); using ZNCC fallback", file=sys.stderr)
         return None
 

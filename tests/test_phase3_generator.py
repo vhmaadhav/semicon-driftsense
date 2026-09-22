@@ -119,7 +119,6 @@ def test_zone_grid_is_irregular():
 
 
 def test_every_layer_is_present_in_a_generated_reference(tmp_path):
-    rng = np.random.default_rng(9)
     for arch, preset in (("dram", "dram_1x"), ("finfet", "finfet_10nm")):
         _m, _mats, _s, ref_cell, _x, _y = G.build_site(
             arch, preset, np.random.default_rng(9))

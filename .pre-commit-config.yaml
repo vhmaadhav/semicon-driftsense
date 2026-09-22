@@ -1,0 +1,42 @@
+# Local pre-commit hooks. Optional -- CI is the authority -- but it turns a
+# failed lint job ten minutes after pushing into a message before the commit
+# exists.
+#
+#   pip install pre-commit && pre-commit install
+#
+# The ruff `rev` below must track the version pinned in
+# .github/workflows/lint.yml. A hook that disagrees with the gate is worse
+# than no hook, because it teaches you to distrust it.
+#
+# Deliberately absent: trailing-whitespace and end-of-file-fixer. They would
+# rewrite whichever files a commit happens to touch, and this repository's git
+# log is read as evidence for why a calibration is what it is. Unrelated
+# whitespace noise in that history costs more than it saves.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.0
+    hooks:
+      - id: ruff
+        name: ruff (lint, config in ruff.toml)
+        args: [--no-fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # The one that matters most here. .git is already 171 MB because ten
+      # .pt checkpoints were committed over time; every clone and every CI
+      # run pays for all of them forever. This will not undo that, but it
+      # stops the next one arriving by accident.
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+        # weights/driftsense.pt is the shipped checkpoint and is already
+        # tracked, so it is not an "added" file and does not trip this.
+      - id: check-yaml
+        # The workflow files and .coderabbit.yaml.
+      - id: check-toml
+        # ruff.toml and pyproject.toml.
+      - id: check-merge-conflict
+      - id: check-case-conflict
+        # Development happens on Windows and macOS as well as Linux; two paths
+        # differing only in case break a checkout on the first two.

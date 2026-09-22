@@ -104,7 +104,7 @@ def main():
     print(f"  centre-weighted     median {t.dw.median():.3f} px   mean {t.dw.mean():.3f}")
     print(f"  drift jitter        median {t.jit.median():.3f} px")
     print(f"  optimum/jitter ratio       {(t.d/t.jit).median():.3f}")
-    print(f"\n  our shipped pipeline on set B: median error 0.744 px, err/jitter 0.730")
+    print("\n  our shipped pipeline on set B: median error 0.744 px, err/jitter 0.730")
     print("\nby severity:")
     print(t.groupby("sev").agg(n=("d", "size"), jitter=("jit", "median"),
                                opt_dist=("d", "median"), weighted=("dw", "median")).round(3).to_string())

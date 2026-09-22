@@ -44,7 +44,12 @@ import cv2
 import numpy as np
 
 from driftsense.gds import (
-    GdsError, REF_SIZE, background_intensity, layer_yield, read_gds_layers, yield_to_intensity,
+    REF_SIZE,
+    GdsError,
+    background_intensity,
+    layer_yield,
+    read_gds_layers,
+    yield_to_intensity,
 )
 
 # Search pixels are 10 nm, reference design units are 1 nm (Phase 3 brief).
@@ -190,7 +195,7 @@ def visible_fractions(masks: np.ndarray) -> np.ndarray:
     """Painter's algorithm as fractions: channel 0 is background, channel
     L+1 the share of each pixel where layer L is the top-most surface."""
     n = masks.shape[0]
-    out = np.empty((n + 1,) + masks.shape[1:], np.float32)
+    out = np.empty((n + 1, *masks.shape[1:]), np.float32)
     cover = np.ones(masks.shape[1:], np.float32)       # share not yet hidden
     for L in range(n - 1, -1, -1):
         out[L + 1] = masks[L] * cover
@@ -379,7 +384,7 @@ def locate_reference(ref_polys: dict, ref_nl: int, search: SearchCad, ref_size: 
     ref_m = layer_masks(ref_polys, nl, (side, side), SEARCH_NM_PER_PX)
     sm = search.masks
     if sm.shape[0] < nl:
-        sm = np.concatenate([sm, np.zeros((nl - sm.shape[0],) + sm.shape[1:], np.float32)])
+        sm = np.concatenate([sm, np.zeros((nl - sm.shape[0], *sm.shape[1:]), np.float32)])
     blur = lambda a: np.stack([cv2.GaussianBlur(c, (0, 0), COARSE_BLUR_PX) for c in a])  # noqa: E731
     peaks = coarse_cad_peaks(blur(ref_m), blur(sm))
     ref_bb = _bboxes(ref_polys)
@@ -560,7 +565,7 @@ def fit_greys(img: np.ndarray, vis_rot: np.ndarray, step: int = 3, border: int =
     Huber-reweighted once; returns (greys, R^2)."""
     sl = (slice(border, -border, step), slice(border, -border, step))
     y = img[sl].ravel().astype(np.float64)
-    X = vis_rot[(slice(None),) + sl].reshape(vis_rot.shape[0], -1).T.astype(np.float64)
+    X = vis_rot[(slice(None), *sl)].reshape(vis_rot.shape[0], -1).T.astype(np.float64)
     used = X.sum(axis=0) > 1e-3 * len(y)
     Xu = X[:, used]
     wts = np.ones_like(y)
@@ -643,7 +648,12 @@ def register(ref_gds: str, search_gds: str, search_img: np.ndarray,
     # tiles agree best wins (a wrong coarse angle leaves only the central
     # tiles inside their search window, so it cannot fake a consensus).
     best = None
-    n_tiles = len(range(TILE_SEARCH_PX + 20, img.shape[0] - TILE_PX - TILE_SEARCH_PX - 20 + 1, TILE_PX)) *         len(range(TILE_SEARCH_PX + 20, img.shape[1] - TILE_PX - TILE_SEARCH_PX - 20 + 1, TILE_PX))
+
+    def _tile_starts(extent: int) -> range:
+        return range(TILE_SEARCH_PX + 20,
+                     extent - TILE_PX - TILE_SEARCH_PX - 20 + 1, TILE_PX)
+
+    n_tiles = len(_tile_starts(img.shape[0])) * len(_tile_starts(img.shape[1]))
     cands = coarse_rotations(img, model, max_deg)
     for floor in TILE_NCC_FLOORS:
         for th0 in cands:

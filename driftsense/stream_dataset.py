@@ -23,7 +23,6 @@ where the images come from.
 from __future__ import annotations
 
 import numpy as np
-import torch
 from torch.utils.data import IterableDataset, get_worker_info
 
 from driftsense.dataset import build_sample
@@ -54,7 +53,7 @@ class StreamingDriftSense(IterableDataset):
     def __init__(self, length: int = 14000, crop: int = 512,
                  crops_per_canvas: int = 8, noise: str = "randomized",
                  architectures: list[str] | None = None, seed: int = 0,
-                 epoch: int = 0, pose: "PoseSpec | None" = None,
+                 epoch: int = 0, pose: PoseSpec | None = None,
                  pose_jitter: tuple[float, float] = (0.0, 0.0)):
         self.length = length
         self.crop = crop

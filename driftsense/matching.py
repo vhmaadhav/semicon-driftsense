@@ -16,16 +16,16 @@ search frame that is not exactly 1000 px still localises correctly.
 
 from __future__ import annotations
 
-import cv2
 import os
 import warnings
 
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from driftsense.config import EARLY_EXIT_GATES, SHIPPED_CONFIDENCE
 from driftsense.model import SCALE, STRIDE, TEMPLATE_SIZE
-from driftsense.config import SHIPPED_CONFIDENCE, EARLY_EXIT_GATES
 from driftsense.verification import (
     common_band,
     dog_feature,
@@ -682,8 +682,7 @@ def pose_candidates(reference: np.ndarray, search: np.ndarray, k: int = 3,
     span_s = (hi_s - lo_s) / (refine_span_scales - 1)
     span_r = (hi_r - lo_r) / (coarse_rotations - 1)
     out = []
-    best_r0 = None
-    for idx, i in enumerate(ranked):
+    for i in ranked:
         f0 = float(grid[i])
         r0 = (rot_best[i][1] if i in rot_best
               else float(max(rots, key=lambda r: coarse(f0, r))))
@@ -1136,7 +1135,7 @@ def row_offsets(search: np.ndarray, template: np.ndarray, cx: float, cy: float,
     off = np.full(th, np.nan)
     peak = np.full(th, np.nan)
     for i, ki in enumerate(k):
-        if ki != own[i]:
+        if ki != own[i]:  # noqa: SIM102
             # The band chose this lag; the row itself has to agree that there
             # is a peak there, or the parabola below would be fitted to a
             # slope and would report a shift the row never showed.
@@ -1677,8 +1676,9 @@ def locate_phase2(model, reference: np.ndarray, search: np.ndarray, device,
 
     ref_feat = None
     if model is not None and hasattr(model, "encoder") and device is not None:
-        from driftsense.model import TEMPLATE_SIZE
         import torch.nn.functional as F
+
+        from driftsense.model import TEMPLATE_SIZE
         nominal_tpl = make_template(reference, float(SCALE), 0.0)
         tpl_n = standardize(nominal_tpl / 255.0)
         t_nom = torch.from_numpy(tpl_n)[None, None].to(device)
@@ -2021,7 +2021,7 @@ def locate(model, reference: np.ndarray, search: np.ndarray, device,
            tie_tol: float = TIE_REL_TOL, refine_radius: int = REFINE_RADIUS,
            refine_accept_px: float = 10.0, factor: float = SCALE,
            rotation_deg: float = 0.0,
-           ref_feat: "torch.Tensor | None" = None) -> dict:
+           ref_feat: torch.Tensor | None = None) -> dict:
     """Full inference: reference + search (uint8 grayscale) -> centre (x, y).
 
     ref_feat: optional precomputed template-branch embedding. The template is
@@ -2131,7 +2131,7 @@ def _dihedral_point_inv(x: float, y: float, shape: tuple[int, int],
 
 @torch.no_grad()
 def locate_tta(model, reference: np.ndarray, search: np.ndarray, device,
-               transforms=range(8), cluster_px: float = 6.0,
+               transforms=range(8), cluster_px: float = 6.0,  # noqa: B008
                refine: bool = True, verify_alpha: float = VERIFY_ALPHA,
                verify_top_k: int = VERIFY_TOP_K, factor: float = SCALE,
                rotation_deg: float = 0.0) -> dict:

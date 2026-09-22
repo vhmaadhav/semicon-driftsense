@@ -4,11 +4,9 @@ load_state_dict between two eval passes), the cache must be invalidated --
 otherwise the second pass silently serves the first model's embedding.
 """
 
-import importlib.util
 import os
 import sys
 
-import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")

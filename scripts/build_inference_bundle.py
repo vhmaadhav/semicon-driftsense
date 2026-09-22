@@ -26,7 +26,6 @@ import argparse
 import ast
 import os
 import shutil
-import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)

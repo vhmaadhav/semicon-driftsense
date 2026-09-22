@@ -17,7 +17,6 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from driftsense.matching import _dihedral_img  # noqa: E402
 
 
 def _load_script():

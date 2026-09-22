@@ -205,8 +205,8 @@ def main():
         print(line)
         if k == "zncc":
             base = rec - brk
-    print(f"\n'recovers' counts only failures where some hypothesis was within 5 px --")
-    print(f"the rest need a better pose search or a better network, not a better score.")
+    print("\n'recovers' counts only failures where some hypothesis was within 5 px --")
+    print("the rest need a better pose search or a better network, not a better score.")
     print(f"A score is worth adopting only if net > {base} (the incumbent's net).")
 
 

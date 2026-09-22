@@ -269,7 +269,6 @@ def test_locate_phase2_explicit_pose_yields_a_finite_confidence(monkeypatch):
     """
     pytest.importorskip("cv2")
     pytest.importorskip("torch")
-    import cv2
     from driftsense.matching import locate_phase2, make_template
 
     rng = np.random.default_rng(3)
