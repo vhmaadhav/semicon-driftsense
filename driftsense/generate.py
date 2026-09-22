@@ -14,15 +14,15 @@ from __future__ import annotations
 
 import math
 import os
-import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
+from driftsense._vendored import ensure_generator_on_path
+
+ensure_generator_on_path()
 
 from src import sem_imaging  # noqa: E402
 from src.pipeline import (  # noqa: E402

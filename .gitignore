@@ -9,6 +9,10 @@ output/
 
 # Built submission artifacts (rebuild with scripts/build_submission_zip.py).
 dist/
+# Python build artifacts (pyproject.toml). setuptools writes build/ and
+# *.egg-info/ in the working tree on every `pip install .` or wheel build.
+build/
+*.egg-info/
 
 # Environment
 venv/

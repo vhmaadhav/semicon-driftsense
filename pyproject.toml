@@ -1,0 +1,121 @@
+# Packaging for the Drift-Sense localiser.
+#
+# What this does and deliberately does not do:
+#
+# * It makes `driftsense` an installable, versioned package, so the library is
+#   importable from anywhere instead of only from a checkout with the repo root
+#   on sys.path.
+# * It does NOT move or rename register.py / phase3.py. Those are the graded
+#   entry points and the reference machine invokes them by path
+#   (`python register.py --input ... --output ...`). Turning them into console
+#   scripts means moving their bodies into the package, which is a change to
+#   correctness-critical files and belongs in its own PR with the parity tests
+#   in view -- not bundled into packaging metadata.
+# * It does NOT remove the sys.path inserts in driftsense/generate.py,
+#   driftsense/presets.py or the root scripts. Those are load-bearing for the
+#   clone-and-run path, which has no install step. See the note under
+#   [tool.setuptools].
+#
+# Dependency split: this file declares ABSTRACT ranges -- what the library
+# needs to work. requirements.txt stays the exact frozen pin set for the
+# reference machine (4-core x86, 8 GB, no GPU, Python 3.11) and remains the
+# thing CI installs and the release gate audits. They answer different
+# questions and are both correct.
+
+[build-system]
+# >=77 for PEP 639: the SPDX `license` string and `license-files` below
+# are not understood by older setuptools, which would silently drop the
+# licence metadata from the wheel rather than fail.
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "driftsense"
+description = "Navigation-error recovery for wafer inspection: locate a high-resolution reference patch inside a low-resolution search frame of a repeating semiconductor layout."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.11"
+dynamic = ["version"]
+
+authors = [{ name = "the Drift-Sense contributors" }]
+keywords = [
+    "semiconductor",
+    "wafer-inspection",
+    "template-matching",
+    "image-registration",
+    "siamese-network",
+    "gdsii",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Typing :: Partially Typed",
+]
+
+# Only what the library and the graded entry points actually import.
+#
+#   numpy, torch, cv2  -- imported by driftsense/ itself
+#   gdstk              -- imported lazily inside driftsense/gds.py and
+#                         driftsense/gds_layers.py, but phase3.py is a graded
+#                         entry point that cannot run without it, so it is a
+#                         hard requirement rather than an extra. The laziness
+#                         is an import-cost optimisation for the Phase 2 path,
+#                         not a statement that Phase 3 is optional.
+#
+# Floors, not the frozen pins: torch >= 2.6 is where weights_only defaults to
+# True, which is the posture SECURITY.md documents; the rest are the oldest
+# releases this code is known to work against.
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.6",
+    "opencv-python-headless>=4.9",
+    "gdstk>=0.9",
+]
+
+[project.optional-dependencies]
+# The test suite. pytest only -- the suite has no other test-time dependency.
+test = ["pytest>=8"]
+
+# What scripts/ needs. These are research tooling dependencies, not library
+# ones: nothing under driftsense/, register.py or phase3.py imports any of
+# them. pandas is used by 29 scripts, matplotlib by 3.
+research = [
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+    "networkx>=3.0",
+    "sympy>=1.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/vhmaadhav/semicon-driftsense"
+Repository = "https://github.com/vhmaadhav/semicon-driftsense"
+Issues = "https://github.com/vhmaadhav/semicon-driftsense/issues"
+
+[tool.setuptools]
+# Explicit, not auto-discovered. A flat layout with driftsense/, generator/,
+# generator_i4c/, phase1/, scripts/, tests/, experiments/, docs/ and results/
+# beside each other gives setuptools' auto-discovery nothing safe to guess:
+# it would either error on the ambiguity or sweep in trees that must not be
+# redistributed as part of this package -- notably the two vendored generator
+# copies, whose upstream terms are undetermined (see NOTICE).
+#
+# Consequence worth knowing: driftsense.generate and driftsense.presets each
+# resolve the vendored generator/ tree relative to __file__ and insert it on
+# sys.path. Installed into site-packages there is no such tree beside them, so
+# those two modules are importable only from a source checkout. Nothing on the
+# inference path imports either of them -- driftsense/__init__.py pulls in
+# driftsense.model alone -- so `pip install driftsense` gives a working
+# localiser. Dataset generation needs the checkout.
+packages = ["driftsense"]
+
+[tool.setuptools.dynamic]
+# One source of truth. driftsense/__init__.py carries __version__; this reads
+# it, so a release is a single-line edit rather than two that can disagree.
+version = { attr = "driftsense.__version__" }

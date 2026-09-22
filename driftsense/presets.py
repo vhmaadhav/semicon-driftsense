@@ -9,11 +9,9 @@ keeps a model from memorising a single pitch.
 
 from __future__ import annotations
 
-import os
-import sys
+from driftsense._vendored import ensure_generator_on_path
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO_ROOT, "generator"))
+ensure_generator_on_path()
 
 from src.presets import DRAM_PRESET_NAMES, FINFET_PRESET_NAMES  # noqa: E402
 
