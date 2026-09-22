@@ -113,7 +113,7 @@ def _tablet(cx: float, cy: float, radius: float, layer: int, aspect: float):
     xs = np.cos(angles) * half_short
     ys = np.sin(angles) * half_long
     pts = np.column_stack([cx + xs, cy + ys])
-    return gdstk.Polygon(pts, layer=layer)
+    return gdstk.Polygon(pts, layer=layer)  # type: ignore[arg-type]  # gdstk accepts an (N,2) ndarray
 
 
 def build_dram_gds(size_nm: float, preset: dict, collapse_threshold_nm: float,
