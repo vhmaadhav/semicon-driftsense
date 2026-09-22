@@ -4,18 +4,32 @@ updates:
   # from a CPU-only PyTorch 3.11 environment; treat every bump as needing a
   # rerun of the full suite plus the release gate before merge.
   - package-ecosystem: pip
-    # `directories`, not `directory: "/"`. With the singular form Dependabot
-    # discovered phase1/requirements.txt as well and raised PRs against it:
-    # #120 and #122 touched nothing else, and #118, #119 and #121 each carried
-    # it alongside the root file. phase1/ is an archive -- one commit, dated
-    # 2026-09-03, DENY-listed out of the submission by
-    # scripts/build_submission_zip.py as an "archived Phase 1 duplicate", and
-    # never run by CI. Its requirements.txt is a record of the environment
-    # that WAS used, which phase1/README.md cites as such; bumping it does not
-    # make anything safer, it just edits history and costs a review.
-    directories:
-      - "/"
-      - "!/phase1"
+    directory: "/"
+    # `directory: "/"` scans RECURSIVELY. The options reference is explicit:
+    # "all directories and files in the specified directory are included in
+    # the update scan unless excluded by this option". So the root entry
+    # reaches every requirements.txt in the repository, not just the one
+    # beside it -- which is why phase1/requirements.txt kept being updated.
+    #
+    # exclude-paths is the documented way to narrow that. The previous attempt
+    # here used `directories: ["/", "!/phase1"]`; `directories` supports the
+    # `*` wildcard but has no negation operator, so that entry was never valid
+    # syntax and silently did nothing. PRs #126 and #127 arrived against
+    # phase1/ immediately after it merged, which is how it was caught.
+    exclude-paths:
+      # An archive: one commit dated 2026-09-03, DENY-listed out of the
+      # submission by scripts/build_submission_zip.py as an "archived Phase 1
+      # duplicate", never run by CI. Its requirements.txt records the
+      # environment that WAS used -- phase1/README.md cites it as "full pip
+      # freeze of the dev environment" -- so bumping it edits a historical
+      # record rather than making anything safer.
+      - "phase1/**"
+      # Vendored third-party trees whose upstream terms are undetermined (see
+      # NOTICE). generator/ has its own entry below, and the reference warns
+      # that directories must not overlap between entries -- without this the
+      # recursive root scan reaches it as well.
+      - "generator/**"
+      - "generator_i4c/**"
     schedule:
       interval: weekly
       day: monday
@@ -50,8 +64,7 @@ updates:
   # The image and GDSII decoders reached by untrusted input (see SECURITY.md).
   # Deliberately ungrouped so a CVE fix arrives as its own reviewable PR.
   - package-ecosystem: pip
-    directories:
-      - "/generator"
+    directory: "/generator"
     schedule:
       interval: weekly
       day: monday
